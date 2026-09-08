@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Irina Black CRM</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#faf6f4; --surface:#ffffff; --surface-2:#f4ece9; --ink:#251920;
+    --muted:#8b7686; --border:#e8dbdb; --accent:#97223f; --accent-ink:#fff4f6;
+    --accent-soft:#f3dce2; --good:#3f7a52; --good-soft:#e2efe2; --warn:#a67322;
+    --warn-soft:#f4e8d3; --bad:#b23d3d; --bad-soft:#f6dfdf; --info:#3b6fa0;
+    --info-soft:#dfe9f2;
+    --shadow: 0 1px 2px rgba(37,25,32,.06), 0 8px 24px -12px rgba(37,25,32,.18);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#1a1215; --surface:#231a1e; --surface-2:#2b2024; --ink:#f3e8ec;
+      --muted:#b096a2; --border:#3a2c31; --accent:#e9a6ba; --accent-ink:#2c0f18;
+      --accent-soft:#3a232c; --good:#7fc492; --good-soft:#213228; --warn:#e0ac5e;
+      --warn-soft:#382c1c; --bad:#e2807f; --bad-soft:#3a2323; --info:#84b3e0;
+      --info-soft:#1f2c39;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#1a1215; --surface:#231a1e; --surface-2:#2b2024; --ink:#f3e8ec;
+    --muted:#b096a2; --border:#3a2c31; --accent:#e9a6ba; --accent-ink:#2c0f18;
+    --accent-soft:#3a232c; --good:#7fc492; --good-soft:#213228; --warn:#e0ac5e;
+    --warn-soft:#382c1c; --bad:#e2807f; --bad-soft:#3a2323; --info:#84b3e0;
+    --info-soft:#1f2c39;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:'Inter',system-ui,-apple-system,sans-serif;
+    font-variant-numeric: tabular-nums;
+  }
+  h1,h2,h3{font-family:'Fraunces',Georgia,serif; font-weight:600; text-wrap:balance; margin:0;}
+  img{max-width:100%;}
+  [hidden]{display:none!important;}
+
+  /* ---------- password gate ---------- */
+  #gate{
+    position:fixed; inset:0; background:var(--bg); display:flex;
+    align-items:center; justify-content:center; padding:20px; z-index:50;
+  }
+  #gate .card{
+    background:var(--surface); border:1px solid var(--border); border-radius:16px;
+    box-shadow:var(--shadow); padding:32px 28px; width:100%; max-width:340px;
+    display:flex; flex-direction:column; gap:14px;
+  }
+  #gate .eyebrow{font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--accent); font-weight:600;}
+  #gate h1{font-size:22px;}
+  #gate input{
+    padding:11px 13px; border-radius:9px; border:1px solid var(--border);
+    background:var(--bg); color:var(--ink); font:inherit; font-size:15px;
+  }
+  #gate button{
+    padding:11px 13px; border-radius:9px; border:none; background:var(--accent);
+    color:var(--accent-ink); font:inherit; font-size:14.5px; font-weight:600; cursor:pointer;
+  }
+  #gate button:disabled{opacity:.6; cursor:default;}
+  #gate .err{font-size:13px; color:var(--bad); min-height:16px;}
+
+  /* ---------- app shell ---------- */
+  .wrap{max-width:1180px; margin:0 auto; padding:28px 24px 64px;}
+  header.top{display:flex; align-items:flex-end; justify-content:space-between; gap:20px; flex-wrap:wrap; margin-bottom:24px;}
+  header.top .brand{display:flex; flex-direction:column; gap:4px;}
+  header.top .eyebrow{font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--accent); font-weight:600;}
+  header.top h1{font-size:30px;}
+  header.top .sub{color:var(--muted); font-size:14px;}
+  .sync-note{text-align:right; font-size:12.5px; color:var(--muted); display:flex; flex-direction:column; gap:6px; align-items:flex-end;}
+  .sync-note b{color:var(--ink); font-weight:600;}
+  .refresh-btn{
+    padding:7px 13px; border-radius:8px; border:1px solid var(--border);
+    background:var(--surface); color:var(--ink); font:inherit; font-size:12.5px;
+    font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:6px;
+  }
+  .refresh-btn:hover{background:var(--surface-2);}
+
+  .stats{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:28px;}
+  .stat{background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:16px 18px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:6px;}
+  .stat .label{font-size:12.5px; color:var(--muted); font-weight:500;}
+  .stat .value{font-family:'Fraunces',serif; font-size:28px; font-weight:600;}
+  .stat.accent .value{color:var(--accent);}
+
+  .tabs{display:flex; gap:6px; border-bottom:1px solid var(--border); margin-bottom:18px;}
+  .tab{padding:10px 4px; margin-right:18px; font-size:14.5px; font-weight:600; color:var(--muted); background:none; border:none; cursor:pointer; border-bottom:2px solid transparent; font-family:inherit;}
+  .tab.active{color:var(--ink); border-bottom-color:var(--accent);}
+  .tab .count{color:var(--muted); font-weight:500;}
+
+  .panel{background:var(--surface); border:1px solid var(--border); border-radius:16px; box-shadow:var(--shadow); overflow:hidden;}
+  .filters{display:flex; align-items:center; gap:10px; padding:14px 16px; border-bottom:1px solid var(--border); flex-wrap:wrap;}
+  .filters input[type="search"]{flex:1 1 220px; min-width:180px; padding:9px 12px; border-radius:9px; border:1px solid var(--border); background:var(--bg); color:var(--ink); font:inherit; font-size:14px;}
+  .filters select{padding:9px 10px; border-radius:9px; border:1px solid var(--border); background:var(--bg); color:var(--ink); font:inherit; font-size:13.5px;}
+  .chip-row{display:flex; gap:6px; flex-wrap:wrap;}
+  .chip{padding:6px 12px; border-radius:999px; border:1px solid var(--border); background:var(--bg); color:var(--muted); font-size:13px; font-weight:600; cursor:pointer; user-select:none;}
+  .chip.on{background:var(--accent-soft); color:var(--accent); border-color:transparent;}
+  .filters .spacer{flex:1 1 auto;}
+  .filters .result-count{font-size:12.5px; color:var(--muted); white-space:nowrap;}
+
+  .table-scroll{overflow-x:auto;}
+  table{width:100%; border-collapse:collapse; font-size:13.5px; min-width:720px;}
+  thead th{position:sticky; top:0; background:var(--surface-2); text-align:left; padding:10px 14px; font-size:11.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); font-weight:600; border-bottom:1px solid var(--border); white-space:nowrap;}
+  tbody td{padding:11px 14px; border-bottom:1px solid var(--border); vertical-align:top;}
+  tbody tr:last-child td{border-bottom:none;}
+  tbody tr:hover{background:var(--surface-2);}
+  .client-cell b{display:block; font-weight:600;}
+  .client-cell span{color:var(--muted); font-size:12.5px;}
+  .svc-list{color:var(--muted); font-size:12.5px; max-width:260px;}
+  .svc-list span{display:block;}
+  .badge-new{display:inline-block; margin-left:6px; font-size:10.5px; font-weight:700; color:var(--accent); background:var(--accent-soft); padding:1px 6px; border-radius:999px; vertical-align:middle;}
+  .pill{display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:999px; font-size:12px; font-weight:600; white-space:nowrap;}
+  .pill.good{background:var(--good-soft); color:var(--good);}
+  .pill.warn{background:var(--warn-soft); color:var(--warn);}
+  .pill.bad{background:var(--bad-soft); color:var(--bad);}
+  .pill.info{background:var(--info-soft); color:var(--info);}
+  .pill.plain{background:var(--surface-2); color:var(--muted);}
+  .dot{width:6px; height:6px; border-radius:50%; background:currentColor; flex:none;}
+
+  .empty{padding:48px 20px; text-align:center; color:var(--muted); font-size:14px;}
+  .empty b{display:block; color:var(--ink); font-family:'Fraunces',serif; font-size:18px; margin-bottom:6px; font-weight:600;}
+  .empty.error b{color:var(--bad);}
+
+  footer.note{margin-top:22px; font-size:12px; color:var(--muted); line-height:1.6; border-top:1px solid var(--border); padding-top:14px;}
+
+  @media (max-width:760px){
+    .stats{grid-template-columns:repeat(2,1fr);}
+    header.top{flex-direction:column; align-items:flex-start;}
+    .sync-note{text-align:left; align-items:flex-start;}
+  }
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <div class="card">
+    <span class="eyebrow">Irina Black Beauty Corner</span>
+    <h1>Вход в CRM</h1>
+    <input type="password" id="gatePassword" placeholder="Пароль" autocomplete="current-password">
+    <button id="gateSubmit">Войти</button>
+    <div class="err" id="gateErr"></div>
+  </div>
+</div>
+
+<div class="wrap" id="app" hidden>
+  <header class="top">
+    <div class="brand">
+      <span class="eyebrow">Zapis.kz · партнёрский кабинет</span>
+      <h1>Irina Black Beauty Corner</h1>
+      <span class="sub">Записи и клиенты, синхронизированные из личного кабинета</span>
+    </div>
+    <div class="sync-note">
+      <span id="syncNote">Загрузка…</span>
+      <button class="refresh-btn" id="refreshBtn">↻ Обновить</button>
+    </div>
+  </header>
+
+  <div class="stats" id="stats">
+    <div class="stat"><span class="label">Всего записей</span><span class="value">—</span></div>
+    <div class="stat"><span class="label">Уникальных клиентов</span><span class="value">—</span></div>
+    <div class="stat accent"><span class="label">Предстоящие записи</span><span class="value">—</span></div>
+    <div class="stat"><span class="label">Доля онлайн-записи</span><span class="value">—</span></div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="bookings">Записи <span class="count" id="tabCountBookings"></span></button>
+    <button class="tab" data-tab="clients">Клиенты <span class="count" id="tabCountClients"></span></button>
+  </div>
+
+  <div id="view-bookings">
+    <div class="panel">
+      <div class="filters">
+        <input type="search" id="searchBookings" placeholder="Поиск: клиент, телефон, услуга, мастер…">
+        <select id="masterFilter"><option value="">Все мастера</option></select>
+        <div class="chip-row" id="statusChips">
+          <span class="chip on" data-status="">Все</span>
+          <span class="chip" data-status="SERVED">Обслужены</span>
+          <span class="chip" data-status="AWAITING">Ожидают</span>
+          <span class="chip" data-status="NOT_SERVED">Не пришли</span>
+        </div>
+        <div class="spacer"></div>
+        <span class="result-count" id="bookingsCount"></span>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Дата и время</th><th>Клиент</th><th>Мастер</th><th>Услуги</th><th>Канал</th><th>Статус</th></tr></thead>
+          <tbody id="bookingsBody"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="bookingsEmpty" hidden><b>Ничего не найдено</b>Попробуйте изменить поиск или фильтры.</div>
+    </div>
+  </div>
+
+  <div id="view-clients" hidden>
+    <div class="panel">
+      <div class="filters">
+        <input type="search" id="searchClients" placeholder="Поиск клиента по имени или телефону…">
+        <select id="sortClients">
+          <option value="visits">Сортировка: по визитам</option>
+          <option value="last">По последнему визиту</option>
+          <option value="name">По имени</option>
+        </select>
+        <div class="spacer"></div>
+        <span class="result-count" id="clientsCount"></span>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Клиент</th><th>Визитов</th><th>Последний визит</th><th>Основной мастер</th></tr></thead>
+          <tbody id="clientsBody"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="clientsEmpty" hidden><b>Ничего не найдено</b>Попробуйте изменить поиск.</div>
+    </div>
+  </div>
+
+  <footer class="note">
+    Записи подтягиваются из zapis.kz автоматически, раз в час. Редактирование записей и данных клиентов
+    происходит в самом zapis.kz — здесь только просмотр.
+  </footer>
+</div>
+
+<script>
+(function(){
+  // ---- Fill these in after creating your Supabase project ----
+  // Project Settings → API → Project URL, and the "anon public" key.
+  // The anon key is safe to publish here: it can only call get_dashboard(),
+  // which itself checks the shared password before returning any data.
+  const SUPABASE_URL = 'https://YOUR-PROJECT.supabase.co';
+  const SUPABASE_ANON_KEY = 'YOUR-ANON-PUBLIC-KEY';
+  // --------------------------------------------------------------
+
+  const state = { bookings: [], syncStatus: null, tab: 'bookings',
+    search: '', status: '', master: '', clientSearch: '', clientSort: 'visits' };
+
+  const monthsShort = ['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'];
+  function fmtDateTime(iso){
+    const d = new Date(iso);
+    return d.getDate()+' '+monthsShort[d.getMonth()]+', '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  }
+  function fmtDate(iso){
+    const d = new Date(iso);
+    return d.getDate()+' '+monthsShort[d.getMonth()]+' '+d.getFullYear();
+  }
+  function statusPill(status){
+    if(status === 'SERVED') return '<span class="pill good"><span class="dot"></span>Обслужен</span>';
+    if(status === 'AWAITING') return '<span class="pill warn"><span class="dot"></span>Ожидает</span>';
+    if(status === 'NOT_SERVED') return '<span class="pill bad"><span class="dot"></span>Не пришёл</span>';
+    return '<span class="pill plain">'+status+'</span>';
+  }
+  function esc(s){
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function renderStats(){
+    const now = new Date();
+    const bookings = state.bookings;
+    const total = bookings.length;
+    const clientIds = new Set(bookings.map(b => b.client_id || b.client_phone).filter(Boolean));
+    const upcoming = bookings.filter(b => b.status === 'AWAITING' && new Date(b.start) >= now).length;
+    const online = bookings.filter(b => b.online).length;
+    const onlineShare = total ? Math.round(online/total*100) : 0;
+
+    const tiles = document.querySelectorAll('.stat .value');
+    tiles[0].textContent = total.toLocaleString('ru-RU');
+    tiles[1].textContent = clientIds.size.toLocaleString('ru-RU');
+    tiles[2].textContent = upcoming.toLocaleString('ru-RU');
+    tiles[3].textContent = onlineShare + '%';
+
+    document.getElementById('tabCountBookings').textContent = total ? '('+total+')' : '';
+    document.getElementById('tabCountClients').textContent = clientIds.size ? '('+clientIds.size+')' : '';
+  }
+
+  function renderSyncNote(){
+    const el = document.getElementById('syncNote');
+    const m = state.syncStatus;
+    if(!m || !m.last_synced_at){ el.innerHTML = '<span>Данные ещё не синхронизированы</span>'; return; }
+    el.innerHTML = 'Синхронизировано: <b>'+esc(fmtDateTime(m.last_synced_at))+'</b>';
+  }
+
+  function populateMasters(){
+    const sel = document.getElementById('masterFilter');
+    sel.querySelectorAll('option:not(:first-child)').forEach(o => o.remove());
+    const masters = Array.from(new Set(state.bookings.map(b => b.master))).sort((a,b)=>a.localeCompare(b,'ru'));
+    for(const m of masters){
+      const opt = document.createElement('option');
+      opt.value = m; opt.textContent = m;
+      sel.appendChild(opt);
+    }
+  }
+
+  function filteredBookings(){
+    const q = state.search.trim().toLowerCase();
+    return state.bookings.filter(b => {
+      if(state.status && b.status !== state.status) return false;
+      if(state.master && b.master !== state.master) return false;
+      if(q){
+        const hay = [b.client_name, b.client_phone, b.master, (b.services||[]).join(' ')].join(' ').toLowerCase();
+        if(!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }
+
+  function renderBookings(){
+    const rows = filteredBookings().slice().sort((a,b) => new Date(b.start) - new Date(a.start));
+    const body = document.getElementById('bookingsBody');
+    const empty = document.getElementById('bookingsEmpty');
+    document.getElementById('bookingsCount').textContent = rows.length + ' из ' + state.bookings.length;
+
+    if(!rows.length){ body.innerHTML = ''; empty.hidden = false; return; }
+    empty.hidden = true;
+
+    body.innerHTML = rows.map(b => {
+      const services = (b.services && b.services.length) ? b.services : ['—'];
+      return '<tr>' +
+        '<td>'+esc(fmtDateTime(b.start))+'</td>' +
+        '<td class="client-cell"><b>'+esc(b.client_name || 'Без имени')+(b.new_client ? '<span class="badge-new">Новый</span>' : '')+'</b><span>'+esc(b.client_phone||'')+'</span></td>' +
+        '<td>'+esc(b.master)+'</td>' +
+        '<td class="svc-list">'+services.map(s => '<span>'+esc(s)+'</span>').join('')+'</td>' +
+        '<td>'+(b.online ? '<span class="pill info">Онлайн</span>' : '<span class="pill plain">Вручную</span>')+'</td>' +
+        '<td>'+statusPill(b.status)+'</td>' +
+        '</tr>';
+    }).join('');
+  }
+
+  function buildClients(){
+    const map = new Map();
+    for(const b of state.bookings){
+      const key = b.client_id || b.client_phone || b.client_name;
+      if(!key) continue;
+      if(!map.has(key)) map.set(key, { id:key, name:b.client_name, phone:b.client_phone, visits:0, lastVisit:null, masters:{} });
+      const c = map.get(key);
+      c.visits += 1;
+      if(!c.lastVisit || new Date(b.start) > new Date(c.lastVisit)){ c.lastVisit = b.start; c.name = b.client_name || c.name; c.phone = b.client_phone || c.phone; }
+      c.masters[b.master] = (c.masters[b.master]||0) + 1;
+    }
+    return Array.from(map.values()).map(c => {
+      let topMaster = '', topCount = 0;
+      for(const m in c.masters){ if(c.masters[m] > topCount){ topMaster = m; topCount = c.masters[m]; } }
+      return { ...c, topMaster };
+    });
+  }
+
+  function filteredClients(){
+    const q = state.clientSearch.trim().toLowerCase();
+    let list = buildClients();
+    if(q) list = list.filter(c => (c.name||'').toLowerCase().includes(q) || (c.phone||'').includes(q));
+    if(state.clientSort === 'visits') list.sort((a,b)=> b.visits - a.visits);
+    else if(state.clientSort === 'last') list.sort((a,b)=> new Date(b.lastVisit) - new Date(a.lastVisit));
+    else list.sort((a,b)=> (a.name||'').localeCompare(b.name||'','ru'));
+    return list;
+  }
+
+  function renderClients(){
+    const rows = filteredClients();
+    const body = document.getElementById('clientsBody');
+    const empty = document.getElementById('clientsEmpty');
+    document.getElementById('clientsCount').textContent = rows.length + ' клиентов';
+    if(!rows.length){ body.innerHTML = ''; empty.hidden = false; return; }
+    empty.hidden = true;
+    body.innerHTML = rows.map(c => (
+      '<tr>' +
+      '<td class="client-cell"><b>'+esc(c.name || 'Без имени')+'</b><span>'+esc(c.phone||'')+'</span></td>' +
+      '<td>'+c.visits+'</td>' +
+      '<td>'+(c.lastVisit ? esc(fmtDate(c.lastVisit)) : '—')+'</td>' +
+      '<td>'+esc(c.topMaster||'—')+'</td>' +
+      '</tr>'
+    )).join('');
+  }
+
+  function renderAll(){ renderStats(); renderSyncNote(); renderBookings(); renderClients(); }
+
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      state.tab = tab.dataset.tab;
+      document.getElementById('view-bookings').hidden = state.tab !== 'bookings';
+      document.getElementById('view-clients').hidden = state.tab !== 'clients';
+    });
+  });
+  document.getElementById('searchBookings').addEventListener('input', e => { state.search = e.target.value; renderBookings(); });
+  document.getElementById('masterFilter').addEventListener('change', e => { state.master = e.target.value; renderBookings(); });
+  document.getElementById('statusChips').addEventListener('click', e => {
+    const chip = e.target.closest('.chip');
+    if(!chip) return;
+    document.querySelectorAll('#statusChips .chip').forEach(c => c.classList.remove('on'));
+    chip.classList.add('on');
+    state.status = chip.dataset.status;
+    renderBookings();
+  });
+  document.getElementById('searchClients').addEventListener('input', e => { state.clientSearch = e.target.value; renderClients(); });
+  document.getElementById('sortClients').addEventListener('change', e => { state.clientSort = e.target.value; renderClients(); });
+
+  // ---------------- data loading ----------------
+  async function loadData(password){
+    const res = await fetch(SUPABASE_URL + '/rest/v1/rpc/get_dashboard', {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: 'Bearer ' + SUPABASE_ANON_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ password }),
+    });
+    if(!res.ok) throw new Error('bad-password-or-network');
+    const rows = await res.json();
+    const row = Array.isArray(rows) ? rows[0] : rows;
+    return { bookings: row.bookings || [], syncStatus: row.sync_status || null };
+  }
+
+  async function refresh(){
+    const btn = document.getElementById('refreshBtn');
+    btn.disabled = true; btn.textContent = '↻ Обновляю…';
+    try{
+      const password = localStorage.getItem('ibcrm_pw');
+      const data = await loadData(password);
+      state.bookings = data.bookings;
+      state.syncStatus = data.syncStatus;
+      populateMasters();
+      renderAll();
+    }catch(e){
+      // silent — keep showing last-known data rather than a scary error on refresh
+    }finally{
+      btn.disabled = false; btn.textContent = '↻ Обновить';
+    }
+  }
+  document.getElementById('refreshBtn').addEventListener('click', refresh);
+  setInterval(refresh, 5 * 60 * 1000); // keep the page fresh while it stays open
+
+  // ---------------- password gate ----------------
+  async function tryEnter(password){
+    const errEl = document.getElementById('gateErr');
+    const btn = document.getElementById('gateSubmit');
+    errEl.textContent = '';
+    btn.disabled = true; btn.textContent = 'Проверяю…';
+    try{
+      const data = await loadData(password);
+      localStorage.setItem('ibcrm_pw', password);
+      state.bookings = data.bookings;
+      state.syncStatus = data.syncStatus;
+      document.getElementById('gate').hidden = true;
+      document.getElementById('app').hidden = false;
+      populateMasters();
+      renderAll();
+    }catch(e){
+      errEl.textContent = 'Неверный пароль или нет связи с сервером.';
+    }finally{
+      btn.disabled = false; btn.textContent = 'Войти';
+    }
+  }
+
+  document.getElementById('gateSubmit').addEventListener('click', () => {
+    tryEnter(document.getElementById('gatePassword').value);
+  });
+  document.getElementById('gatePassword').addEventListener('keydown', e => {
+    if(e.key === 'Enter') tryEnter(e.target.value);
+  });
+
+  // Auto-enter if a password was remembered from a previous visit.
+  const remembered = localStorage.getItem('ibcrm_pw');
+  if(remembered) tryEnter(remembered);
+})();
+</script>
+</body>
+</html>
