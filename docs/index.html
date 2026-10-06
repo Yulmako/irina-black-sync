@@ -166,26 +166,24 @@
   .stack-bar{display:flex; height:26px; gap:2px; margin-bottom:16px; border-radius:6px; overflow:hidden;}
   .stack-seg{position:relative; display:flex; align-items:center; justify-content:center; min-width:2px; cursor:default;}
   .stack-seg-label{font-size:11px; font-weight:700; color:#0b0b0b;}
-  .busy-panel{padding-bottom:6px;}
-  .busy-panel .panel-heading{padding-bottom:4px;}
-  .busy-summary{display:flex; flex-wrap:wrap; gap:8px 28px; padding:4px 18px 10px; font-size:13px; color:var(--muted);}
-  .busy-summary b{color:var(--ink); font-weight:700;}
-  .busy-grid{display:grid; grid-template-columns:1fr 1.6fr; gap:8px 28px; padding:0 18px;}
-  @media (max-width:760px){ .busy-grid{grid-template-columns:1fr;} }
+  .busy-block{padding:16px 18px 4px; border-top:1px solid var(--border); display:flex; flex-direction:column; gap:14px;}
+  .busy-title{font-family:'Fraunces',serif; font-size:15px; font-weight:600;}
+  .busy-tiles{display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px;}
+  .busy-tile{background:var(--surface-2); border:1px solid var(--border); border-radius:12px; padding:11px 13px; display:flex; flex-direction:column; gap:3px; min-width:0;}
+  .busy-tile.peak{background:var(--accent-soft); border-color:color-mix(in srgb, var(--accent) 45%, transparent);}
+  .busy-tile .bt-label{font-size:11.5px; color:var(--muted); line-height:1.25;}
+  .busy-tile .bt-value{font-family:'Fraunces',serif; font-size:24px; font-weight:700; line-height:1.1; font-variant-numeric:tabular-nums; color:var(--ink);}
+  .busy-tile.peak .bt-value{color:var(--accent);}
+  .busy-tile .bt-sub{font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums;}
+  .busy-tile .bt-sub b{color:var(--ink); font-weight:700;}
   .busy-cell{min-width:0;}
-  .busy-heat-wrap{padding:14px 18px 0;}
   .col-chart{display:flex; align-items:flex-end; gap:6px; height:150px; padding-top:18px;}
   .col-item{flex:1 1 0; min-width:0; height:100%; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; gap:4px;}
   .col-bar{width:100%; max-width:34px; min-height:2px; border-radius:4px 4px 0 0; background:var(--accent-soft); border:1px solid color-mix(in srgb, var(--accent) 35%, transparent); border-bottom:none; cursor:default;}
   .col-bar.peak{background:var(--accent); border-color:var(--accent);}
   .col-val{font-size:11px; font-weight:600; color:var(--ink); font-variant-numeric:tabular-nums; line-height:1;}
   .col-lab{font-size:11px; color:var(--muted); line-height:1; padding-top:2px;}
-  .busy-heat{display:grid; gap:2px; font-size:11px; color:var(--muted); overflow-x:auto; padding-bottom:8px;}
-  .heat-cell{height:24px; border-radius:4px; display:flex; align-items:center; justify-content:center; font-size:10.5px; font-variant-numeric:tabular-nums; cursor:default; color:var(--ink);}
-  .heat-cell.dark{color:var(--accent-ink);}
-  .heat-head{text-align:center; align-self:end; padding-bottom:2px;}
-  .heat-row-lab{align-self:center; padding-right:6px;}
-  .busy-note{padding:6px 18px 14px; font-size:11.5px; color:var(--muted);}
+  .busy-note{padding:0 0 12px; font-size:11.5px; color:var(--muted);}
   .pie-row{display:flex; flex-wrap:wrap; gap:14px 20px; margin-bottom:14px;}
   .pie-cell{flex:1 1 200px; min-width:0;}
   .pie-cell .stack-chart-label{text-align:center;}
@@ -695,18 +693,14 @@
           </table>
         </div>
         <div class="empty" id="analyticsZonesEmpty" hidden><b>Нет данных за этот период</b>Попробуйте выбрать другой диапазон.</div>
+        <div class="busy-block">
+          <div class="busy-title">Загруженность</div>
+          <div class="busy-tiles" id="busySummary"></div>
+          <div class="busy-cell"><div class="stack-chart-label">По дням недели</div><div id="busyDays"></div></div>
+          <div class="busy-cell"><div class="stack-chart-label">По часам</div><div id="busyHours"></div></div>
+          <div class="busy-note" id="busyNote"></div>
+        </div>
       </div>
-    </div>
-
-    <div class="panel busy-panel" style="margin-bottom:22px;">
-      <div class="panel-heading">Загруженность</div>
-      <div class="busy-summary" id="busySummary"></div>
-      <div class="busy-grid">
-        <div class="busy-cell"><div class="stack-chart-label">По дням недели</div><div id="busyDays"></div></div>
-        <div class="busy-cell"><div class="stack-chart-label">По часам</div><div id="busyHours"></div></div>
-      </div>
-      <div class="busy-cell busy-heat-wrap"><div class="stack-chart-label">День недели × час</div><div class="busy-heat" id="busyHeat"></div></div>
-      <div class="busy-note">Считаются записи за выбранный период, кроме «не пришёл» и отменённых в «Закрытии дня». Время — по началу записи.</div>
     </div>
 
     <div class="panel" style="margin-bottom:22px;">
@@ -1528,60 +1522,62 @@
       '<text class="donut-total" x="60" y="59">'+esc(centerFmt(total))+'</text>' +
       '<text class="donut-sub" x="60" y="70">'+esc(subText)+'</text></svg>';
   }
-  // Загруженность: сколько записей приходится на день недели и час начала.
+  // Загруженность. Дни недели считаем по ВСЕМ записям (даты есть и в таблицах
+  // за прошлые месяцы, и в zapis.kz). Часы — только по записям из zapis.kz:
+  // в импортированных таблицах времени нет, там стоят условные слоты 09:00,
+  // 10:15… и считать их значило бы выдавать выдуманные данные за настоящие.
   const WEEKDAYS_FULL = ['Понедельник','Вторник','Среда','Четверг','Пятница','Суббота','Воскресенье'];
   const WEEKDAYS_SHORT = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+  function isImportedBooking(b){
+    return b.client_id === 'import-client' || /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)-\d+$/.test(String(b.id));
+  }
   function renderBusyness(fromStr, toStr){
-    const days = new Array(7).fill(0), hours = new Map(), heat = new Map(); // heat key "d|h"
-    let total = 0;
+    const days = new Array(7).fill(0), hours = new Map();
+    let totalDays = 0, totalHours = 0, firstReal = null;
     for(const b of state.bookings){
       const date = dayStr(b.start);
       if(date < fromStr || date > toStr) continue;
       if(b.status === 'NOT_SERVED' || visitStatus(b.id) === 'cancelled') continue;
       const d = new Date(b.start);
-      const wd = (d.getDay()+6)%7, h = d.getHours();
-      days[wd]++; hours.set(h, (hours.get(h)||0)+1); heat.set(wd+'|'+h, (heat.get(wd+'|'+h)||0)+1); total++;
+      const imported = isImportedBooking(b);
+      // дни: на «замороженных» датах берём только импорт, иначе — только zapis.kz (без дублей)
+      if(FROZEN_DATES.has(date) ? imported : !imported){ days[(d.getDay()+6)%7]++; totalDays++; }
+      if(!imported){
+        hours.set(d.getHours(), (hours.get(d.getHours())||0)+1); totalHours++;
+        if(!firstReal || date < firstReal) firstReal = date;
+      }
     }
     const summary = document.getElementById('busySummary');
-    const dEl = document.getElementById('busyDays'), hEl = document.getElementById('busyHours'), heatEl = document.getElementById('busyHeat');
-    if(!total){
-      summary.innerHTML = '';
-      const none = '<div class="chart-empty-note">Нет данных за этот период</div>';
-      dEl.innerHTML = none; hEl.innerHTML = none; heatEl.innerHTML = '';
-      return;
-    }
-    const maxDay = Math.max(...days);
-    const hourKeys = Array.from(hours.keys());
-    const hMin = Math.min(...hourKeys), hMax = Math.max(...hourKeys);
-    const hourList = []; for(let h = hMin; h <= hMax; h++) hourList.push(h);
-    const maxHour = Math.max(...hourList.map(h => hours.get(h)||0));
-    const topDay = days.indexOf(maxDay), topHour = hourList.find(h => (hours.get(h)||0) === maxHour);
-    const quietDay = days.indexOf(Math.min(...days));
-    summary.innerHTML = '<span>Самый загруженный день: <b>'+WEEKDAYS_FULL[topDay]+'</b> ('+maxDay+')</span>' +
-      '<span>Самый загруженный час: <b>'+String(topHour).padStart(2,'0')+':00</b> ('+maxHour+')</span>' +
-      '<span>Тише всего: <b>'+WEEKDAYS_FULL[quietDay]+'</b> ('+days[quietDay]+')</span>';
+    const dEl = document.getElementById('busyDays'), hEl = document.getElementById('busyHours'), note = document.getElementById('busyNote');
     function cols(items, max, topKey){
       return '<div class="col-chart">' + items.map(([key, label, v, tip]) =>
         '<div class="col-item"><span class="col-val">'+v+'</span>' +
         '<div class="col-bar'+(key===topKey?' peak':'')+'" style="height:'+Math.max(v/max*100*0.78, v?2:0).toFixed(1)+'%" data-tip="'+esc(tip)+'"></div>' +
         '<span class="col-lab">'+label+'</span></div>').join('') + '</div>';
     }
-    dEl.innerHTML = cols(days.map((v,i) => [i, WEEKDAYS_SHORT[i], v, WEEKDAYS_FULL[i]+': '+v+' записей']), maxDay, topDay);
-    hEl.innerHTML = cols(hourList.map(h => [h, String(h).padStart(2,'0'), hours.get(h)||0, String(h).padStart(2,'0')+':00 — '+(hours.get(h)||0)+' записей']), maxHour, topHour);
-    // тепловая карта
-    const maxCell = Math.max(...heat.values());
-    let html = '<div></div>' + hourList.map(h => '<div class="heat-head">'+String(h).padStart(2,'0')+'</div>').join('');
-    for(let wd = 0; wd < 7; wd++){
-      html += '<div class="heat-row-lab">'+WEEKDAYS_SHORT[wd]+'</div>';
-      for(const h of hourList){
-        const v = heat.get(wd+'|'+h) || 0;
-        const pct = v ? Math.round(12 + v/maxCell*88) : 0;
-        const bg = v ? 'color-mix(in srgb, var(--accent) '+pct+'%, var(--surface))' : 'var(--surface-2)';
-        html += '<div class="heat-cell'+(pct > 55 ? ' dark' : '')+'" style="background:'+bg+'" data-tip="'+WEEKDAYS_FULL[wd]+', '+String(h).padStart(2,'0')+':00 — '+v+' записей">'+(v||'')+'</div>';
-      }
-    }
-    heatEl.style.gridTemplateColumns = '30px repeat('+hourList.length+', minmax(22px, 1fr))';
-    heatEl.innerHTML = html;
+    const none = text => '<div class="chart-empty-note">'+text+'</div>';
+    const tile = (label, value, n, peak) => '<div class="busy-tile'+(peak?' peak':'')+'"><span class="bt-label">'+label+'</span><span class="bt-value">'+esc(value)+'</span><span class="bt-sub"><b>'+n+'</b> записей</span></div>';
+    const parts = [];
+    if(totalDays){
+      const maxDay = Math.max(...days), topDay = days.indexOf(maxDay), quietDay = days.indexOf(Math.min(...days));
+      parts.push(tile('Самый загруженный день', WEEKDAYS_FULL[topDay], maxDay, true));
+      parts.push(tile('Тише всего', WEEKDAYS_FULL[quietDay], days[quietDay], false));
+      dEl.innerHTML = cols(days.map((v,i) => [i, WEEKDAYS_SHORT[i], v, WEEKDAYS_FULL[i]+': '+v+' записей']), maxDay, topDay);
+    } else dEl.innerHTML = none('Нет данных за этот период');
+    if(totalHours){
+      const hourKeys = Array.from(hours.keys());
+      const hMin = Math.min(...hourKeys), hMax = Math.max(...hourKeys);
+      const hourList = []; for(let h = hMin; h <= hMax; h++) hourList.push(h);
+      const maxHour = Math.max(...hourList.map(h => hours.get(h)||0));
+      const topHour = hourList.find(h => (hours.get(h)||0) === maxHour);
+      parts.splice(1, 0, tile('Самый загруженный час', String(topHour).padStart(2,'0')+':00', maxHour, true));
+      hEl.innerHTML = cols(hourList.map(h => [h, String(h).padStart(2,'0'), hours.get(h)||0, String(h).padStart(2,'0')+':00 — '+(hours.get(h)||0)+' записей']), maxHour, topHour);
+    } else hEl.innerHTML = none('В этом периоде нет записей с точным временем. Время есть только у записей из zapis.kz.');
+    summary.innerHTML = parts.join('');
+    note.innerHTML = 'Не считаются «не пришёл» и отменённые в «Закрытии дня». ' +
+      '<b>Дни недели</b> — по всем записям периода (' + totalDays + '). ' +
+      '<b>Часы</b> — только по записям из zapis.kz, где известно время' + (totalHours ? ' ('+totalHours+(firstReal ? ', с '+firstReal.split('-').reverse().join('.') : '')+')' : '') +
+      '; в таблицах за прошлые месяцы времени нет, поэтому они в часах не участвуют. Статистика по часам будет накапливаться сама.';
   }
   function renderZoneLegend(){
     const el = document.getElementById('zoneLegend');
