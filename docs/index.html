@@ -322,6 +322,13 @@
     font:inherit; font-size:11px; color:var(--muted); background:var(--surface-2);
     border:1px solid var(--border); border-radius:6px; padding:1px 5px; cursor:pointer; max-width:140px;
   }
+  .cd-master-select{
+    font:inherit; font-size:11px; color:var(--ink); background:var(--surface-2);
+    border:1px solid var(--border); border-radius:6px; padding:1px 5px; cursor:pointer; max-width:150px;
+  }
+  .cd-master-select.changed{border-color:var(--accent); color:var(--accent);}
+  .cd-master-select:disabled{opacity:.65; cursor:default; background:transparent; border-color:transparent; padding-left:0; appearance:none;}
+  .cd-master-was{font-size:11px; color:var(--muted);}
   .cd-zone-select:disabled{opacity:.65; cursor:default; background:transparent; border-color:transparent; padding-left:0; appearance:none;}
   .cd-visit .cd-price-wrap{display:flex; align-items:center; gap:5px; flex:none;}
   .cd-visit input[type="number"]{
@@ -1066,7 +1073,7 @@
   function populateMasters(){
     const sel = document.getElementById('masterFilter');
     sel.querySelectorAll('option:not(:first-child)').forEach(o => o.remove());
-    const masters = Array.from(new Set(state.bookings.map(b => b.master))).sort((a,b)=>a.localeCompare(b,'ru'));
+    const masters = Array.from(new Set(state.bookings.map(b => visitMaster(b)))).sort((a,b)=>a.localeCompare(b,'ru'));
     for(const m of masters){
       const opt = document.createElement('option');
       opt.value = m; opt.textContent = m;
@@ -1080,7 +1087,7 @@
     const toDay = state.dateTo || null;
     return state.bookings.filter(b => {
       if(state.status && b.status !== state.status) return false;
-      if(state.master && b.master !== state.master) return false;
+      if(state.master && visitMaster(b) !== state.master) return false;
       if(fromDay || toDay){
         const d = new Date(b.start);
         const dayStr = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
@@ -1088,7 +1095,7 @@
         if(toDay && dayStr > toDay) return false;
       }
       if(q){
-        const hay = [b.client_name, b.client_phone, b.master, visitServices(b).join(' ')].join(' ').toLowerCase();
+        const hay = [b.client_name, b.client_phone, visitMaster(b), visitServices(b).join(' ')].join(' ').toLowerCase();
         if(!hay.includes(q)) return false;
       }
       return true;
@@ -1101,7 +1108,7 @@
     const cmp = {
       date: byDate,
       client: (a,b) => (a.client_name||'').localeCompare(b.client_name||'','ru') || byDate(a,b),
-      master: (a,b) => (a.master||'').localeCompare(b.master||'','ru') || byDate(a,b),
+      master: (a,b) => (visitMaster(a)||'').localeCompare(visitMaster(b)||'','ru') || byDate(a,b),
     }[state.bookingSortKey] || byDate;
     const rows = filteredBookings().slice().sort((a,b) => dir * cmp(a,b));
     document.querySelectorAll('#bookingsHead th.sortable').forEach(th => {
@@ -1121,7 +1128,7 @@
       return '<tr>' +
         '<td>'+esc(fmtDateTime(b.start))+'</td>' +
         '<td class="client-cell"><b>'+esc(b.client_name || 'Без имени')+(b.new_client ? '<span class="badge-new">Новый</span>' : '')+'</b><span>'+esc(b.client_phone||'')+'</span></td>' +
-        '<td>'+esc(b.master)+'</td>' +
+        '<td>'+esc(visitMaster(b))+'</td>' +
         '<td class="svc-list">'+services.map(s => '<span>'+esc(s)+'</span>').join('')+'</td>' +
         '<td>'+(b.online ? '<span class="pill info">Онлайн</span>' : '<span class="pill plain">Вручную</span>')+'</td>' +
         '<td>'+statusPill(b.status)+'</td>' +
@@ -1138,7 +1145,7 @@
       const c = map.get(key);
       c.visits += 1;
       if(!c.lastVisit || new Date(b.start) > new Date(c.lastVisit)){ c.lastVisit = b.start; c.name = b.client_name || c.name; c.phone = b.client_phone || c.phone; }
-      c.masters[b.master] = (c.masters[b.master]||0) + 1;
+      c.masters[visitMaster(b)] = (c.masters[visitMaster(b)]||0) + 1;
     }
     return Array.from(map.values()).map(c => {
       let topMaster = '', topCount = 0;
@@ -1503,9 +1510,9 @@
       if(FROZEN_DATES.has(date)) continue; // handled by the frozen import instead
       if(visitStatus(b.id) !== 'completed') continue;
       const price = dayClose.prices[b.id] || 0;
-      revenue.push({ entry_date: date, master: b.master, amount: price });
+      revenue.push({ entry_date: date, master: visitMaster(b), amount: price });
       for(const c of (dayClose.consumables[b.id] || [])){
-        consumables.push({ entry_date: date, master: b.master, item: c.item, qty: c.qty, unit_price: c.unitCost, total: c.qty*c.unitCost });
+        consumables.push({ entry_date: date, master: visitMaster(b), item: c.item, qty: c.qty, unit_price: c.unitCost, total: c.qty*c.unitCost });
       }
       const zone = getVisitZone(b);
       const counted = new Map();
@@ -1513,7 +1520,39 @@
         const cat = serviceCategory(s, zone);
         counted.set(cat, (counted.get(cat)||0) + 1);
       }
-      for(const [cat, count] of counted) serviceCounts.push({ entry_date: date, master: b.master, category: cat, count });
+      for(const [cat, count] of counted) serviceCounts.push({ entry_date: date, master: visitMaster(b), category: cat, count });
+    }
+    return { revenue, consumables, serviceCounts };
+  }
+
+  // Исторические даты (импорт) лежат готовыми суммами по мастерам. Если визит
+  // из такого дня переназначили на другого мастера, добавляем «поправку»:
+  // минус у прежнего мастера, плюс у нового — итоги следуют за Закрытием дня.
+  function buildFrozenReassignments(fromStr, toStr){
+    const revenue = [], consumables = [], serviceCounts = [];
+    for(const b of state.bookings){
+      const to = dayClose.masterOverride[b.id];
+      if(!to || to === b.master) continue;
+      const date = dayStr(b.start);
+      if(date < fromStr || date > toStr || !FROZEN_DATES.has(date)) continue;
+      if(visitStatus(b.id) !== 'completed') continue;
+      const price = dayClose.prices[b.id] || 0;
+      revenue.push({ entry_date: date, master: b.master, amount: -price }, { entry_date: date, master: to, amount: price });
+      for(const c of (dayClose.consumables[b.id] || [])){
+        const t = c.qty*c.unitCost;
+        consumables.push({ entry_date: date, master: b.master, item: c.item, qty: -c.qty, unit_price: c.unitCost, total: -t },
+                         { entry_date: date, master: to, item: c.item, qty: c.qty, unit_price: c.unitCost, total: t });
+      }
+      const counted = new Map();
+      for(const sv of visitServices(b)){
+        const cat1 = serviceCategory(sv, (state.masters.find(m => m.name === b.master)||{}).zone);
+        const cat2 = serviceCategory(sv, getVisitZone(b));
+        counted.set(cat1+'||'+cat2, (counted.get(cat1+'||'+cat2)||0) + 1);
+      }
+      for(const [k, count] of counted){
+        const [c1, c2] = k.split('||');
+        serviceCounts.push({ entry_date: date, master: b.master, category: c1, count: -count }, { entry_date: date, master: to, category: c2, count });
+      }
     }
     return { revenue, consumables, serviceCounts };
   }
@@ -1521,11 +1560,12 @@
   function buildSampleAnalyticsRange(fromStr, toStr){
     const inRange = d => d >= fromStr && d <= toStr;
     const live = buildLiveAnalyticsRange(fromStr, toStr);
+    const adj = buildFrozenReassignments(fromStr, toStr);
     return {
       masters: state.masters,
-      revenue: FROZEN_ANALYTICS_REVENUE.filter(r => inRange(r.entry_date)).concat(live.revenue),
-      consumables: FROZEN_ANALYTICS_CONSUMABLES.filter(r => inRange(r.entry_date)).concat(live.consumables),
-      serviceCounts: FROZEN_ANALYTICS_SERVICE_COUNTS.filter(r => inRange(r.entry_date)).concat(live.serviceCounts),
+      revenue: FROZEN_ANALYTICS_REVENUE.filter(r => inRange(r.entry_date)).concat(adj.revenue, live.revenue),
+      consumables: FROZEN_ANALYTICS_CONSUMABLES.filter(r => inRange(r.entry_date)).concat(adj.consumables, live.consumables),
+      serviceCounts: FROZEN_ANALYTICS_SERVICE_COUNTS.filter(r => inRange(r.entry_date)).concat(adj.serviceCounts, live.serviceCounts),
     };
   }
 
@@ -1950,6 +1990,7 @@
     openForms: new Set(),
     visitZone: {},
     serviceOverride: {},
+    masterOverride: {},
   };
   // Услуги визита: то, что пришло из zapis.kz, а если там пусто — то, что
   // указали вручную в «Закрытии дня» (dayClose.serviceOverride).
@@ -1958,10 +1999,13 @@
     if(o && o.length) return o;
     return (b.services || []).filter(Boolean);
   }
+  // Мастер визита: тот, что в zapis.kz, а если в «Закрытии дня» визит
+  // переназначили — то выбранный там (dayClose.masterOverride).
+  function visitMaster(b){ return dayClose.masterOverride[b.id] || b.master; }
   function visitStatus(bookingId){ return dayClose.serviceStatus[bookingId] || 'pending'; }
   function getVisitZone(b){
     if(dayClose.visitZone[b.id]) return dayClose.visitZone[b.id];
-    const master = state.masters.find(m => m.name === b.master);
+    const master = state.masters.find(m => m.name === visitMaster(b));
     return master ? master.zone : null;
   }
 
@@ -2035,8 +2079,9 @@
 
     const byMaster = new Map();
     for(const v of visits){
-      if(!byMaster.has(v.master)) byMaster.set(v.master, []);
-      byMaster.get(v.master).push(v);
+      const vm = visitMaster(v);
+      if(!byMaster.has(vm)) byMaster.set(vm, []);
+      byMaster.get(vm).push(v);
     }
 
     let html = '';
@@ -2058,6 +2103,13 @@
           ZONE_ORDER.map(z => '<option value="'+esc(z)+'" '+(z===zone?'selected':'')+'>'+esc(z)+'</option>').join('') +
           (zone && ZONE_ORDER.indexOf(zone) === -1 ? '<option value="'+esc(zone)+'" selected>'+esc(zone)+'</option>' : '') +
           '</select>';
+        const overridden = !!dayClose.masterOverride[v.id] && dayClose.masterOverride[v.id] !== v.master;
+        const masterNames = state.masters.filter(m => m.active !== false).map(m => m.name);
+        [v.master, master].forEach(n => { if(n && masterNames.indexOf(n) === -1) masterNames.push(n); });
+        const masterSelectHtml = notServed ? '' :
+          '<select class="cd-master-select'+(overridden?' changed':'')+'" data-booking="'+v.id+'" title="Мастер визита" '+(dayEditable?'':'disabled')+'>' +
+          masterNames.map(n => '<option value="'+esc(n)+'" '+(n===master?'selected':'')+'>'+esc(n)+'</option>').join('') + '</select>' +
+          (overridden ? '<span class="cd-master-was">в записи: '+esc(v.master)+'</span>' : '');
         const svcList = visitServices(v);
         const canEditSvc = !notServed && dayEditable;
         const servicesHtml = svcList.length
@@ -2068,7 +2120,7 @@
         html += '<div class="cd-visit'+(notServed?' not-served':'')+'" data-booking="'+v.id+'">' +
           '<span class="cd-time">'+timeStr(v.start)+'</span>' +
           '<span class="cd-client">' +
-            '<span class="cd-client-name-row"><b>'+esc(v.client_name||'Без имени')+'</b><span class="cd-dot">·</span>'+zoneSelectHtml+statusPillHtml+'</span>' +
+            '<span class="cd-client-name-row"><b>'+esc(v.client_name||'Без имени')+'</b><span class="cd-dot">·</span>'+masterSelectHtml+zoneSelectHtml+statusPillHtml+'</span>' +
             '<span class="cd-client-services">'+servicesHtml+'</span>' +
           '</span>' +
           '<span class="cd-price-wrap"><input type="number" min="0" step="500" value="'+price+'" '+(locked?'disabled':'')+'><span class="cd-currency">₸</span></span>' +
@@ -2207,7 +2259,7 @@
       const sum = c.qty * c.unitCost;
       total += sum;
       return '<tr>' +
-        '<td>'+esc(v.master)+'</td>' +
+        '<td>'+esc(visitMaster(v))+'</td>' +
         '<td>'+esc(v.client_name||'Без имени')+'</td>' +
         '<td>'+esc(c.item)+'</td>' +
         '<td class="num">'+c.qty+'</td>' +
@@ -2788,7 +2840,7 @@
       if(visitStatus(bookingId) !== 'completed') continue;
       const b = state.bookings.find(x => x.id === bookingId);
       const date = b ? dayStr(b.start) : '';
-      const who = b ? (b.master + (b.client_name ? ' · ' + b.client_name : '')) : 'Неизвестная запись';
+      const who = b ? (visitMaster(b) + (b.client_name ? ' · ' + b.client_name : '')) : 'Неизвестная запись';
       for(const c of dayClose.consumables[bookingId]){
         entries.push({
           date, type: 'out', item: c.item, qty: c.qty, unitCost: c.unitCost,
@@ -2963,9 +3015,10 @@
       if(v.status === 'NOT_SERVED' || visitStatus(v.id) !== 'completed') continue;
       const price = dayClose.prices[v.id] || 0;
       const consTotal = visitConsumablesTotal(v.id);
-      const split = visitSplit(price, masterRate(v.master), consTotal);
-      if(!byMaster.has(v.master)) byMaster.set(v.master, { count:0, revenue:0, consumables:0, masterPay:0, salonNet:0 });
-      const m = byMaster.get(v.master);
+      const vm = visitMaster(v);
+      const split = visitSplit(price, masterRate(vm), consTotal);
+      if(!byMaster.has(vm)) byMaster.set(vm, { count:0, revenue:0, consumables:0, masterPay:0, salonNet:0 });
+      const m = byMaster.get(vm);
       m.count += 1; m.revenue += price; m.consumables += consTotal; m.masterPay += split.master; m.salonNet += split.salon;
     }
     const rows = [['Мастер','Ставка, %','Услуг завершено','Выручка, ₸','Расходники, ₸','ЗП мастера, ₸','ЧП салона, ₸']];
@@ -2985,7 +3038,7 @@
       for(const c of (dayClose.consumables[v.id] || [])){
         const sum = c.qty * c.unitCost;
         total += sum;
-        rows.push([v.master, v.client_name || 'Без имени', c.item, c.qty, Math.round(c.unitCost), Math.round(sum)]);
+        rows.push([visitMaster(v), v.client_name || 'Без имени', c.item, c.qty, Math.round(c.unitCost), Math.round(sum)]);
       }
     }
     // Продажа продукции rolls into the same report/total — see the
@@ -3081,11 +3134,24 @@
   // Zone override for a visit — most masters only ever work one zone, so
   // this is only stored when it actually differs from the master's own.
   document.getElementById('closeDayGroups').addEventListener('change', e => {
+    if(e.target.matches('.cd-master-select')){
+      if(dayClose.closed[document.getElementById('closeDayDate').value]) return;
+      const bookingId = e.target.dataset.booking;
+      const booking = state.bookings.find(b => b.id === bookingId);
+      if(!booking) return;
+      if(e.target.value === booking.master) delete dayClose.masterOverride[bookingId];
+      else dayClose.masterOverride[bookingId] = e.target.value;
+      delete dayClose.visitZone[bookingId]; // зона — по умолчанию у нового мастера
+      analyticsCache.key = null;
+      renderCloseDay(); populateMasters(); renderBookings(); renderAnalytics();
+      if(state.tab === 'pnl' && state.pnlUnlocked) renderPnl();
+      return;
+    }
     if(!e.target.matches('.cd-zone-select')) return;
     if(dayClose.closed[document.getElementById('closeDayDate').value]) return;
     const bookingId = e.target.dataset.booking;
     const booking = state.bookings.find(b => b.id === bookingId);
-    const master = booking ? state.masters.find(m => m.name === booking.master) : null;
+    const master = booking ? state.masters.find(m => m.name === visitMaster(booking)) : null;
     const defaultZone = master ? master.zone : null;
     if(e.target.value === defaultZone) delete dayClose.visitZone[bookingId];
     else dayClose.visitZone[bookingId] = e.target.value;
@@ -3159,7 +3225,7 @@
     form.querySelector('.cd-cons-total-preview').textContent = '= ' + Math.round(qty*unitCost).toLocaleString('ru-RU') + ' ₸';
   });
   function fmtVisitLine(v){
-    return timeStr(v.start)+' · '+(v.client_name || 'Без имени')+' ('+v.master+')';
+    return timeStr(v.start)+' · '+(v.client_name || 'Без имени')+' ('+visitMaster(v)+')';
   }
   function showInfoDialog(title, lines, closeText){
     return new Promise(resolve => {
@@ -3298,7 +3364,7 @@
       const consTotal = visitConsumablesTotal(b.id);
       revenue += price;
       consumablesRevenue += consTotal;
-      masterPay += visitSplit(price, masterRate(b.master), consTotal).master;
+      masterPay += visitSplit(price, masterRate(visitMaster(b)), consTotal).master;
     }
     for(const date in dayClose.procurement){
       if(date < from || date > to) continue;
@@ -3530,7 +3596,7 @@
       procurement: dayClose.procurement, productSales: dayClose.productSales,
       serviceStatus: dayClose.serviceStatus, writeoffs: dayClose.writeoffs,
       adjustments: dayClose.adjustments, closed: dayClose.closed,
-      visitZone: dayClose.visitZone, serviceOverride: dayClose.serviceOverride,
+      visitZone: dayClose.visitZone, serviceOverride: dayClose.serviceOverride, masterOverride: dayClose.masterOverride,
     };
   }
   const KV_GETTERS = {
@@ -3609,6 +3675,7 @@
     dayClose.closed = dc.closed || {};
     dayClose.visitZone = dc.visitZone || {};
     dayClose.serviceOverride = dc.serviceOverride || {};
+    dayClose.masterOverride = dc.masterOverride || {};
     state.inventoryEdits = kv.inventory_edits || [];
     const pf = kv.pnl_fixed || {};
     PNL_MONTHS.forEach(m => { state.pnlFixed[m] = Object.assign({}, PNL_EMPTY_MONTH, pf[m] || {}); });
