@@ -46,6 +46,14 @@
   img{max-width:100%;}
   [hidden]{display:none!important;}
 
+  /* ---------- scrollbars in the page's palette ---------- */
+  *{scrollbar-width:thin; scrollbar-color:var(--muted) var(--surface-2);}
+  ::-webkit-scrollbar{width:10px; height:10px;}
+  ::-webkit-scrollbar-track{background:var(--surface-2); border-radius:999px;}
+  ::-webkit-scrollbar-thumb{background:var(--muted); border-radius:999px; border:2px solid var(--surface-2);}
+  ::-webkit-scrollbar-thumb:hover{background:var(--accent);}
+  ::-webkit-scrollbar-corner{background:transparent;}
+
   /* ---------- app shell ---------- */
   .wrap{max-width:1180px; margin:0 auto; padding:28px 24px 64px;}
   header.top{display:flex; align-items:flex-end; justify-content:space-between; gap:20px; flex-wrap:wrap; margin-bottom:24px;}
@@ -192,6 +200,14 @@
     padding:9px 12px; border-radius:9px; border:1px solid var(--border);
     background:var(--surface); color:var(--ink); font:inherit; font-size:14px;
   }
+  .analytics-controls select{
+    padding:9px 34px 9px 12px; border-radius:9px; border:1px solid var(--border);
+    background-color:var(--surface); color:var(--ink); font:inherit; font-size:14px; cursor:pointer;
+    appearance:none; -webkit-appearance:none;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%238b7686' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat:no-repeat; background-position:right 12px center;
+  }
+  .analytics-controls select:focus-visible{outline:2px solid var(--accent); outline-offset:1px;}
   .analytics-controls .month-label{font-family:'Fraunces',serif; font-size:19px; font-weight:600;}
   .zone-row td, .cat-row td{
     background:var(--surface-2); font-weight:600; font-size:12px; text-transform:uppercase;
@@ -323,6 +339,13 @@
   .cd-visit-extra-top{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;}
   .cd-status-row{display:flex; align-items:center; justify-content:flex-end; gap:8px; flex-wrap:wrap;}
   .cd-dot{color:var(--muted);}
+  .cd-set-service-btn{font:inherit; font-size:11.5px; color:var(--accent); background:none; border:1px dashed var(--border); border-radius:999px; padding:1px 9px; cursor:pointer;}
+  .cd-set-service-btn:hover{background:var(--accent-soft);}
+  .cd-svc-edit{border:none; padding:0 4px;}
+  .svc-dialog-input{width:100%; margin-top:12px; padding:10px 12px; border-radius:9px; border:1px solid var(--border); background:var(--bg); color:var(--ink); font:inherit; font-size:14px;}
+  .blockers-list{margin:10px 0 0; padding-left:18px; font-size:13.5px; line-height:1.6; max-height:50vh; overflow:auto;}
+  .master-edit-row input{padding:6px 9px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--ink); font:inherit; font-size:13px;}
+  .master-edit-row .me-rate{width:72px; text-align:right;}
   .cd-status-note{font-size:12px; color:var(--muted); font-style:italic;}
   .cd-status-complete{background:var(--good-soft); color:var(--good); border-color:transparent;}
   .cd-status-complete:hover{background:var(--good-soft); filter:brightness(0.95);}
@@ -454,8 +477,6 @@
       <span id="syncWarn" class="sync-warn" hidden></span>
       <span id="saveNote"></span>
       <div class="sync-actions">
-        <button class="refresh-btn" id="refreshBtn" title="Перечитать данные из базы. Новые записи из zapis.kz попадают в базу раз в час">↻ Обновить</button>
-        <a class="refresh-btn" id="syncNowLink" href="https://github.com/yulmako/irina-black-sync/actions/workflows/sync.yml" target="_blank" rel="noopener" title="Откроется GitHub: нажмите Run workflow, и записи из zapis.kz загрузятся в базу за минуту">⚡ Синхронизировать с zapis.kz</a>
         <button class="refresh-btn" id="logoutBtn">Выйти</button>
       </div>
     </div>
@@ -494,7 +515,7 @@
           <input type="date" id="dateFrom" aria-label="Период от">
           <span class="date-sep">—</span>
           <input type="date" id="dateTo" aria-label="Период до">
-          <button type="button" class="chip" id="dateReset" title="Сбросить период">✕</button>
+          <button type="button" class="chip" id="dateReset" title="Показать все даты">✕</button>
         </div>
         <div class="spacer"></div>
         <span class="result-count" id="bookingsCount"></span>
@@ -589,11 +610,12 @@
 
   <div id="view-analytics" hidden>
     <div class="analytics-controls">
-      <select id="analyticsGranularity">
-        <option value="day">По дням</option>
-        <option value="week">По неделям</option>
-        <option value="month">По месяцам</option>
-        <option value="year">По годам</option>
+      <select id="analyticsGranularity" aria-label="Период">
+        <option value="today">Сегодня</option>
+        <option value="week">Текущая неделя</option>
+        <option value="month" selected>Текущий месяц</option>
+        <option value="year">Текущий год</option>
+        <option value="custom">Свой период</option>
       </select>
       <div class="date-range">
         <input type="date" id="analyticsFrom" aria-label="Период от">
@@ -918,7 +940,7 @@
     clientSearch: '', clientSort: 'visits', masterSearch: '', consSearch: '', invSearch: '',
     invHistorySearch: '', invHistoryType: '', invHistoryFrom: '', invHistoryTo: '',
     analyticsExpanded: new Set(), inventoryEdits: [], invStockFilter: '', invCategoryFilter: '', invHistoryCategory: '',
-    pnlUnlocked: false, invEditingItem: null };
+    pnlUnlocked: false, invEditingItem: null, masterEditing: null };
 
   // P&L — ручные (не рассчитываемые из данных CRM) строки, по месяцам.
   // Стартовые значения на 2026-01..2026-08 взяты из таблицы IRINA BLACK
@@ -1066,7 +1088,7 @@
         if(toDay && dayStr > toDay) return false;
       }
       if(q){
-        const hay = [b.client_name, b.client_phone, b.master, (b.services||[]).join(' ')].join(' ').toLowerCase();
+        const hay = [b.client_name, b.client_phone, b.master, visitServices(b).join(' ')].join(' ').toLowerCase();
         if(!hay.includes(q)) return false;
       }
       return true;
@@ -1095,7 +1117,7 @@
     empty.hidden = true;
 
     body.innerHTML = rows.map(b => {
-      const services = (b.services && b.services.length) ? b.services : ['—'];
+      const services = visitServices(b).length ? visitServices(b) : ['—'];
       return '<tr>' +
         '<td>'+esc(fmtDateTime(b.start))+'</td>' +
         '<td class="client-cell"><b>'+esc(b.client_name || 'Без имени')+(b.new_client ? '<span class="badge-new">Новый</span>' : '')+'</b><span>'+esc(b.client_phone||'')+'</span></td>' +
@@ -1179,12 +1201,23 @@
     empty.hidden = true;
     body.innerHTML = rows.map(m => {
       const active = m.active !== false;
+      if(state.masterEditing === m.name){
+        return '<tr class="master-edit-row" data-name="'+esc(m.name)+'">' +
+          '<td><b>'+esc(m.name)+'</b></td>' +
+          '<td><input type="text" class="me-zone" list="zoneOptions" value="'+esc(m.zone||'')+'" placeholder="Зона"></td>' +
+          '<td class="num"><input type="number" class="me-rate" min="0" max="100" step="1" value="'+Math.round(m.commission_rate*100)+'"> %</td>' +
+          '<td><div class="master-status-cell">' +
+            '<button type="button" class="mini-action-btn me-save" data-name="'+esc(m.name)+'">Сохранить</button>' +
+            '<button type="button" class="mini-action-btn me-cancel">Отмена</button>' +
+          '</div></td></tr>';
+      }
       return '<tr'+(active ? '' : ' class="master-inactive"')+'>' +
       '<td><b>'+esc(m.name)+'</b></td>' +
       '<td>'+esc(m.zone||'—')+'</td>' +
       '<td class="num">'+Math.round(m.commission_rate*100)+'%</td>' +
       '<td><div class="master-status-cell">' +
         '<span class="pill '+(active ? 'good' : 'plain')+'">'+(active ? 'Активен' : 'Не обслуживает')+'</span>' +
+        '<button type="button" class="mini-action-btn master-edit-btn" data-name="'+esc(m.name)+'">Редактировать</button> ' +
         '<button type="button" class="mini-action-btn" data-toggle-active="'+esc(m.name)+'">'+(active ? 'Деактивировать' : 'Активировать')+'</button>' +
       '</div></td>' +
       '</tr>';
@@ -1200,11 +1233,43 @@
     renderCloseDay();
     renderAnalytics();
   }
+  async function saveMasterEdit(name){
+    const m = state.masters.find(x => x.name === name);
+    const row = document.querySelector('#mastersBody tr.master-edit-row');
+    if(!m || !row) return;
+    const zone = row.querySelector('.me-zone').value.trim();
+    const rateEl = row.querySelector('.me-rate');
+    const ratePct = Number(rateEl.value);
+    if(rateEl.value === '' || isNaN(ratePct) || ratePct < 0 || ratePct > 100){
+      showAlertDialog('Процент мастера должен быть числом от 0 до 100.');
+      return;
+    }
+    const newRate = ratePct / 100;
+    if(Math.abs(newRate - m.commission_rate) > 1e-9){
+      const ok = await showConfirmDialog('Процент мастера «'+m.name+'» изменится с '+Math.round(m.commission_rate*100)+'% на '+ratePct+'%. Суммы «%мастера» и «%салона» пересчитаются везде — в Закрытии дня, Аналитике и P&L, включая уже закрытые дни. Продолжить?', { okText: 'Изменить' });
+      if(!ok) return;
+    }
+    m.zone = zone || null;
+    m.commission_rate = newRate;
+    state.masterEditing = null;
+    analyticsCache.key = null;
+    renderMasters();
+    populateMasters();
+    renderCloseDay();
+    renderAnalytics();
+    if(state.tab === 'pnl' && state.pnlUnlocked) renderPnl();
+  }
   document.getElementById('mastersBody').addEventListener('click', e => {
+    const edit = e.target.closest('.master-edit-btn');
+    if(edit){ state.masterEditing = edit.dataset.name; renderMasters(); return; }
+    if(e.target.closest('.me-cancel')){ state.masterEditing = null; renderMasters(); return; }
+    const save = e.target.closest('.me-save');
+    if(save){ saveMasterEdit(save.dataset.name); return; }
     const btn = e.target.closest('[data-toggle-active]');
     if(!btn) return;
     toggleMasterActive(btn.dataset.toggleActive);
   });
+
 
   function addMaster(){
     const nameEl = document.getElementById('newMasterName');
@@ -1444,7 +1509,7 @@
       }
       const zone = getVisitZone(b);
       const counted = new Map();
-      for(const s of (b.services || [])){
+      for(const s of visitServices(b)){
         const cat = serviceCategory(s, zone);
         counted.set(cat, (counted.get(cat)||0) + 1);
       }
@@ -1495,8 +1560,8 @@
   function renderAnalytics(){
     const from = document.getElementById('analyticsFrom').value;
     const to = document.getElementById('analyticsTo').value;
-    const granularity = document.getElementById('analyticsGranularity').value;
     if(!from || !to || from > to) return;
+    const granularity = analyticsGranularityFor(from, to);
     const data = getSampleAnalytics(from, to);
     const fmt = n => Math.round(n).toLocaleString('ru-RU') + ' ₸';
 
@@ -1720,16 +1785,36 @@
     renderAnalytics();
   });
 
-  document.getElementById('analyticsGranularity').addEventListener('change', renderAnalytics);
-  document.getElementById('analyticsFrom').addEventListener('change', renderAnalytics);
-  document.getElementById('analyticsTo').addEventListener('change', renderAnalytics);
-  (function(){
+  // Период-пресеты: от начала периода до сегодняшнего дня. Разбивка колонок
+  // подбирается по длине периода: день → дни, неделя/месяц → дни, год → месяцы.
+  function analyticsGranularityFor(from, to){
+    const days = eachDay(from, to).length;
+    if(days <= 35) return 'day';
+    if(days <= 100) return 'week';
+    if(days <= 800) return 'month';
+    return 'year';
+  }
+  function applyAnalyticsPreset(preset){
     const today = new Date();
-    const monthAgo = new Date(today); monthAgo.setDate(monthAgo.getDate()-29);
-    document.getElementById('analyticsFrom').value = toDateStr(monthAgo);
-    document.getElementById('analyticsTo').value = toDateStr(today);
-    document.getElementById('analyticsGranularity').value = 'day';
-  })();
+    const todayS = toDateStr(today);
+    let from = todayS;
+    if(preset === 'week') from = mondayOf(todayS);
+    else if(preset === 'month') from = todayS.slice(0,8) + '01';
+    else if(preset === 'year') from = todayS.slice(0,4) + '-01-01';
+    else if(preset === 'custom') return;
+    document.getElementById('analyticsFrom').value = from;
+    document.getElementById('analyticsTo').value = todayS;
+  }
+  document.getElementById('analyticsGranularity').addEventListener('change', e => {
+    applyAnalyticsPreset(e.target.value);
+    renderAnalytics();
+  });
+  ['analyticsFrom','analyticsTo'].forEach(id => document.getElementById(id).addEventListener('change', () => {
+    document.getElementById('analyticsGranularity').value = 'custom';
+    renderAnalytics();
+  }));
+  document.getElementById('analyticsGranularity').value = 'month';
+  applyAnalyticsPreset('month');
 
   // ---------------- close-day (link visits to revenue) ----------------
   // Instead of one lump revenue figure per master per day, each visit
@@ -1864,7 +1949,15 @@
     closed: {},
     openForms: new Set(),
     visitZone: {},
+    serviceOverride: {},
   };
+  // Услуги визита: то, что пришло из zapis.kz, а если там пусто — то, что
+  // указали вручную в «Закрытии дня» (dayClose.serviceOverride).
+  function visitServices(b){
+    const o = dayClose.serviceOverride[b.id];
+    if(o && o.length) return o;
+    return (b.services || []).filter(Boolean);
+  }
   function visitStatus(bookingId){ return dayClose.serviceStatus[bookingId] || 'pending'; }
   function getVisitZone(b){
     if(dayClose.visitZone[b.id]) return dayClose.visitZone[b.id];
@@ -1881,8 +1974,9 @@
     return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
   }
   function suggestedPrice(b){
-    if(!b.services || !b.services.length) return 8000;
-    return b.services.reduce((sum,s) => sum + (SERVICE_PRICE_HINTS[s] || 8000), 0);
+    const svcs = visitServices(b);
+    if(!svcs.length) return 8000;
+    return svcs.reduce((sum,s) => sum + (SERVICE_PRICE_HINTS[s] || 8000), 0);
   }
   function masterRate(name){
     const m = state.masters.find(x => x.name === name);
@@ -1925,8 +2019,8 @@
     pendingNote.hidden = pendingCount === 0 || closed;
     pendingNote.textContent = pendingCount ? 'Не подтверждено услуг: ' + pendingCount : '';
     saveBtn.hidden = closed;
-    saveBtn.disabled = pendingCount > 0;
-    saveBtn.title = pendingCount > 0 ? 'Подтвердите или отмените все услуги, чтобы закрыть день' : '';
+    saveBtn.disabled = false;
+    saveBtn.title = '';
     unlockBtn.hidden = !closed;
 
     const container = document.getElementById('closeDayGroups');
@@ -1955,7 +2049,7 @@
         const locked = notServed || vStatus !== 'pending' || !dayEditable;
         const price = dayClose.prices[v.id] != null ? dayClose.prices[v.id] : (notServed ? 0 : suggestedPrice(v));
         dayClose.prices[v.id] = price;
-        const statusPillHtml = notServed ? '' :
+        const statusPillHtml = notServed ? '<span class="pill bad">Не пришёл</span>' :
           vStatus === 'pending' ? '<span class="pill warn">Ожидает подтверждения</span>' :
           vStatus === 'completed' ? '<span class="pill good">Завершена</span>' :
           '<span class="pill bad">Отменена</span>';
@@ -1964,11 +2058,18 @@
           ZONE_ORDER.map(z => '<option value="'+esc(z)+'" '+(z===zone?'selected':'')+'>'+esc(z)+'</option>').join('') +
           (zone && ZONE_ORDER.indexOf(zone) === -1 ? '<option value="'+esc(zone)+'" selected>'+esc(zone)+'</option>' : '') +
           '</select>';
+        const svcList = visitServices(v);
+        const canEditSvc = !notServed && dayEditable;
+        const servicesHtml = svcList.length
+          ? esc(svcList.join(', ')) + (canEditSvc && dayClose.serviceOverride[v.id] ? ' <button type="button" class="cd-set-service-btn cd-svc-edit" data-booking="'+v.id+'" title="Изменить услугу">✎</button>' : '')
+          : (canEditSvc
+              ? '<button type="button" class="cd-set-service-btn" data-booking="'+v.id+'">+ Указать услугу</button>'
+              : '<span class="cd-status-note">Услуга не указана</span>');
         html += '<div class="cd-visit'+(notServed?' not-served':'')+'" data-booking="'+v.id+'">' +
           '<span class="cd-time">'+timeStr(v.start)+'</span>' +
           '<span class="cd-client">' +
             '<span class="cd-client-name-row"><b>'+esc(v.client_name||'Без имени')+'</b><span class="cd-dot">·</span>'+zoneSelectHtml+statusPillHtml+'</span>' +
-            '<span class="cd-client-services">'+esc((v.services||[]).join(', '))+'</span>' +
+            '<span class="cd-client-services">'+servicesHtml+'</span>' +
           '</span>' +
           '<span class="cd-price-wrap"><input type="number" min="0" step="500" value="'+price+'" '+(locked?'disabled':'')+'><span class="cd-currency">₸</span></span>' +
           '</div>';
@@ -3057,11 +3158,86 @@
     const unitCost = Number(form.querySelector('.cd-cons-cost').value) || 0;
     form.querySelector('.cd-cons-total-preview').textContent = '= ' + Math.round(qty*unitCost).toLocaleString('ru-RU') + ' ₸';
   });
-  document.getElementById('closeDaySave').addEventListener('click', () => {
+  function fmtVisitLine(v){
+    return timeStr(v.start)+' · '+(v.client_name || 'Без имени')+' ('+v.master+')';
+  }
+  function showInfoDialog(title, lines, closeText){
+    return new Promise(resolve => {
+      const overlay = document.createElement('div');
+      overlay.className = 'confirm-overlay';
+      overlay.innerHTML = '<div class="confirm-modal"><p><b>'+esc(title)+'</b></p>' +
+        '<ul class="blockers-list">'+lines.map(l => '<li>'+esc(l)+'</li>').join('')+'</ul>' +
+        '<div class="confirm-actions"><button type="button" class="cd-save-btn" data-act="ok">'+esc(closeText || 'Понятно')+'</button></div></div>';
+      document.body.appendChild(overlay);
+      function close(){ overlay.remove(); document.removeEventListener('keydown', onKey); resolve(); }
+      function onKey(e){ if(e.key === 'Escape' || e.key === 'Enter') close(); }
+      document.addEventListener('keydown', onKey);
+      overlay.addEventListener('click', e => { if(e.target === overlay || e.target.closest('[data-act]')) close(); });
+      overlay.querySelector('[data-act="ok"]').focus();
+    });
+  }
+  // Почему день нельзя закрыть: список причин (пустой — можно закрывать).
+  function closeDayBlockers(date){
+    const visits = state.bookings.filter(b => dayStr(b.start) === date).sort((a,b) => new Date(a.start) - new Date(b.start));
+    const pending = visits.filter(v => v.status !== 'NOT_SERVED' && visitStatus(v.id) === 'pending');
+    const noService = visits.filter(v => v.status !== 'NOT_SERVED' && visitStatus(v.id) === 'completed' && !visitServices(v).length);
+    const lines = [];
+    pending.forEach(v => lines.push(fmtVisitLine(v)+' — не подтверждена: нажмите «Завершить» или «Отменить»'));
+    noService.forEach(v => lines.push(fmtVisitLine(v)+' — не указана услуга: нажмите «+ Указать услугу»'));
+    return lines;
+  }
+  document.getElementById('closeDaySave').addEventListener('click', async () => {
     const date = document.getElementById('closeDayDate').value;
-    if(!date || document.getElementById('closeDaySave').disabled) return;
+    if(!date) return;
+    const lines = closeDayBlockers(date);
+    if(lines.length){
+      await showInfoDialog('День '+date+' пока нельзя закрыть', lines);
+      return;
+    }
     dayClose.closed[date] = true;
+    analyticsCache.key = null;
     renderCloseDay();
+  });
+  // Указать услугу вручную, если в zapis.kz она не заполнена.
+  function showServiceDialog(bookingId){
+    const b = state.bookings.find(x => x.id === bookingId);
+    if(!b) return;
+    const cats = categoriesForZone(getVisitZone(b));
+    const current = (dayClose.serviceOverride[bookingId] || [])[0] || '';
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-overlay';
+    overlay.innerHTML = '<div class="confirm-modal"><p><b>Услуга</b><br>'+esc(fmtVisitLine(b))+'</p>' +
+      '<input type="text" class="svc-dialog-input" list="svcDialogOptions" placeholder="Выберите из списка или впишите свою" value="'+esc(current)+'">' +
+      '<datalist id="svcDialogOptions">'+cats.map(c => '<option value="'+esc(c)+'">').join('')+'</datalist>' +
+      '<div class="confirm-actions">' +
+        (current ? '<button type="button" class="am-cancel" data-act="clear">Убрать</button>' : '') +
+        '<button type="button" class="am-cancel" data-act="cancel">Отмена</button>' +
+        '<button type="button" class="cd-save-btn" data-act="ok">Сохранить</button></div></div>';
+    document.body.appendChild(overlay);
+    const input = overlay.querySelector('input');
+    function close(){ overlay.remove(); document.removeEventListener('keydown', onKey); }
+    function save(){
+      const val = input.value.trim();
+      if(!val){ input.focus(); return; }
+      dayClose.serviceOverride[bookingId] = [val];
+      analyticsCache.key = null;
+      close(); renderCloseDay();
+    }
+    function onKey(e){ if(e.key === 'Escape') close(); else if(e.key === 'Enter') save(); }
+    document.addEventListener('keydown', onKey);
+    overlay.addEventListener('click', e => {
+      if(e.target === overlay){ close(); return; }
+      const btn = e.target.closest('[data-act]');
+      if(!btn) return;
+      if(btn.dataset.act === 'ok') save();
+      else if(btn.dataset.act === 'clear'){ delete dayClose.serviceOverride[bookingId]; analyticsCache.key = null; close(); renderCloseDay(); }
+      else close();
+    });
+    input.focus(); input.select();
+  }
+  document.getElementById('closeDayGroups').addEventListener('click', e => {
+    const btn = e.target.closest('.cd-set-service-btn');
+    if(btn) showServiceDialog(btn.dataset.booking);
   });
   // Unlocking a closed day is deliberately a couple of clicks away — this
   // reopens editing for a historical, already-closed day (useful for fixing
@@ -3297,6 +3473,7 @@
     renderBookings();
   });
   document.getElementById('statusFilter').addEventListener('change', e => { state.status = e.target.value; renderBookings(); });
+  (function(){ state.dateFrom = todayStr(); document.getElementById('dateFrom').value = state.dateFrom; })();
   document.getElementById('dateFrom').addEventListener('change', e => { state.dateFrom = e.target.value; renderBookings(); });
   document.getElementById('dateTo').addEventListener('change', e => { state.dateTo = e.target.value; renderBookings(); });
   document.getElementById('dateReset').addEventListener('click', () => {
@@ -3353,7 +3530,7 @@
       procurement: dayClose.procurement, productSales: dayClose.productSales,
       serviceStatus: dayClose.serviceStatus, writeoffs: dayClose.writeoffs,
       adjustments: dayClose.adjustments, closed: dayClose.closed,
-      visitZone: dayClose.visitZone,
+      visitZone: dayClose.visitZone, serviceOverride: dayClose.serviceOverride,
     };
   }
   const KV_GETTERS = {
@@ -3431,6 +3608,7 @@
     dayClose.adjustments = dc.adjustments || {};
     dayClose.closed = dc.closed || {};
     dayClose.visitZone = dc.visitZone || {};
+    dayClose.serviceOverride = dc.serviceOverride || {};
     state.inventoryEdits = kv.inventory_edits || [];
     const pf = kv.pnl_fixed || {};
     PNL_MONTHS.forEach(m => { state.pnlFixed[m] = Object.assign({}, PNL_EMPTY_MONTH, pf[m] || {}); });
@@ -3464,22 +3642,24 @@
     const m = state.syncStatus;
     const warn = document.getElementById('syncWarn');
     if(!m || !m.last_synced_at){ el.textContent = 'Данные ещё не синхронизированы'; warn.hidden = true; return; }
-    el.innerHTML = 'Записи из zapis.kz обновлены: <b>'+esc(fmtDateTime(m.last_synced_at))+'</b>'+(lastRefreshedAt ? ' · страница обновлена в <b>'+lastRefreshedAt+'</b>' : '');
+    el.innerHTML = 'Записи из zapis.kz обновлены: <b>'+esc(fmtDateTime(m.last_synced_at))+'</b>';
     const hours = (Date.now() - new Date(m.last_synced_at).getTime()) / 3600000;
     if(hours > 3){
       warn.hidden = false;
-      warn.textContent = 'Записи из zapis.kz не обновлялись '+Math.floor(hours)+' ч. Нажмите «Синхронизировать с zapis.kz»; если не помогает, возможно истёк cookie (см. README, шаг 7).';
+      warn.textContent = 'Записи из zapis.kz не обновлялись '+Math.floor(hours)+' ч — возможно, истёк cookie (см. README, шаг 7).';
     } else warn.hidden = true;
   }
   let lastRefreshedAt = '';
   function nowHM(){ const d = new Date(); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
 
-  async function refresh(manual){
-    if(!currentPassword) return;
-    const btn = document.getElementById('refreshBtn');
-    btn.disabled = true; btn.textContent = '↻ Обновляю…';
+  // Тихое автообновление: каждые 5 минут и при возвращении на вкладку.
+  // Перед чтением базы досохраняем правки, чтобы ничего не затереть.
+  let refreshing = false;
+  async function refresh(){
+    if(!currentPassword || refreshing) return;
+    refreshing = true;
     try{
-      await flushSaves(); // never overwrite edits that haven't reached the database yet
+      await flushSaves();
       const data = await loadData(currentPassword);
       state.bookings = data.bookings;
       state.syncStatus = data.syncStatus;
@@ -3487,14 +3667,13 @@
       lastRefreshedAt = nowHM();
       renderEverything();
       renderSyncNote();
-      if(manual === true) setSaveNote('Данные обновлены в ' + lastRefreshedAt);
     }catch(e){
-      if(manual === true) setSaveNote('Не удалось обновить — проверьте связь', true);
+      // молча оставляем последние известные данные
     }finally{
-      btn.disabled = false; btn.textContent = '↻ Обновить';
+      refreshing = false;
     }
   }
-  document.getElementById('refreshBtn').addEventListener('click', () => refresh(true));
+  document.addEventListener('visibilitychange', () => { if(!document.hidden) refresh(); });
   setInterval(refresh, 5 * 60 * 1000); // keep the page fresh while it stays open
 
   // ---------------- password gate ----------------
