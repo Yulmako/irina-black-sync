@@ -322,13 +322,10 @@
     font:inherit; font-size:11px; color:var(--muted); background:var(--surface-2);
     border:1px solid var(--border); border-radius:6px; padding:1px 5px; cursor:pointer; max-width:140px;
   }
-  .cd-master-select{
-    font:inherit; font-size:11px; color:var(--ink); background:var(--surface-2);
-    border:1px solid var(--border); border-radius:6px; padding:1px 5px; cursor:pointer; max-width:150px;
-  }
-  .cd-master-select.changed{border-color:var(--accent); color:var(--accent);}
-  .cd-master-select:disabled{opacity:.65; cursor:default; background:transparent; border-color:transparent; padding-left:0; appearance:none;}
   .cd-master-was{font-size:11px; color:var(--muted);}
+  .cd-master-missing{font-size:11px; color:var(--bad, #b3261e); border:1px solid currentColor; border-radius:999px; padding:0 7px;}
+  .master-dialog-input{width:100%; margin-top:12px; padding:10px 12px; border-radius:9px; border:1px solid var(--border); background:var(--bg); color:var(--ink); font:inherit; font-size:14px;}
+  .master-dialog-err{margin:8px 0 0; font-size:13px; color:var(--bad, #b3261e);}
   .cd-zone-select:disabled{opacity:.65; cursor:default; background:transparent; border-color:transparent; padding-left:0; appearance:none;}
   .cd-visit .cd-price-wrap{display:flex; align-items:center; gap:5px; flex:none;}
   .cd-visit input[type="number"]{
@@ -2104,12 +2101,10 @@
           (zone && ZONE_ORDER.indexOf(zone) === -1 ? '<option value="'+esc(zone)+'" selected>'+esc(zone)+'</option>' : '') +
           '</select>';
         const overridden = !!dayClose.masterOverride[v.id] && dayClose.masterOverride[v.id] !== v.master;
-        const masterNames = state.masters.filter(m => m.active !== false).map(m => m.name);
-        [v.master, master].forEach(n => { if(n && masterNames.indexOf(n) === -1) masterNames.push(n); });
+        const inRoster = state.masters.some(m => m.name === master);
         const masterSelectHtml = notServed ? '' :
-          '<select class="cd-master-select'+(overridden?' changed':'')+'" data-booking="'+v.id+'" title="Мастер визита" '+(dayEditable?'':'disabled')+'>' +
-          masterNames.map(n => '<option value="'+esc(n)+'" '+(n===master?'selected':'')+'>'+esc(n)+'</option>').join('') + '</select>' +
-          (overridden ? '<span class="cd-master-was">в записи: '+esc(v.master)+'</span>' : '');
+          (overridden ? '<span class="cd-master-was">в записи: '+esc(v.master)+'</span>' : '') +
+          (!inRoster ? '<span class="cd-master-missing" title="Добавьте мастера во вкладке «Мастера» — пока ставка считается 50%">мастер не добавлен</span>' : '');
         const svcList = visitServices(v);
         const canEditSvc = !notServed && dayEditable;
         const servicesHtml = svcList.length
@@ -2148,12 +2143,15 @@
             ? '<span class="cd-status-note">Отменено — не учитывается</span>'
             : '%мастера <b>'+split.master.toLocaleString('ru-RU')+' ₸</b> · %салона <b>'+split.salon.toLocaleString('ru-RU')+' ₸</b>' +
               (vStatus === 'pending' && dayEditable ? ' <span class="cd-status-note">(предварительно)</span>' : '');
+          const changeMasterBtn = dayEditable
+            ? '<button type="button" class="mini-action-btn cd-change-master" data-booking="'+v.id+'">Сменить мастера</button>' : '';
           const statusHtml = !dayEditable
             ? '<span class="cd-locked-note">День закрыт — правки заблокированы</span>'
             : vStatus === 'pending'
-            ? '<button type="button" class="mini-action-btn cd-status-complete" data-booking="'+v.id+'">Завершить</button>' +
+            ? changeMasterBtn +
+              '<button type="button" class="mini-action-btn cd-status-complete" data-booking="'+v.id+'">Завершить</button>' +
               '<button type="button" class="mini-action-btn cd-status-cancel" data-booking="'+v.id+'">Отменить</button>'
-            : '<button type="button" class="mini-action-btn cd-status-revert" data-booking="'+v.id+'">↺ Изменить</button>';
+            : changeMasterBtn + '<button type="button" class="mini-action-btn cd-status-revert" data-booking="'+v.id+'">↺ Изменить</button>';
           html += '<div class="cd-visit-extra">' +
             '<div class="cd-visit-extra-top">' +
               '<div class="cd-consumables">' + chips +
@@ -3134,19 +3132,6 @@
   // Zone override for a visit — most masters only ever work one zone, so
   // this is only stored when it actually differs from the master's own.
   document.getElementById('closeDayGroups').addEventListener('change', e => {
-    if(e.target.matches('.cd-master-select')){
-      if(dayClose.closed[document.getElementById('closeDayDate').value]) return;
-      const bookingId = e.target.dataset.booking;
-      const booking = state.bookings.find(b => b.id === bookingId);
-      if(!booking) return;
-      if(e.target.value === booking.master) delete dayClose.masterOverride[bookingId];
-      else dayClose.masterOverride[bookingId] = e.target.value;
-      delete dayClose.visitZone[bookingId]; // зона — по умолчанию у нового мастера
-      analyticsCache.key = null;
-      renderCloseDay(); populateMasters(); renderBookings(); renderAnalytics();
-      if(state.tab === 'pnl' && state.pnlUnlocked) renderPnl();
-      return;
-    }
     if(!e.target.matches('.cd-zone-select')) return;
     if(dayClose.closed[document.getElementById('closeDayDate').value]) return;
     const bookingId = e.target.dataset.booking;
@@ -3301,9 +3286,62 @@
     });
     input.focus(); input.select();
   }
+  function applyMasterChange(bookingId, name){
+    const booking = state.bookings.find(b => b.id === bookingId);
+    if(!booking) return;
+    if(name === booking.master) delete dayClose.masterOverride[bookingId];
+    else dayClose.masterOverride[bookingId] = name;
+    delete dayClose.visitZone[bookingId]; // зона — по умолчанию у нового мастера
+    analyticsCache.key = null;
+    renderCloseDay(); populateMasters(); renderBookings(); renderAnalytics();
+    if(state.tab === 'pnl' && state.pnlUnlocked) renderPnl();
+  }
+  // Смена мастера у визита: мастер должен быть в списке вкладки «Мастера».
+  function showMasterDialog(bookingId){
+    const b = state.bookings.find(x => x.id === bookingId);
+    if(!b) return;
+    const current = visitMaster(b);
+    const active = state.masters.filter(m => m.active !== false);
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-overlay';
+    overlay.innerHTML = '<div class="confirm-modal"><p><b>Сменить мастера</b><br>'+esc(timeStr(b.start)+' · '+(b.client_name || 'Без имени'))+'<br><span class="cd-status-note">Сейчас: '+esc(current)+(dayClose.masterOverride[bookingId] ? ' (в записи: '+esc(b.master)+')' : '')+'</span></p>' +
+      '<input type="text" class="master-dialog-input" list="masterDialogOptions" placeholder="Выберите мастера из списка" autocomplete="off">' +
+      '<datalist id="masterDialogOptions">'+active.filter(m => m.name !== current).map(m => '<option value="'+esc(m.name)+'">').join('')+'</datalist>' +
+      '<p class="master-dialog-err" hidden></p>' +
+      '<div class="confirm-actions">' +
+        (dayClose.masterOverride[bookingId] ? '<button type="button" class="am-cancel" data-act="reset">Как в записи</button>' : '') +
+        '<button type="button" class="am-cancel" data-act="cancel">Отмена</button>' +
+        '<button type="button" class="cd-save-btn" data-act="ok">Сменить</button></div></div>';
+    document.body.appendChild(overlay);
+    const input = overlay.querySelector('input'), err = overlay.querySelector('.master-dialog-err');
+    function close(){ overlay.remove(); document.removeEventListener('keydown', onKey); }
+    function fail(msg){ err.textContent = msg; err.hidden = false; input.focus(); }
+    function save(){
+      const val = input.value.trim();
+      if(!val){ fail('Выберите мастера из списка.'); return; }
+      const m = state.masters.find(x => x.name.trim().toLowerCase() === val.toLowerCase());
+      if(!m){ fail('Мастер «'+val+'» не добавлен. Сначала добавьте его во вкладке «Мастера», затем вернитесь сюда.'); return; }
+      if(m.active === false){ fail('Мастер «'+m.name+'» отмечен как «Не обслуживает». Активируйте его во вкладке «Мастера».'); return; }
+      close(); applyMasterChange(bookingId, m.name);
+    }
+    function onKey(e){ if(e.key === 'Escape') close(); else if(e.key === 'Enter') save(); }
+    document.addEventListener('keydown', onKey);
+    overlay.addEventListener('click', e => {
+      if(e.target === overlay){ close(); return; }
+      const btn = e.target.closest('[data-act]');
+      if(!btn) return;
+      if(btn.dataset.act === 'ok') save();
+      else if(btn.dataset.act === 'reset'){ close(); applyMasterChange(bookingId, b.master); }
+      else close();
+    });
+    input.addEventListener('input', () => { err.hidden = true; });
+    input.focus();
+  }
   document.getElementById('closeDayGroups').addEventListener('click', e => {
     const btn = e.target.closest('.cd-set-service-btn');
-    if(btn) showServiceDialog(btn.dataset.booking);
+    if(btn){ showServiceDialog(btn.dataset.booking); return; }
+    const cm = e.target.closest('.cd-change-master');
+    if(cm && !dayClose.closed[document.getElementById('closeDayDate').value]) showMasterDialog(cm.dataset.booking);
   });
   // Unlocking a closed day is deliberately a couple of clicks away — this
   // reopens editing for a historical, already-closed day (useful for fixing
