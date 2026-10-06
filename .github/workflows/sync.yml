@@ -2,10 +2,11 @@ name: Sync zapis.kz bookings into Supabase
 
 on:
   schedule:
-    # Every hour, on the hour (UTC). GitHub may delay this slightly during
-    # busy periods, especially on the free plan — that's normal.
-    - cron: '0 * * * *'
-  workflow_dispatch: {} # lets you trigger a sync manually from the Actions tab
+    # Два запуска в час в нечётные минуты — GitHub реже пропускает их,
+    # чем запуск ровно в начале часа.
+    - cron: '7 * * * *'
+    - cron: '37 * * * *'
+  workflow_dispatch: {} # ручной запуск из вкладки Actions
 
 jobs:
   sync:
