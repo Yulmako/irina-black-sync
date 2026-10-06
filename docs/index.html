@@ -166,6 +166,16 @@
   .stack-bar{display:flex; height:26px; gap:2px; margin-bottom:16px; border-radius:6px; overflow:hidden;}
   .stack-seg{position:relative; display:flex; align-items:center; justify-content:center; min-width:2px; cursor:default;}
   .stack-seg-label{font-size:11px; font-weight:700; color:#0b0b0b;}
+  .pie-row{display:flex; gap:12px 28px; flex-wrap:wrap; justify-content:space-around; margin-bottom:14px;}
+  .pie-cell{flex:1 1 150px; max-width:210px; min-width:140px;}
+  .pie-cell .stack-chart-label{text-align:center;}
+  .donut{display:block; width:100%; height:auto; overflow:visible;}
+  .donut circle.seg{fill:none; cursor:default; transition:opacity .12s;}
+  .donut:hover circle.seg{opacity:.55;}
+  .donut circle.seg:hover{opacity:1;}
+  .donut .donut-pct{font-size:7px; font-weight:700; fill:#0b0b0b; text-anchor:middle; dominant-baseline:central; pointer-events:none;}
+  .donut .donut-total{font-size:11px; font-weight:700; fill:var(--ink); text-anchor:middle; font-variant-numeric:tabular-nums;}
+  .donut .donut-sub{font-size:6.5px; fill:var(--muted); text-anchor:middle;}
   .chart-legend{display:flex; flex-wrap:wrap; gap:8px 16px; font-size:12px; color:var(--muted); margin-bottom:8px;}
   .chart-legend .swatch{display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:5px; vertical-align:middle;}
   .chart-tooltip{
@@ -652,10 +662,10 @@
       <div class="panel">
         <div class="panel-heading">По залам</div>
         <div class="chart-box">
-          <div class="stack-chart-label">Услуги по залам</div>
-          <div class="stack-bar" id="chartZoneServices"></div>
-          <div class="stack-chart-label">ЧП салона по залам</div>
-          <div class="stack-bar" id="chartZoneProfit"></div>
+          <div class="pie-row">
+            <div class="pie-cell"><div class="stack-chart-label">Услуги по залам</div><div id="chartZoneServices"></div></div>
+            <div class="pie-cell"><div class="stack-chart-label">ЧП салона по залам</div><div id="chartZoneProfit"></div></div>
+          </div>
           <div class="chart-legend" id="zoneLegend"></div>
         </div>
         <div class="table-scroll">
@@ -1452,23 +1462,40 @@
   // Single-row 100%-stacked bar — part-to-whole across the 4 zones. Two of
   // these (services, ЧП салона) share one legend below, since the zone ->
   // color mapping is identical for both.
-  function renderZoneStack(elId, zoneTotals, key, fmt){
+  // Кольцевая диаграмма по залам: цвет зала фиксирован (как в легенде),
+  // между секторами зазор, в центре — итог за период.
+  function compactNum(n){
+    const a = Math.abs(n);
+    if(a >= 1e6) return (n/1e6).toLocaleString('ru-RU', {maximumFractionDigits:1})+' млн';
+    if(a >= 1e3) return Math.round(n/1e3).toLocaleString('ru-RU')+' тыс.';
+    return Math.round(n).toLocaleString('ru-RU');
+  }
+  function renderZoneDonut(elId, zoneTotals, key, fmt, centerFmt, subText){
     const el = document.getElementById(elId);
-    const parts = ZONE_ORDER.map(zone => [zone, (zoneTotals.get(zone) || {})[key] || 0]);
+    const parts = ZONE_ORDER.map(zone => [zone, (zoneTotals.get(zone) || {})[key] || 0]).filter(([,v]) => v > 0);
     const total = parts.reduce((s,[,v]) => s+v, 0);
     if(total <= 0){
-      el.style.height = 'auto';
-      el.innerHTML = '<div class="chart-empty-note" style="padding:0 0 4px;">Нет данных за этот период</div>';
+      el.innerHTML = '<div class="chart-empty-note" style="text-align:center;">Нет данных за этот период</div>';
       return;
     }
-    el.style.height = '';
-    el.innerHTML = parts.filter(([,v]) => v > 0).map(([zone, v]) => {
-      const pct = v/total*100;
-      const showLabel = pct >= 10;
-      return '<span class="stack-seg" style="flex:'+pct.toFixed(2)+' 0 0; background:'+zoneColorVar(zone)+';" data-tip="'+esc(zone)+': '+fmt(v)+' ('+Math.round(pct)+'%)">' +
-        (showLabel ? '<span class="stack-seg-label">'+Math.round(pct)+'%</span>' : '') +
-        '</span>';
-    }).join('');
+    const R = 45, W = 22, C = 2*Math.PI*R, gap = parts.length > 1 ? 1.6 : 0;
+    let acc = 0, segs = '', labels = '';
+    for(const [zone, v] of parts){
+      const frac = v/total, len = frac*C;
+      const tip = esc(zone)+': '+fmt(v)+' ('+Math.round(frac*100)+'%)';
+      segs += '<circle class="seg" cx="60" cy="60" r="'+R+'" stroke="'+zoneColorVar(zone)+'" stroke-width="'+W+'"' +
+        ' stroke-dasharray="'+Math.max(len-gap,0.5).toFixed(2)+' '+(C-Math.max(len-gap,0.5)).toFixed(2)+'"' +
+        ' stroke-dashoffset="'+(-(acc+gap/2)).toFixed(2)+'" transform="rotate(-90 60 60)" data-tip="'+tip+'"></circle>';
+      if(frac >= 0.1){
+        const ang = (acc + len/2)/C*2*Math.PI - Math.PI/2;
+        labels += '<text class="donut-pct" x="'+(60+R*Math.cos(ang)).toFixed(1)+'" y="'+(60+R*Math.sin(ang)).toFixed(1)+'">'+Math.round(frac*100)+'%</text>';
+      }
+      acc += len;
+    }
+    const aria = parts.map(([z,v]) => z+': '+fmt(v)).join('; ');
+    el.innerHTML = '<svg class="donut" viewBox="0 0 120 120" role="img" aria-label="'+esc(aria)+'">' + segs + labels +
+      '<text class="donut-total" x="60" y="59">'+esc(centerFmt(total))+'</text>' +
+      '<text class="donut-sub" x="60" y="70">'+esc(subText)+'</text></svg>';
   }
   function renderZoneLegend(){
     const el = document.getElementById('zoneLegend');
@@ -1673,8 +1700,8 @@
         '<tr><td>'+esc(zone)+'</td><td class="num">'+z.services+'</td><td class="num">'+fmt(z.net)+'</td></tr>'
       ).join('');
     }
-    renderZoneStack('chartZoneServices', zoneTotals, 'services', v => v+' услуг');
-    renderZoneStack('chartZoneProfit', zoneTotals, 'net', fmt);
+    renderZoneDonut('chartZoneServices', zoneTotals, 'services', v => v+' услуг', v => String(v), 'услуг');
+    renderZoneDonut('chartZoneProfit', zoneTotals, 'net', fmt, v => compactNum(v), '₸');
     renderZoneLegend();
 
     const body = document.getElementById('analyticsBody');
