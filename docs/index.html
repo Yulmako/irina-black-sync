@@ -56,6 +56,9 @@
   .sync-note{text-align:right; font-size:12.5px; color:var(--muted); display:flex; flex-direction:column; gap:6px; align-items:flex-end;}
   .sync-note b{color:var(--ink); font-weight:600;}
   #saveNote{font-size:11.5px; min-height:14px;}
+  .sync-actions{display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end;}
+  a.refresh-btn{text-decoration:none;}
+  .sync-warn{color:var(--warn); background:var(--warn-soft); padding:4px 10px; border-radius:8px; font-weight:600; max-width:340px;}
   .refresh-btn{
     padding:7px 13px; border-radius:8px; border:1px solid var(--border);
     background:var(--surface); color:var(--ink); font:inherit; font-size:12.5px;
@@ -87,6 +90,10 @@
   .filters{display:flex; align-items:center; gap:10px; padding:14px 16px; border-bottom:1px solid var(--border); flex-wrap:wrap;}
   .filters input[type="search"]{flex:1 1 220px; min-width:180px; padding:9px 12px; border-radius:9px; border:1px solid var(--border); background:var(--bg); color:var(--ink); font:inherit; font-size:14px;}
   .filters select{padding:9px 10px; border-radius:9px; border:1px solid var(--border); background:var(--bg); color:var(--ink); font:inherit; font-size:13.5px;}
+  th.sortable{cursor:pointer; user-select:none;}
+  th.sortable:hover{color:var(--ink);}
+  th.sortable.sorted{color:var(--accent);}
+  .sort-arrow{display:inline-block; width:1em; margin-left:4px;}
   .chip-row{display:flex; gap:6px; flex-wrap:wrap;}
   .chip{padding:6px 12px; border-radius:999px; border:1px solid var(--border); background:var(--bg); color:var(--muted); font-size:13px; font-weight:600; cursor:pointer; user-select:none;}
   .chip.on{background:var(--accent-soft); color:var(--accent); border-color:transparent;}
@@ -314,7 +321,8 @@
     padding:0 16px 10px 72px; border-bottom:1px solid var(--border);
   }
   .cd-visit-extra-top{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;}
-  .cd-status-row{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
+  .cd-status-row{display:flex; align-items:center; justify-content:flex-end; gap:8px; flex-wrap:wrap;}
+  .cd-dot{color:var(--muted);}
   .cd-status-note{font-size:12px; color:var(--muted); font-style:italic;}
   .cd-status-complete{background:var(--good-soft); color:var(--good); border-color:transparent;}
   .cd-status-complete:hover{background:var(--good-soft); filter:brightness(0.95);}
@@ -443,8 +451,13 @@
     </div>
     <div class="sync-note">
       <span id="syncNote">Загрузка…</span>
+      <span id="syncWarn" class="sync-warn" hidden></span>
       <span id="saveNote"></span>
-      <button class="refresh-btn" id="refreshBtn">↻ Обновить</button>
+      <div class="sync-actions">
+        <button class="refresh-btn" id="refreshBtn" title="Перечитать данные из базы. Новые записи из zapis.kz попадают в базу раз в час">↻ Обновить</button>
+        <a class="refresh-btn" id="syncNowLink" href="https://github.com/yulmako/irina-black-sync/actions/workflows/sync.yml" target="_blank" rel="noopener" title="Откроется GitHub: нажмите Run workflow, и записи из zapis.kz загрузятся в базу за минуту">⚡ Синхронизировать с zapis.kz</a>
+        <button class="refresh-btn" id="logoutBtn">Выйти</button>
+      </div>
     </div>
   </header>
 
@@ -471,12 +484,12 @@
       <div class="filters">
         <input type="search" id="searchBookings" placeholder="Поиск: клиент, телефон, услуга, мастер…">
         <select id="masterFilter"><option value="">Все мастера</option></select>
-        <div class="chip-row" id="statusChips">
-          <span class="chip on" data-status="">Все</span>
-          <span class="chip" data-status="SERVED">Обслужены</span>
-          <span class="chip" data-status="AWAITING">Ожидают</span>
-          <span class="chip" data-status="NOT_SERVED">Не пришли</span>
-        </div>
+        <select id="statusFilter" aria-label="Статус записи">
+          <option value="">Все статусы</option>
+          <option value="SERVED">Обслужены</option>
+          <option value="AWAITING">Ожидают</option>
+          <option value="NOT_SERVED">Не пришли</option>
+        </select>
         <div class="date-range">
           <input type="date" id="dateFrom" aria-label="Период от">
           <span class="date-sep">—</span>
@@ -488,7 +501,7 @@
       </div>
       <div class="table-scroll">
         <table>
-          <thead><tr><th>Дата и время</th><th>Клиент</th><th>Мастер</th><th>Услуги</th><th>Канал</th><th>Статус</th></tr></thead>
+          <thead id="bookingsHead"><tr><th class="sortable" data-sort="date">Дата и время<span class="sort-arrow"></span></th><th class="sortable" data-sort="client">Клиент<span class="sort-arrow"></span></th><th class="sortable" data-sort="master">Мастер<span class="sort-arrow"></span></th><th>Услуги</th><th>Канал</th><th>Статус</th></tr></thead>
           <tbody id="bookingsBody"></tbody>
         </table>
       </div>
@@ -849,7 +862,7 @@
         <div class="pnl-lock-title">Доступ ограничен</div>
         <p class="pnl-lock-note">P&amp;L виден только владельцу салона. Введите пароль, чтобы продолжить.</p>
         <div class="pnl-lock-form">
-          <input type="password" id="pnlPasswordInput" placeholder="Пароль" autocomplete="off">
+          <input type="password" id="pnlPasswordInput" placeholder="Пароль P&amp;L" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false">
           <button type="button" class="cd-save-btn" id="pnlUnlockBtn">Войти</button>
         </div>
         <div class="pnl-lock-error" id="pnlLockError" hidden>Неверный пароль</div>
@@ -878,10 +891,6 @@
     </div>
   </div>
 
-  <footer class="note">
-    Это демо-превью с примерными записями — для быстрой доводки дизайна. Настоящая панель подтягивает
-    записи из zapis.kz автоматически, раз в час, и живёт отдельно, на GitHub Pages.
-  </footer>
 </div>
 
 <script>
@@ -904,7 +913,7 @@
   const SUPABASE_URL = 'https://qomglkqqiuwygkrjlxeq.supabase.co';
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFvbWdsa3FxaXV3eWdrcmpseGVxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg4ODY1OTMsImV4cCI6MjEwNDQ2MjU5M30.PJ5Z_c0dHRfWek6ErHlZsm9BQl6hpx_PfUWzBMwFmBI';
 
-  const state = { bookings: [], tab: 'bookings',
+  const state = { bookings: [], tab: 'bookings', bookingSortKey: 'date', bookingSortDir: 'asc',
     search: '', status: '', master: '', dateFrom: '', dateTo: '',
     clientSearch: '', clientSort: 'visits', masterSearch: '', consSearch: '', invSearch: '',
     invHistorySearch: '', invHistoryType: '', invHistoryFrom: '', invHistoryTo: '',
@@ -1065,7 +1074,19 @@
   }
 
   function renderBookings(){
-    const rows = filteredBookings().slice().sort((a,b) => new Date(b.start) - new Date(a.start));
+    const dir = state.bookingSortDir === 'desc' ? -1 : 1;
+    const byDate = (a,b) => new Date(a.start) - new Date(b.start);
+    const cmp = {
+      date: byDate,
+      client: (a,b) => (a.client_name||'').localeCompare(b.client_name||'','ru') || byDate(a,b),
+      master: (a,b) => (a.master||'').localeCompare(b.master||'','ru') || byDate(a,b),
+    }[state.bookingSortKey] || byDate;
+    const rows = filteredBookings().slice().sort((a,b) => dir * cmp(a,b));
+    document.querySelectorAll('#bookingsHead th.sortable').forEach(th => {
+      const on = th.dataset.sort === state.bookingSortKey;
+      th.classList.toggle('sorted', on);
+      th.querySelector('.sort-arrow').textContent = on ? (dir === 1 ? '↑' : '↓') : '';
+    });
     const body = document.getElementById('bookingsBody');
     const empty = document.getElementById('bookingsEmpty');
     document.getElementById('bookingsCount').textContent = rows.length + ' из ' + state.bookings.length;
@@ -1946,8 +1967,8 @@
         html += '<div class="cd-visit'+(notServed?' not-served':'')+'" data-booking="'+v.id+'">' +
           '<span class="cd-time">'+timeStr(v.start)+'</span>' +
           '<span class="cd-client">' +
-            '<span class="cd-client-name-row"><b>'+esc(v.client_name||'Без имени')+'</b>'+statusPillHtml+'</span>' +
-            '<span class="cd-client-services">'+esc((v.services||[]).join(', '))+' · '+zoneSelectHtml+'</span>' +
+            '<span class="cd-client-name-row"><b>'+esc(v.client_name||'Без имени')+'</b><span class="cd-dot">·</span>'+zoneSelectHtml+statusPillHtml+'</span>' +
+            '<span class="cd-client-services">'+esc((v.services||[]).join(', '))+'</span>' +
           '</span>' +
           '<span class="cd-price-wrap"><input type="number" min="0" step="500" value="'+price+'" '+(locked?'disabled':'')+'><span class="cd-currency">₸</span></span>' +
           '</div>';
@@ -3219,7 +3240,7 @@
   function pnlTryUnlock(){
     const input = document.getElementById('pnlPasswordInput');
     const err = document.getElementById('pnlLockError');
-    if(input.value === PNL_PASSWORD){
+    if(input.value.trim().toLowerCase() === PNL_PASSWORD.toLowerCase()){
       state.pnlUnlocked = true;
       err.hidden = true;
       input.value = '';
@@ -3268,14 +3289,14 @@
   });
   document.getElementById('searchBookings').addEventListener('input', e => { state.search = e.target.value; renderBookings(); });
   document.getElementById('masterFilter').addEventListener('change', e => { state.master = e.target.value; renderBookings(); });
-  document.getElementById('statusChips').addEventListener('click', e => {
-    const chip = e.target.closest('.chip');
-    if(!chip) return;
-    document.querySelectorAll('#statusChips .chip').forEach(c => c.classList.remove('on'));
-    chip.classList.add('on');
-    state.status = chip.dataset.status;
+  document.getElementById('bookingsHead').addEventListener('click', e => {
+    const th = e.target.closest('th.sortable');
+    if(!th) return;
+    if(state.bookingSortKey === th.dataset.sort) state.bookingSortDir = state.bookingSortDir === 'asc' ? 'desc' : 'asc';
+    else { state.bookingSortKey = th.dataset.sort; state.bookingSortDir = 'asc'; }
     renderBookings();
   });
+  document.getElementById('statusFilter').addEventListener('change', e => { state.status = e.target.value; renderBookings(); });
   document.getElementById('dateFrom').addEventListener('change', e => { state.dateFrom = e.target.value; renderBookings(); });
   document.getElementById('dateTo').addEventListener('change', e => { state.dateTo = e.target.value; renderBookings(); });
   document.getElementById('dateReset').addEventListener('click', () => {
@@ -3342,10 +3363,16 @@
     inventory_edits: () => state.inventoryEdits,
     pnl_fixed: () => state.pnlFixed,
   };
+  let suppressSave = false;
   function scheduleSave(key){
-    if(!currentPassword) return; // nothing to save to before login
+    if(!currentPassword || suppressSave) return; // nothing to save to before login
     clearTimeout(saveTimers[key]);
-    saveTimers[key] = setTimeout(() => saveKV(key), 800);
+    saveTimers[key] = setTimeout(() => { saveTimers[key] = null; saveKV(key); }, 800);
+  }
+  async function flushSaves(){
+    const pending = Object.keys(saveTimers).filter(k => saveTimers[k]);
+    for(const k of pending){ clearTimeout(saveTimers[k]); saveTimers[k] = null; }
+    await Promise.all(pending.map(k => saveKV(k)));
   }
   async function saveKV(key){
     if(!currentPassword) return;
@@ -3415,6 +3442,10 @@
   }
 
   function renderEverything(){
+    suppressSave = true;
+    try{ renderEverythingInner(); } finally { suppressSave = false; }
+  }
+  function renderEverythingInner(){
     populateMasters();
     renderAll();
     renderMasters();
@@ -3431,28 +3462,39 @@
   function renderSyncNote(){
     const el = document.getElementById('syncNote');
     const m = state.syncStatus;
-    if(!m || !m.last_synced_at){ el.textContent = 'Данные ещё не синхронизированы'; return; }
-    el.innerHTML = 'Синхронизировано: <b>'+esc(fmtDateTime(m.last_synced_at))+'</b>';
+    const warn = document.getElementById('syncWarn');
+    if(!m || !m.last_synced_at){ el.textContent = 'Данные ещё не синхронизированы'; warn.hidden = true; return; }
+    el.innerHTML = 'Записи из zapis.kz обновлены: <b>'+esc(fmtDateTime(m.last_synced_at))+'</b>'+(lastRefreshedAt ? ' · страница обновлена в <b>'+lastRefreshedAt+'</b>' : '');
+    const hours = (Date.now() - new Date(m.last_synced_at).getTime()) / 3600000;
+    if(hours > 3){
+      warn.hidden = false;
+      warn.textContent = 'Записи из zapis.kz не обновлялись '+Math.floor(hours)+' ч. Нажмите «Синхронизировать с zapis.kz»; если не помогает, возможно истёк cookie (см. README, шаг 7).';
+    } else warn.hidden = true;
   }
+  let lastRefreshedAt = '';
+  function nowHM(){ const d = new Date(); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
 
-  async function refresh(){
+  async function refresh(manual){
     if(!currentPassword) return;
     const btn = document.getElementById('refreshBtn');
     btn.disabled = true; btn.textContent = '↻ Обновляю…';
     try{
+      await flushSaves(); // never overwrite edits that haven't reached the database yet
       const data = await loadData(currentPassword);
       state.bookings = data.bookings;
       state.syncStatus = data.syncStatus;
       applyKv(data.kv);
+      lastRefreshedAt = nowHM();
       renderEverything();
       renderSyncNote();
+      if(manual === true) setSaveNote('Данные обновлены в ' + lastRefreshedAt);
     }catch(e){
-      // silent — keep showing last-known data rather than a scary error on refresh
+      if(manual === true) setSaveNote('Не удалось обновить — проверьте связь', true);
     }finally{
       btn.disabled = false; btn.textContent = '↻ Обновить';
     }
   }
-  document.getElementById('refreshBtn').addEventListener('click', refresh);
+  document.getElementById('refreshBtn').addEventListener('click', () => refresh(true));
   setInterval(refresh, 5 * 60 * 1000); // keep the page fresh while it stays open
 
   // ---------------- password gate ----------------
@@ -3468,6 +3510,7 @@
       state.bookings = data.bookings;
       state.syncStatus = data.syncStatus;
       applyKv(data.kv);
+      lastRefreshedAt = nowHM();
       document.getElementById('gate').hidden = true;
       document.getElementById('app').hidden = false;
       renderEverything();
@@ -3478,6 +3521,19 @@
       btn.disabled = false; btn.textContent = 'Войти';
     }
   }
+  async function logout(){
+    try{ await flushSaves(); }catch(e){}
+    currentPassword = null;
+    try{ localStorage.removeItem('ibcrm_pw'); }catch(e){}
+    state.pnlUnlocked = false;
+    state.bookings = [];
+    document.getElementById('app').hidden = true;
+    document.getElementById('gate').hidden = false;
+    document.getElementById('gatePassword').value = '';
+    document.getElementById('gateErr').textContent = '';
+    document.getElementById('gatePassword').focus();
+  }
+  document.getElementById('logoutBtn').addEventListener('click', logout);
   document.getElementById('gateSubmit').addEventListener('click', () => {
     tryEnter(document.getElementById('gatePassword').value);
   });
