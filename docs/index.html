@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root{
     --bg:#faf6f4; --surface:#ffffff; --surface-2:#f4ece9; --ink:#251920;
@@ -45,29 +46,6 @@
   img{max-width:100%;}
   [hidden]{display:none!important;}
 
-  /* ---------- password gate ---------- */
-  #gate{
-    position:fixed; inset:0; background:var(--bg); display:flex;
-    align-items:center; justify-content:center; padding:20px; z-index:50;
-  }
-  #gate .card{
-    background:var(--surface); border:1px solid var(--border); border-radius:16px;
-    box-shadow:var(--shadow); padding:32px 28px; width:100%; max-width:340px;
-    display:flex; flex-direction:column; gap:14px;
-  }
-  #gate .eyebrow{font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--accent); font-weight:600;}
-  #gate h1{font-size:22px;}
-  #gate input{
-    padding:11px 13px; border-radius:9px; border:1px solid var(--border);
-    background:var(--bg); color:var(--ink); font:inherit; font-size:15px;
-  }
-  #gate button{
-    padding:11px 13px; border-radius:9px; border:none; background:var(--accent);
-    color:var(--accent-ink); font:inherit; font-size:14.5px; font-weight:600; cursor:pointer;
-  }
-  #gate button:disabled{opacity:.6; cursor:default;}
-  #gate .err{font-size:13px; color:var(--bad); min-height:16px;}
-
   /* ---------- app shell ---------- */
   .wrap{max-width:1180px; margin:0 auto; padding:28px 24px 64px;}
   header.top{display:flex; align-items:flex-end; justify-content:space-between; gap:20px; flex-wrap:wrap; margin-bottom:24px;}
@@ -77,6 +55,7 @@
   header.top .sub{color:var(--muted); font-size:14px;}
   .sync-note{text-align:right; font-size:12.5px; color:var(--muted); display:flex; flex-direction:column; gap:6px; align-items:flex-end;}
   .sync-note b{color:var(--ink); font-weight:600;}
+  #saveNote{font-size:11.5px; min-height:14px;}
   .refresh-btn{
     padding:7px 13px; border-radius:8px; border:1px solid var(--border);
     background:var(--surface); color:var(--ink); font:inherit; font-size:12.5px;
@@ -85,15 +64,24 @@
   .refresh-btn:hover{background:var(--surface-2);}
 
   .stats{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:28px;}
-  .stat{background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:16px 18px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:6px;}
-  .stat .label{font-size:12.5px; color:var(--muted); font-weight:500;}
-  .stat .value{font-family:'Fraunces',serif; font-size:28px; font-weight:600;}
+  #analyticsStats{grid-template-columns:repeat(6,1fr);}
+  .stat{background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:16px 18px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:6px; min-width:0;}
+  .stat .label{font-size:12.5px; color:var(--muted); font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .stat .value{font-family:'Fraunces',serif; font-size:28px; font-weight:600; white-space:nowrap; font-variant-numeric:tabular-nums;}
   .stat.accent .value{color:var(--accent);}
+  #analyticsStats .stat{padding:14px 14px;}
+  #analyticsStats .value{font-size:18px;}
 
   .tabs{display:flex; gap:6px; border-bottom:1px solid var(--border); margin-bottom:18px;}
   .tab{padding:10px 4px; margin-right:18px; font-size:14.5px; font-weight:600; color:var(--muted); background:none; border:none; cursor:pointer; border-bottom:2px solid transparent; font-family:inherit;}
   .tab.active{color:var(--ink); border-bottom-color:var(--accent);}
   .tab .count{color:var(--muted); font-weight:500;}
+  .cd-subtabs{display:flex; gap:4px; border-bottom:1px solid var(--border); margin-bottom:18px;}
+  .cd-subtab-btn{
+    padding:9px 4px; margin-right:22px; font-size:13.5px; font-weight:600; color:var(--muted);
+    background:none; border:none; cursor:pointer; border-bottom:2px solid transparent; font-family:inherit;
+  }
+  .cd-subtab-btn.active{color:var(--ink); border-bottom-color:var(--accent);}
 
   .panel{background:var(--surface); border:1px solid var(--border); border-radius:16px; box-shadow:var(--shadow); overflow:hidden;}
   .filters{display:flex; align-items:center; gap:10px; padding:14px 16px; border-bottom:1px solid var(--border); flex-wrap:wrap;}
@@ -102,6 +90,13 @@
   .chip-row{display:flex; gap:6px; flex-wrap:wrap;}
   .chip{padding:6px 12px; border-radius:999px; border:1px solid var(--border); background:var(--bg); color:var(--muted); font-size:13px; font-weight:600; cursor:pointer; user-select:none;}
   .chip.on{background:var(--accent-soft); color:var(--accent); border-color:transparent;}
+  .date-range{display:flex; align-items:center; gap:6px;}
+  .date-range input[type="date"]{
+    padding:8px 10px; border-radius:9px; border:1px solid var(--border);
+    background:var(--bg); color:var(--ink); font:inherit; font-size:13px;
+  }
+  .date-range .date-sep{color:var(--muted); font-size:13px;}
+  .date-range #dateReset{padding:6px 9px; line-height:1;}
   .filters .spacer{flex:1 1 auto;}
   .filters .result-count{font-size:12.5px; color:var(--muted); white-space:nowrap;}
 
@@ -130,12 +125,302 @@
 
   footer.note{margin-top:22px; font-size:12px; color:var(--muted); line-height:1.6; border-top:1px solid var(--border); padding-top:14px;}
 
+  /* ---------- analytics ---------- */
+  .panel-heading{font-family:'Fraunces',serif; font-size:16px; font-weight:600; color:var(--ink); padding:16px 18px 4px;}
+  .analytics-split{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:22px;}
+  .analytics-split table{min-width:0;}
+  @media (max-width:760px){ .analytics-split{grid-template-columns:1fr;} }
+
+  /* ---- analytics charts: local categorical tokens (dataviz skill default
+     palette, slots 1-4), scoped to .viz-root so they never leak into the
+     app's own semantic --good/--warn/--bad/--info roles ---- */
+  .viz-root{ --series-1:#2a78d6; --series-2:#eb6834; --series-3:#1baf7a; --series-4:#eda100; }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]) .viz-root{ --series-1:#3987e5; --series-2:#d95926; --series-3:#199e70; --series-4:#c98500; }
+  }
+  :root[data-theme="dark"] .viz-root{ --series-1:#3987e5; --series-2:#d95926; --series-3:#199e70; --series-4:#c98500; }
+
+  .chart-box{padding:14px 18px 4px;}
+  .chart-empty-note{font-size:12.5px; color:var(--muted); padding:2px 0 12px;}
+  .hbar-row{display:flex; align-items:center; gap:10px; margin-bottom:9px;}
+  .hbar-label{flex:0 0 116px; font-size:12px; color:var(--muted); text-align:right; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .hbar-track{flex:1 1 auto; height:14px; position:relative;}
+  .hbar-fill{position:absolute; left:0; top:0; height:14px; min-width:3px; border-radius:0 4px 4px 0; background:var(--accent); cursor:default;}
+  .hbar-value{flex:0 0 auto; min-width:26px; font-size:12px; font-weight:600; color:var(--ink); font-variant-numeric:tabular-nums;}
+  .stack-chart-label{font-size:11.5px; color:var(--muted); margin:0 0 6px; text-transform:uppercase; letter-spacing:.03em;}
+  .stack-bar{display:flex; height:26px; gap:2px; margin-bottom:16px; border-radius:6px; overflow:hidden;}
+  .stack-seg{position:relative; display:flex; align-items:center; justify-content:center; min-width:2px; cursor:default;}
+  .stack-seg-label{font-size:11px; font-weight:700; color:#0b0b0b;}
+  .chart-legend{display:flex; flex-wrap:wrap; gap:8px 16px; font-size:12px; color:var(--muted); margin-bottom:8px;}
+  .chart-legend .swatch{display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:5px; vertical-align:middle;}
+  .chart-tooltip{
+    position:fixed; z-index:80; pointer-events:none; background:var(--ink); color:var(--bg);
+    font-size:12px; font-weight:600; padding:5px 9px; border-radius:7px; box-shadow:var(--shadow); white-space:nowrap;
+  }
+  .report-toast{
+    position:fixed; left:50%; bottom:26px; transform:translateX(-50%) translateY(8px);
+    background:var(--ink); color:var(--bg); font-size:13px; font-weight:600;
+    padding:11px 18px; border-radius:11px; box-shadow:var(--shadow); z-index:100; max-width:min(420px, 86vw);
+    text-align:center; opacity:0; pointer-events:none; transition:opacity .18s ease, transform .18s ease;
+  }
+  .report-toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+  .confirm-overlay{
+    position:fixed; inset:0; background:rgba(20,10,14,.45); z-index:200;
+    display:flex; align-items:center; justify-content:center; padding:20px;
+  }
+  .confirm-modal{
+    background:var(--surface); color:var(--ink); border-radius:14px; padding:22px 24px;
+    max-width:360px; width:100%; box-shadow:var(--shadow); border:1px solid var(--border);
+  }
+  .confirm-modal p{margin:0; font-size:14.5px; line-height:1.5;}
+  .confirm-actions{display:flex; justify-content:flex-end; gap:10px; margin-top:18px;}
+  .modal-form-row{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;}
+  .modal-form-row input[type="text"], .modal-form-row input[type="number"], .modal-form-row input[type="date"], .modal-form-row select{
+    padding:9px 12px; border-radius:9px; border:1px solid var(--border);
+    background:var(--surface); color:var(--ink); font:inherit; font-size:14px;
+  }
+  .modal-form-row input[type="text"]{flex:1 1 160px; min-width:140px;}
+  .analytics-controls{display:flex; align-items:center; gap:12px; margin-bottom:18px; flex-wrap:wrap;}
+  .analytics-controls input[type="month"]{
+    padding:9px 12px; border-radius:9px; border:1px solid var(--border);
+    background:var(--surface); color:var(--ink); font:inherit; font-size:14px;
+  }
+  .analytics-controls .month-label{font-family:'Fraunces',serif; font-size:19px; font-weight:600;}
+  .zone-row td, .cat-row td{
+    background:var(--surface-2); font-weight:600; font-size:12px; text-transform:uppercase;
+    letter-spacing:.05em; color:var(--muted); padding:8px 14px;
+  }
+  tbody tr.cat-subtotal td{font-weight:600; color:var(--muted); border-top:1px solid var(--border);}
+  td.num, th.num{text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap;}
+  tbody tr.total-row td{font-weight:700; border-top:2px solid var(--border); background:var(--surface-2);}
+  .rate-pill{font-size:11.5px; color:var(--muted); background:var(--surface-2); padding:2px 7px; border-radius:999px;}
+  #analyticsGridHead th:first-child, #analyticsGridBody td:first-child{
+    position:sticky; left:0; background:var(--surface); z-index:1; box-shadow:1px 0 0 var(--border);
+    white-space:nowrap; min-width:180px;
+  }
+  #analyticsGridHead th:first-child{background:var(--surface-2); z-index:2;}
+  #analyticsGridBody tr.zone-row td:first-child{background:var(--surface-2);}
+  #analyticsGridBody tr.total-row td:first-child{background:var(--surface-2);}
+  #analyticsGridBody td.zero{color:var(--muted); opacity:.45;}
+  .grid-expand-btn{
+    background:none; border:none; cursor:pointer; color:var(--muted); font-size:11px;
+    width:16px; display:inline-block; text-align:center; vertical-align:middle;
+  }
+  .grid-expand-btn:hover{color:var(--ink);}
+  tr.metric-row td:first-child{padding-left:32px; color:var(--muted); font-size:12.5px;}
+  tr.metric-row td{font-size:12.5px;}
+  tr.category-row td:first-child{padding-left:48px; color:var(--muted); font-size:12px; font-style:italic;}
+  tr.category-row td{font-size:12px; color:var(--muted);}
+  tr.metric-row, tr.category-row{background:var(--surface-2);}
+
+  /* ---------- masters ---------- */
+  .add-master-row{
+    display:flex; align-items:center; gap:8px; padding:12px 16px; flex-wrap:wrap;
+    background:var(--surface-2); border-bottom:1px solid var(--border);
+  }
+  .add-master-row input[type="text"]{
+    padding:9px 12px; border-radius:9px; border:1px solid var(--border);
+    background:var(--surface); color:var(--ink); font:inherit; font-size:14px;
+  }
+  #newMasterName{flex:1 1 180px; min-width:140px;}
+  #newMasterZone{flex:1 1 160px; min-width:130px;}
+  .am-rate-wrap{display:flex; align-items:center; gap:6px; color:var(--muted); font-size:13.5px;}
+  .am-rate-wrap input{
+    width:64px; padding:9px 10px; border-radius:9px; border:1px solid var(--border);
+    background:var(--surface); color:var(--ink); font:inherit; font-size:14px;
+    font-variant-numeric:tabular-nums; text-align:right;
+  }
+  #addProductSaleRow .am-rate-wrap input, #addProcurementRow .am-rate-wrap input{width:104px;}
+  .proc-item-wrap{position:relative; flex:1 1 220px; min-width:160px;}
+  .proc-item-wrap input{width:100%;}
+  .proc-item-suggest{
+    position:absolute; top:calc(100% + 4px); left:0; right:0; z-index:50;
+    max-height:240px; overflow-y:auto; background:var(--surface); border:1px solid var(--border);
+    border-radius:9px; box-shadow:0 10px 28px rgba(0,0,0,.16);
+  }
+  .proc-item-suggest div{padding:8px 12px; font-size:13.5px; cursor:pointer; color:var(--ink);}
+  .proc-item-suggest div:hover, .proc-item-suggest div.active{background:var(--surface-2);}
+  .proc-item-suggest .no-match{color:var(--muted); cursor:default;}
+  .am-cancel{
+    padding:9px 14px; border-radius:9px; border:1px solid var(--border); background:none;
+    color:var(--muted); font:inherit; font-size:13.5px; font-weight:600; cursor:pointer;
+  }
+  .am-cancel:hover{background:var(--surface);}
+  .master-status-cell{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
+  .mini-action-btn{
+    padding:4px 10px; border-radius:7px; border:1px solid var(--border); background:none;
+    color:var(--muted); font:inherit; font-size:11.5px; font-weight:600; cursor:pointer; white-space:nowrap;
+  }
+  .mini-action-btn:hover{background:var(--surface-2); color:var(--ink);}
+  tr.master-inactive td{opacity:.55;}
+
+  /* ---------- consumables price list ---------- */
+  .cp-price-input{
+    width:100px; padding:6px 9px; border-radius:8px; border:1px solid var(--border);
+    background:var(--surface); color:var(--ink); font:inherit; font-size:13.5px; text-align:right;
+    font-variant-numeric:tabular-nums;
+  }
+  td.cp-actions{text-align:right;}
+
+  /* ---------- close-day ---------- */
+  .close-day-header{display:flex; align-items:center; gap:14px; margin-bottom:18px; flex-wrap:wrap;}
+  .close-day-header input[type="date"]{
+    padding:9px 12px; border-radius:9px; border:1px solid var(--border);
+    background:var(--surface); color:var(--ink); font:inherit; font-size:14px;
+  }
+  .day-status{font-size:12.5px; font-weight:600; padding:5px 11px; border-radius:999px;}
+  .day-status.open{background:var(--warn-soft); color:var(--warn);}
+  .day-status.closed{background:var(--good-soft); color:var(--good);}
+  .cd-spacer{flex:1 1 auto;}
+  .cd-save-btn{
+    padding:9px 18px; border-radius:9px; border:none; background:var(--accent);
+    color:var(--accent-ink); font:inherit; font-size:14px; font-weight:600; cursor:pointer;
+  }
+  .cd-save-btn:disabled{opacity:.55; cursor:default;}
+  .cd-unlock-btn{
+    padding:9px 18px; border-radius:9px; border:1px solid var(--border); background:var(--surface);
+    color:var(--muted); font:inherit; font-size:14px; font-weight:600; cursor:pointer;
+  }
+  .cd-unlock-btn:hover{color:var(--ink); border-color:var(--muted);}
+  .cd-locked-note{font-size:12.5px; color:var(--muted); font-style:italic;}
+  .cd-master-group{background:var(--surface); border:1px solid var(--border); border-radius:14px; box-shadow:var(--shadow); margin-bottom:14px; overflow:hidden;}
+  .cd-master-head{display:flex; align-items:center; justify-content:space-between; padding:13px 16px; background:var(--surface-2); border-bottom:1px solid var(--border);}
+  .cd-master-name-group{display:flex; align-items:center; gap:8px;}
+  .cd-master-head b{font-family:'Fraunces',serif; font-size:16px; font-weight:600;}
+  .cd-master-head .cd-subtotal{font-size:13.5px; color:var(--muted); font-variant-numeric:tabular-nums;}
+  .cd-visit{display:flex; align-items:center; gap:12px; padding:10px 16px; border-bottom:1px solid var(--border);}
+  .cd-visit:last-child{border-bottom:none;}
+  .cd-visit .cd-time{font-variant-numeric:tabular-nums; color:var(--muted); font-size:13px; width:44px; flex:none;}
+  .cd-visit .cd-client{flex:1 1 auto; min-width:0;}
+  .cd-client-name-row{display:flex; align-items:center; gap:7px; flex-wrap:wrap;}
+  .cd-visit .cd-client b{font-size:13.5px; font-weight:600;}
+  .cd-visit .cd-client-services{display:flex; align-items:center; gap:4px; flex-wrap:wrap; color:var(--muted); font-size:12px;}
+  .cd-zone-select{
+    font:inherit; font-size:11px; color:var(--muted); background:var(--surface-2);
+    border:1px solid var(--border); border-radius:6px; padding:1px 5px; cursor:pointer; max-width:140px;
+  }
+  .cd-zone-select:disabled{opacity:.65; cursor:default; background:transparent; border-color:transparent; padding-left:0; appearance:none;}
+  .cd-visit .cd-price-wrap{display:flex; align-items:center; gap:5px; flex:none;}
+  .cd-visit input[type="number"]{
+    width:96px; padding:7px 9px; border-radius:8px; border:1px solid var(--border);
+    background:var(--bg); color:var(--ink); font:inherit; font-size:13.5px; text-align:right;
+    font-variant-numeric:tabular-nums;
+  }
+  .cd-visit .cd-currency{color:var(--muted); font-size:12.5px;}
+  .cd-visit.not-served{opacity:.5;}
+  .cd-visit.not-served input{pointer-events:none; background:var(--surface-2);}
+  .cd-visit-extra{
+    display:flex; flex-direction:column; gap:8px;
+    padding:0 16px 10px 72px; border-bottom:1px solid var(--border);
+  }
+  .cd-visit-extra-top{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;}
+  .cd-status-row{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
+  .cd-status-note{font-size:12px; color:var(--muted); font-style:italic;}
+  .cd-status-complete{background:var(--good-soft); color:var(--good); border-color:transparent;}
+  .cd-status-complete:hover{background:var(--good-soft); filter:brightness(0.95);}
+  .cd-status-cancel{background:var(--bad-soft); color:var(--bad); border-color:transparent;}
+  .cd-status-cancel:hover{background:var(--bad-soft); filter:brightness(0.95);}
+  .cd-consumables{display:flex; align-items:center; gap:6px; flex-wrap:wrap;}
+  .cd-cons-chip{
+    display:inline-flex; align-items:center; gap:5px; background:var(--warn-soft); color:var(--warn);
+    font-size:11.5px; font-weight:600; padding:3px 4px 3px 9px; border-radius:999px;
+  }
+  .cd-cons-chip button{
+    background:none; border:none; color:inherit; cursor:pointer; font-size:13px; line-height:1;
+    padding:2px 5px; border-radius:50%; opacity:.7;
+  }
+  .cd-cons-chip button:hover{opacity:1; background:rgba(0,0,0,.08);}
+  .cd-add-consumable-btn{
+    background:none; border:1px dashed var(--border); color:var(--muted); font:inherit; font-size:11.5px;
+    font-weight:600; padding:3px 10px; border-radius:999px; cursor:pointer;
+  }
+  .cd-add-consumable-btn:hover{color:var(--ink); border-color:var(--muted);}
+  .cd-cons-form{display:flex; align-items:center; gap:6px; flex-wrap:wrap;}
+  .cd-cons-form input[type="text"]{width:150px; padding:5px 8px; border-radius:7px; border:1px solid var(--border); background:var(--bg); color:var(--ink); font:inherit; font-size:12.5px;}
+  .cd-cons-form input[type="number"]{width:84px; padding:5px 8px; border-radius:7px; border:1px solid var(--border); background:var(--bg); color:var(--ink); font:inherit; font-size:12.5px; font-variant-numeric:tabular-nums;}
+  .cd-cons-total-preview{font-size:12.5px; font-weight:600; color:var(--muted); font-variant-numeric:tabular-nums; white-space:nowrap;}
+  .cd-split{font-size:12px; color:var(--muted); white-space:nowrap;}
+  .cd-split b{color:var(--ink); font-weight:600;}
+
+  .cd-summary{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:22px;}
+  .cd-summary-tile{
+    background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:16px 18px;
+    box-shadow:var(--shadow); display:flex; flex-direction:column; gap:6px;
+  }
+  .cd-summary-tile .label{font-size:12.5px; color:var(--muted); font-weight:500;}
+  .cd-summary-tile .value{font-family:'Fraunces',serif; font-size:22px; font-weight:600; font-variant-numeric:tabular-nums;}
+  .cd-summary-tile .cd-tile-hint{font-size:11px; color:var(--muted); font-style:italic;}
+  .cd-summary-tile.accent .value{color:var(--accent);}
+  .cd-summary-tile.total{background:var(--surface-2);}
+  @media (max-width:760px){ .cd-summary{grid-template-columns:repeat(2,1fr);} }
+
   @media (max-width:760px){
     .stats{grid-template-columns:repeat(2,1fr);}
     header.top{flex-direction:column; align-items:flex-start;}
     .sync-note{text-align:left; align-items:flex-start;}
   }
+  @media (max-width:960px){
+    #analyticsStats{grid-template-columns:repeat(3,1fr);}
+  }
+  @media (max-width:520px){
+    #analyticsStats{grid-template-columns:repeat(2,1fr);}
+  }
+
+  /* ---------- P&L ---------- */
+  .pnl-lock-box{max-width:360px; margin:56px auto; text-align:center; padding:32px 24px;}
+  .pnl-lock-title{font-family:'Fraunces',serif; font-size:22px; font-weight:600; margin-bottom:8px;}
+  .pnl-lock-note{color:var(--muted); font-size:13.5px; margin:0 0 20px; line-height:1.5;}
+  .pnl-lock-form{display:flex; gap:8px; justify-content:center;}
+  .pnl-lock-form input[type="password"]{
+    padding:10px 12px; border-radius:9px; border:1px solid var(--border);
+    background:var(--bg); color:var(--ink); font:inherit; font-size:14px; width:180px;
+  }
+  .pnl-lock-error{color:var(--bad); font-size:12.5px; margin-top:14px;}
+  #pnlStats{grid-template-columns:repeat(3,1fr);}
+  .pnl-table{min-width:1180px;}
+  .pnl-table th:first-child, .pnl-table td:first-child{
+    position:sticky; left:0; background:var(--surface); z-index:1; box-shadow:1px 0 0 var(--border);
+    white-space:nowrap; min-width:210px; text-align:left;
+  }
+  .pnl-table thead th:first-child{background:var(--surface-2); z-index:2;}
+  .pnl-table tr.pnl-section td:first-child{
+    background:var(--surface-2); font-weight:600; font-size:12px; text-transform:uppercase;
+    letter-spacing:.05em; color:var(--muted);
+  }
+  .pnl-table tr.pnl-total td{font-weight:700; border-top:2px solid var(--border); background:var(--surface-2);}
+  .pnl-table tr.pnl-total td:first-child{background:var(--surface-2);}
+  .pnl-table tr.pnl-net td{font-weight:700; border-top:2px solid var(--accent); background:var(--accent-soft); color:var(--accent);}
+  .pnl-table tr.pnl-net td:first-child{background:var(--accent-soft); color:var(--accent);}
+  .pnl-table td.pnl-muted{color:var(--muted); font-style:italic;}
+  .pnl-input{
+    width:96px; padding:5px 7px; border-radius:7px; border:1px solid var(--border);
+    background:var(--bg); color:var(--ink); font:inherit; font-size:12.5px; text-align:right;
+    font-variant-numeric:tabular-nums;
+  }
+  /* ---------- password gate ---------- */
+  #gate{
+    position:fixed; inset:0; background:var(--bg); display:flex;
+    align-items:center; justify-content:center; padding:20px; z-index:50;
+  }
+  #gate .card{
+    background:var(--surface); border:1px solid var(--border); border-radius:16px;
+    box-shadow:var(--shadow); padding:32px 28px; width:100%; max-width:340px;
+    display:flex; flex-direction:column; gap:14px;
+  }
+  #gate .eyebrow{font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--accent); font-weight:600;}
+  #gate h1{font-size:22px;}
+  #gate input{
+    padding:11px 13px; border-radius:9px; border:1px solid var(--border);
+    background:var(--bg); color:var(--ink); font:inherit; font-size:15px;
+  }
+  #gate button{
+    padding:11px 13px; border-radius:9px; border:none; background:var(--accent);
+    color:var(--accent-ink); font:inherit; font-size:14.5px; font-weight:600; cursor:pointer;
+  }
+  #gate button:disabled{opacity:.6; cursor:default;}
+  #gate .err{font-size:13px; color:var(--bad); min-height:16px;}
 </style>
+
 </head>
 <body>
 
@@ -154,10 +439,11 @@
     <div class="brand">
       <span class="eyebrow">Zapis.kz · партнёрский кабинет</span>
       <h1>Irina Black Beauty Corner</h1>
-      <span class="sub">Записи и клиенты, синхронизированные из личного кабинета</span>
+      <span class="sub">Записи из zapis.kz, мастера, аналитика, закрытие дня, инвентаризация и P&amp;L</span>
     </div>
     <div class="sync-note">
       <span id="syncNote">Загрузка…</span>
+      <span id="saveNote"></span>
       <button class="refresh-btn" id="refreshBtn">↻ Обновить</button>
     </div>
   </header>
@@ -172,6 +458,12 @@
   <div class="tabs">
     <button class="tab active" data-tab="bookings">Записи <span class="count" id="tabCountBookings"></span></button>
     <button class="tab" data-tab="clients">Клиенты <span class="count" id="tabCountClients"></span></button>
+    <button class="tab" data-tab="masters">Мастера <span class="count" id="tabCountMasters"></span></button>
+    <button class="tab" data-tab="cons-price">Расходники Прайс <span class="count" id="tabCountConsPrice"></span></button>
+    <button class="tab" data-tab="inventory">Инвентаризация</button>
+    <button class="tab" data-tab="analytics">Аналитика</button>
+    <button class="tab" data-tab="close-day">Закрытие дня</button>
+    <button class="tab" data-tab="pnl">P&amp;L</button>
   </div>
 
   <div id="view-bookings">
@@ -184,6 +476,12 @@
           <span class="chip" data-status="SERVED">Обслужены</span>
           <span class="chip" data-status="AWAITING">Ожидают</span>
           <span class="chip" data-status="NOT_SERVED">Не пришли</span>
+        </div>
+        <div class="date-range">
+          <input type="date" id="dateFrom" aria-label="Период от">
+          <span class="date-sep">—</span>
+          <input type="date" id="dateTo" aria-label="Период до">
+          <button type="button" class="chip" id="dateReset" title="Сбросить период">✕</button>
         </div>
         <div class="spacer"></div>
         <span class="result-count" id="bookingsCount"></span>
@@ -220,24 +518,410 @@
     </div>
   </div>
 
+  <div id="view-masters" hidden>
+    <div class="panel">
+      <div class="filters">
+        <input type="search" id="searchMasters" placeholder="Поиск мастера по имени или залу…">
+        <div class="spacer"></div>
+        <span class="result-count" id="mastersCount"></span>
+        <button type="button" class="refresh-btn" id="addMasterToggle">Добавить мастера</button>
+      </div>
+      <div class="add-master-row" id="addMasterRow" hidden>
+        <input type="text" id="newMasterName" placeholder="Имя">
+        <input type="text" id="newMasterZone" placeholder="Зал" list="zoneOptions">
+        <datalist id="zoneOptions"></datalist>
+        <div class="am-rate-wrap">
+          <input type="number" id="newMasterRate" placeholder="50" min="0" max="100" step="1">
+          <span>%</span>
+        </div>
+        <button type="button" class="cd-save-btn" id="addMasterSave">Добавить</button>
+        <button type="button" class="am-cancel" id="addMasterCancel">Отмена</button>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Мастер</th><th>Зал</th><th class="num">% мастера</th><th>Статус</th></tr></thead>
+          <tbody id="mastersBody"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="mastersEmpty" hidden><b>Мастеров нет</b>Добавьте первого мастера кнопкой выше.</div>
+    </div>
+  </div>
+
+  <div id="view-cons-price" hidden>
+    <div class="panel">
+      <div class="filters">
+        <input type="search" id="searchConsPrice" placeholder="Поиск расходника по названию…">
+        <div class="spacer"></div>
+        <span class="result-count" id="consPriceCount"></span>
+        <button type="button" class="refresh-btn" id="addConsPriceToggle">Добавить расходник</button>
+      </div>
+      <div class="add-master-row" id="addConsPriceRow" hidden>
+        <input type="text" id="newConsPriceItem" placeholder="Наименование">
+        <div class="am-rate-wrap">
+          <input type="number" id="newConsPricePrice" placeholder="0" min="0" step="50">
+          <span>₸</span>
+        </div>
+        <button type="button" class="cd-save-btn" id="addConsPriceSave">Добавить</button>
+        <button type="button" class="am-cancel" id="addConsPriceCancel">Отмена</button>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Наименование</th><th class="num">Стоимость</th><th></th></tr></thead>
+          <tbody id="consPriceBody"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="consPriceEmpty" hidden><b>Расходников нет</b>Добавьте первый кнопкой выше.</div>
+    </div>
+  </div>
+
+  <div id="view-analytics" hidden>
+    <div class="analytics-controls">
+      <select id="analyticsGranularity">
+        <option value="day">По дням</option>
+        <option value="week">По неделям</option>
+        <option value="month">По месяцам</option>
+        <option value="year">По годам</option>
+      </select>
+      <div class="date-range">
+        <input type="date" id="analyticsFrom" aria-label="Период от">
+        <span class="date-sep">—</span>
+        <input type="date" id="analyticsTo" aria-label="Период до">
+      </div>
+    </div>
+
+    <div class="stats" id="analyticsStats">
+      <div class="stat"><span class="label">Общий приход</span><span class="value">—</span></div>
+      <div class="stat"><span class="label">Расходники</span><span class="value">—</span></div>
+      <div class="stat"><span class="label">Закуп</span><span class="value">—</span></div>
+      <div class="stat accent"><span class="label">Прибыль</span><span class="value">—</span></div>
+      <div class="stat"><span class="label">ЗП мастеров</span><span class="value">—</span></div>
+      <div class="stat"><span class="label">ЧП салона</span><span class="value">—</span></div>
+    </div>
+
+    <div class="analytics-split viz-root">
+      <div class="panel">
+        <div class="panel-heading">Популярные услуги</div>
+        <div class="chart-box" id="chartServices"></div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Услуга</th><th class="num">Кол-во</th></tr></thead>
+            <tbody id="analyticsServicesBody"></tbody>
+          </table>
+        </div>
+        <div class="empty" id="analyticsServicesEmpty" hidden><b>Нет данных за этот период</b>Попробуйте выбрать другой диапазон.</div>
+      </div>
+      <div class="panel">
+        <div class="panel-heading">По залам</div>
+        <div class="chart-box">
+          <div class="stack-chart-label">Услуги по залам</div>
+          <div class="stack-bar" id="chartZoneServices"></div>
+          <div class="stack-chart-label">ЧП салона по залам</div>
+          <div class="stack-bar" id="chartZoneProfit"></div>
+          <div class="chart-legend" id="zoneLegend"></div>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Зал</th><th class="num">Услуг оказано</th><th class="num">ЧП салона</th></tr></thead>
+            <tbody id="analyticsZonesBody"></tbody>
+          </table>
+        </div>
+        <div class="empty" id="analyticsZonesEmpty" hidden><b>Нет данных за этот период</b>Попробуйте выбрать другой диапазон.</div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-bottom:22px;">
+      <div class="table-scroll">
+        <table>
+          <thead><tr id="analyticsGridHead"><th>Мастер</th></tr></thead>
+          <tbody id="analyticsGridBody"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="analyticsGridEmpty" hidden><b>Нет данных за этот период</b>Попробуйте выбрать другой диапазон.</div>
+    </div>
+
+    <div class="panel">
+      <div class="table-scroll">
+        <table>
+          <thead><tr>
+            <th>Мастер</th><th class="num">Услуг</th><th class="num">Выручка</th>
+            <th class="num">Расходники</th><th class="num">Прибыль</th>
+            <th class="num">ЗП мастера</th><th class="num">ЧП салона</th>
+          </tr></thead>
+          <tbody id="analyticsBody"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="analyticsEmpty" hidden><b>Нет данных за этот период</b>Попробуйте выбрать другой диапазон.</div>
+    </div>
+  </div>
+
+  <div id="view-close-day" hidden>
+    <div class="close-day-header">
+      <input type="date" id="closeDayDate">
+      <span class="day-status" id="closeDayStatus"></span>
+      <span class="cd-status-note" id="closeDayPendingNote" hidden></span>
+      <div class="cd-spacer"></div>
+      <button class="cd-save-btn" id="closeDaySave">Закрыть день</button>
+      <button class="cd-unlock-btn" id="closeDayUnlock" hidden>Разблокировать день</button>
+    </div>
+    <div class="cd-summary" id="closeDayTotal" hidden>
+      <div class="cd-summary-tile"><span class="label">Расходники за день</span><span class="value" id="closeDayConsValue">—</span><span class="cd-tile-hint" id="closeDayConsHint" hidden></span></div>
+      <div class="cd-summary-tile"><span class="label">К выплате мастерам</span><span class="value" id="closeDayMasterValue">—</span></div>
+      <div class="cd-summary-tile accent"><span class="label">Прибыль салона</span><span class="value" id="closeDaySalonValue">—</span></div>
+      <div class="cd-summary-tile total"><span class="label">Итого за день</span><span class="value" id="closeDayTotalValue">—</span></div>
+    </div>
+
+    <div class="cd-subtabs">
+      <button class="cd-subtab-btn active" data-subtab="services">Услуги</button>
+      <button class="cd-subtab-btn" data-subtab="consumables">Расходники</button>
+      <button class="cd-subtab-btn" data-subtab="procurement">Закуп</button>
+    </div>
+
+    <div id="cd-panel-services">
+      <datalist id="consumableOptions"></datalist>
+      <div class="filters" style="margin-bottom:14px;">
+        <span class="result-count">Сводка по мастерам — только завершённые услуги.</span>
+        <div class="spacer"></div>
+        <button type="button" class="refresh-btn" id="downloadMastersReport">Сформировать отчёт по мастерам</button>
+      </div>
+      <div id="closeDayGroups"></div>
+      <div class="empty" id="closeDayEmpty" hidden><b>В этот день записей нет</b>Выберите другую дату.</div>
+    </div>
+
+    <div id="cd-panel-consumables" hidden>
+      <div class="panel">
+        <div class="filters">
+          <span class="result-count">Расходники, списанные по завершённым услугам за день.</span>
+          <div class="spacer"></div>
+          <button type="button" class="refresh-btn" id="downloadConsReport">Сформировать отчёт по расходникам</button>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Мастер</th><th>Клиент</th><th>Расходник</th><th class="num">Кол-во</th><th class="num">Цена за ед.</th><th class="num">Сумма</th><th></th></tr></thead>
+            <tbody id="consLogBody"></tbody>
+          </table>
+        </div>
+        <div class="empty" id="consLogEmpty" hidden><b>Расходников за этот день нет</b>Добавьте их во вкладке «Услуги», у нужного визита.</div>
+        <div class="cd-status-note" id="consLogSalesFootnote" hidden style="padding:10px 16px 4px;"></div>
+      </div>
+
+      <div class="panel" style="margin-top:16px;">
+        <div class="filters">
+          <span class="result-count" id="productSaleNote">Продажа продукции клиентам — сумма целиком идёт в прибыль салона, мастеру не начисляется.</span>
+          <div class="spacer"></div>
+          <button type="button" class="refresh-btn" id="addProductSaleToggle">Добавить продажу продукции</button>
+        </div>
+        <div class="add-master-row" id="addProductSaleRow" hidden>
+          <input type="text" id="newSaleItem" placeholder="Наименование" list="consumableOptions">
+
+          <input type="number" id="newSaleQty" placeholder="Кол-во" min="1" step="1" value="1" style="width:84px;">
+          <div class="am-rate-wrap">
+            <input type="number" id="newSalePrice" placeholder="Цена продажи за ед." min="0" step="50">
+            <span>₸</span>
+          </div>
+          <span class="cd-cons-total-preview" id="newSaleTotalPreview">= 0 ₸</span>
+          <button type="button" class="cd-save-btn" id="addProductSaleSave">Добавить</button>
+          <button type="button" class="am-cancel" id="addProductSaleCancel">Отмена</button>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Наименование</th><th class="num">Кол-во</th><th class="num">Цена за ед.</th><th class="num">Сумма</th><th></th></tr></thead>
+            <tbody id="productSaleBody"></tbody>
+          </table>
+        </div>
+        <div class="empty" id="productSaleEmpty" hidden><b>Продаж продукции за этот день нет</b>Добавьте первую продажу кнопкой выше.</div>
+      </div>
+    </div>
+
+    <div id="cd-panel-procurement" hidden>
+      <div class="panel">
+        <div class="filters">
+          <span class="result-count" id="procurementNote">Закуп за выбранный день — учитывает администратор, пополняет инвентаризацию.</span>
+          <div class="spacer"></div>
+          <button type="button" class="refresh-btn" id="downloadProcReport">Сформировать отчёт по закупу</button>
+          <button type="button" class="refresh-btn" id="addProcurementToggle">Добавить закуп</button>
+        </div>
+        <div class="add-master-row" id="addProcurementRow" hidden>
+          <select id="newProcCategory" style="width:140px;"></select>
+          <div class="proc-item-wrap">
+            <input type="text" id="newProcItem" placeholder="Наименование" autocomplete="off">
+            <div class="proc-item-suggest" id="newProcItemSuggest" hidden></div>
+          </div>
+
+          <input type="number" id="newProcQty" placeholder="Кол-во" min="1" step="1" value="1" style="width:84px;">
+          <div class="am-rate-wrap">
+            <input type="number" id="newProcCost" placeholder="Цена за ед." min="0" step="50">
+            <span>₸</span>
+          </div>
+          <button type="button" class="cd-save-btn" id="addProcurementSave">Добавить</button>
+          <button type="button" class="am-cancel" id="addProcurementCancel">Отмена</button>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Наименование</th><th class="num">Кол-во</th><th class="num">Цена за ед.</th><th class="num">Сумма</th><th></th></tr></thead>
+            <tbody id="procurementBody"></tbody>
+          </table>
+        </div>
+        <div class="empty" id="procurementEmpty" hidden><b>Закупа за этот день нет</b>Добавьте первую позицию кнопкой выше.</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="view-inventory" hidden>
+    <div class="cd-subtabs">
+      <button class="cd-subtab-btn active" data-invsubtab="items">Наименования и наличие</button>
+      <button class="cd-subtab-btn" data-invsubtab="history">История изменений</button>
+    </div>
+
+    <div id="inv-panel-items">
+    <div class="panel">
+      <div class="filters">
+        <input type="search" id="searchInventory" placeholder="Поиск по названию…">
+        <div class="chip-row" id="invStockChips">
+          <span class="chip on" data-stock="">Все</span>
+          <span class="chip" data-stock="in">В наличии</span>
+          <span class="chip" data-stock="out">Отсутствуют</span>
+        </div>
+        <select id="invCategoryFilter">
+          <option value="">Все категории</option>
+          <option value="Расходники">Расходники</option>
+          <option value="Продукция">Продукция</option>
+          <option value="Nail зал">Nail зал</option>
+          <option value="Салон">Салон</option>
+        </select>
+        <div class="spacer"></div>
+        <span class="result-count" id="inventoryCount"></span>
+        <button type="button" class="refresh-btn" id="downloadInvReport">Скачать отчёт</button>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Наименование</th><th>Категория</th><th class="num">Закуплено</th><th class="num">Использовано</th><th class="num">Остаток</th><th class="num">Стоимость закупа</th><th></th></tr></thead>
+          <tbody id="inventoryBody"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="inventoryEmpty" hidden><b>Пока нет данных</b>Добавьте закуп или расходники во вкладке «Закрытие дня».</div>
+    </div>
+    </div>
+
+    <div id="inv-panel-history" hidden>
+    <div class="panel">
+      <div class="filters">
+        <input type="search" id="searchInvHistory" placeholder="Поиск по названию…">
+        <div class="chip-row" id="invHistoryChips">
+          <span class="chip on" data-invtype="">Все</span>
+          <span class="chip" data-invtype="in">Закуп</span>
+          <span class="chip" data-invtype="out">Расход</span>
+          <span class="chip" data-invtype="sale">Продажа</span>
+          <span class="chip" data-invtype="writeoff">Списание</span>
+          <span class="chip" data-invtype="adjustment">Корректировка</span>
+          <span class="chip" data-invtype="edit">Правка</span>
+        </div>
+        <select id="invHistoryCategoryFilter">
+          <option value="">Все категории</option>
+          <option value="Расходники">Расходники</option>
+          <option value="Продукция">Продукция</option>
+          <option value="Nail зал">Nail зал</option>
+          <option value="Салон">Салон</option>
+        </select>
+        <div class="date-range">
+          <input type="date" id="invHistoryFrom" aria-label="Период от">
+          <span class="date-sep">—</span>
+          <input type="date" id="invHistoryTo" aria-label="Период до">
+          <button type="button" class="chip" id="invHistoryDateReset" title="Сбросить период">✕</button>
+        </div>
+        <div class="spacer"></div>
+        <span class="result-count" id="invHistoryCount"></span>
+        <button type="button" class="refresh-btn" id="downloadInvHistoryReport">Скачать отчёт</button>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Дата</th><th>Тип</th><th>Наименование</th><th>Мастер / Клиент</th><th class="num">Кол-во</th><th class="num">Цена за ед.</th><th class="num">Сумма</th></tr></thead>
+          <tbody id="invHistoryBody"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="invHistoryEmpty" hidden><b>История пуста</b>Закуп и списание расходников появятся здесь по мере закрытия дней.</div>
+    </div>
+    </div>
+  </div>
+
+  <div id="view-pnl" hidden>
+    <div class="panel" id="pnlLocked">
+      <div class="pnl-lock-box">
+        <div class="pnl-lock-title">Доступ ограничен</div>
+        <p class="pnl-lock-note">P&amp;L виден только владельцу салона. Введите пароль, чтобы продолжить.</p>
+        <div class="pnl-lock-form">
+          <input type="password" id="pnlPasswordInput" placeholder="Пароль" autocomplete="off">
+          <button type="button" class="cd-save-btn" id="pnlUnlockBtn">Войти</button>
+        </div>
+        <div class="pnl-lock-error" id="pnlLockError" hidden>Неверный пароль</div>
+      </div>
+    </div>
+    <div id="pnlUnlockedPanel" hidden>
+      <div class="stats" id="pnlStats">
+        <div class="stat"><span class="label">Общий приход за год</span><span class="value">—</span></div>
+        <div class="stat"><span class="label">Общие расходы за год</span><span class="value">—</span></div>
+        <div class="stat accent"><span class="label">Чистая прибыль за год</span><span class="value">—</span></div>
+      </div>
+    <div class="panel">
+      <div class="filters">
+        <span class="result-count" id="pnlNote">2026 год · строки с полями ввода — редактируемые, остальные считаются автоматически из данных CRM</span>
+        <div class="spacer"></div>
+        <button type="button" class="refresh-btn" id="downloadPnlReport">Скачать отчёт</button>
+        <button type="button" class="cd-unlock-btn" id="pnlLockBtn">Заблокировать</button>
+      </div>
+      <div class="table-scroll">
+        <table class="pnl-table">
+          <thead><tr id="pnlHead"></tr></thead>
+          <tbody id="pnlBody"></tbody>
+        </table>
+      </div>
+    </div>
+    </div>
+  </div>
+
   <footer class="note">
-    Записи подтягиваются из zapis.kz автоматически, раз в час. Редактирование записей и данных клиентов
-    происходит в самом zapis.kz — здесь только просмотр.
+    Это демо-превью с примерными записями — для быстрой доводки дизайна. Настоящая панель подтягивает
+    записи из zapis.kz автоматически, раз в час, и живёт отдельно, на GitHub Pages.
   </footer>
 </div>
 
 <script>
 (function(){
-  // ---- Fill these in after creating your Supabase project ----
-  // Project Settings → API → Project URL, and the "anon public" key.
-  // The anon key is safe to publish here: it can only call get_dashboard(),
-  // which itself checks the shared password before returning any data.
+  // ---------------- real August 2026 data (imported) ----------------
+  // Imported from the salon's real spreadsheet (Irina Black 2026 Август.xlsx).
+  // Client names weren't in the source (it only tracks daily totals per
+  // master, plus a separate consumables-usage log and Закуп log — no
+  // individual client records), so every visit here is a placeholder
+  // "Клиент" with a unique id (keeps Клиенты-tab counts sane); everything
+  // else — master, date, revenue, consumables, service categories, Закуп,
+  // Расходники Прайс — is real, reconciled against the sheet's own totals
+  // (Приход 8 928 000 ₸, Расходники 184 322 ₸ both matched exactly).
+  // Data only goes through 16 Aug 2026 — that's where the sheet stops.
+  // ---------------- Supabase config ----------------
+  // Project Settings -> API -> Project URL, and the "anon public" key.
+  // The anon key is safe to publish here: it can only call get_dashboard()
+  // and save_kv(), both of which check the shared password themselves
+  // before touching any data.
   const SUPABASE_URL = 'https://qomglkqqiuwygkrjlxeq.supabase.co';
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFvbWdsa3FxaXV3eWdrcmpseGVxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg4ODY1OTMsImV4cCI6MjEwNDQ2MjU5M30.PJ5Z_c0dHRfWek6ErHlZsm9BQl6hpx_PfUWzBMwFmBI';
-  // --------------------------------------------------------------
 
-  const state = { bookings: [], syncStatus: null, tab: 'bookings',
-    search: '', status: '', master: '', clientSearch: '', clientSort: 'visits' };
+  const state = { bookings: [], tab: 'bookings',
+    search: '', status: '', master: '', dateFrom: '', dateTo: '',
+    clientSearch: '', clientSort: 'visits', masterSearch: '', consSearch: '', invSearch: '',
+    invHistorySearch: '', invHistoryType: '', invHistoryFrom: '', invHistoryTo: '',
+    analyticsExpanded: new Set(), inventoryEdits: [], invStockFilter: '', invCategoryFilter: '', invHistoryCategory: '',
+    pnlUnlocked: false, invEditingItem: null };
+
+  // P&L — ручные (не рассчитываемые из данных CRM) строки, по месяцам.
+  // Стартовые значения на 2026-01..2026-08 взяты из таблицы IRINA BLACK
+  // 2026 PL.xlsx, дальше (2026-09..12) — пустые, владелец вносит сам.
+  // «От продажи продукции» сюда не входит — она считается автоматически
+  // (см. buildPnlComputed), т.к. в закупе продукция не привязана к мастеру.
+  // P&L fixed-cost figures come from Supabase (app_kv.pnl_fixed) after login — see applyKv().
+  const PNL_EMPTY_MONTH = { adminSalary:0, techSalary:0, accountantSalary:0, smmSalary:0, rent:0, utilities:0, internet:0, security:0, adsGeneral:0, ads2gis:0, adsInstagram:0, taxes:0, bankCommission:0 };
+  const PNL_MONTHS = ['2026-01','2026-02','2026-03','2026-04','2026-05','2026-06','2026-07','2026-08','2026-09','2026-10','2026-11','2026-12'];
+  state.pnlFixed = {};
+  PNL_MONTHS.forEach(m => { state.pnlFixed[m] = Object.assign({}, PNL_EMPTY_MONTH); });
+  const PNL_PASSWORD = 'IB2026';
 
   const monthsShort = ['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'];
   function fmtDateTime(iso){
@@ -256,6 +940,77 @@
   }
   function esc(s){
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  // Native confirm()/alert() are unreliable inside the artifact's
+  // sandboxed frame (they can silently no-op instead of showing anything),
+  // so every yes/no or heads-up prompt in this app goes through this small
+  // in-page modal instead. showConfirmDialog resolves true/false; showAlertDialog
+  // resolves once the single button is dismissed.
+  function showConfirmDialog(message, opts){
+    opts = opts || {};
+    return new Promise(resolve => {
+      const overlay = document.createElement('div');
+      overlay.className = 'confirm-overlay';
+      overlay.innerHTML =
+        '<div class="confirm-modal">' +
+          '<p>'+esc(message)+'</p>' +
+          '<div class="confirm-actions">' +
+            (opts.cancel !== false ? '<button type="button" class="am-cancel" data-act="cancel">'+esc(opts.cancelText || 'Отмена')+'</button>' : '') +
+            '<button type="button" class="cd-save-btn" data-act="ok">'+esc(opts.okText || 'Ок')+'</button>' +
+          '</div>' +
+        '</div>';
+      document.body.appendChild(overlay);
+      function close(result){
+        overlay.remove();
+        document.removeEventListener('keydown', onKey);
+        resolve(result);
+      }
+      function onKey(e){
+        if(e.key === 'Escape') close(false);
+      }
+      document.addEventListener('keydown', onKey);
+      overlay.addEventListener('click', e => {
+        if(e.target === overlay){ close(false); return; }
+        const btn = e.target.closest('[data-act]');
+        if(!btn) return;
+        close(btn.dataset.act === 'ok');
+      });
+      overlay.querySelector('[data-act="ok"]').focus();
+    });
+  }
+  function showAlertDialog(message){
+    return showConfirmDialog(message, { cancel: false, okText: 'Понятно' });
+  }
+  // Generic version for small forms (write-off, edit item): innerHtml
+  // supplies its own fields and its own [data-act="ok"/"cancel"] buttons.
+  // Resolves { act, modal } — modal is the detached wrapper, so the caller
+  // reads its input values (still intact after removal) before discarding it.
+  function openModal(innerHtml){
+    return new Promise(resolve => {
+      const overlay = document.createElement('div');
+      overlay.className = 'confirm-overlay';
+      overlay.innerHTML = '<div class="confirm-modal">'+innerHtml+'</div>';
+      document.body.appendChild(overlay);
+      function close(act){
+        const modal = overlay.querySelector('.confirm-modal');
+        overlay.remove();
+        document.removeEventListener('keydown', onKey);
+        resolve({ act, modal });
+      }
+      function onKey(e){
+        if(e.key === 'Escape') close('cancel');
+      }
+      document.addEventListener('keydown', onKey);
+      overlay.addEventListener('click', e => {
+        if(e.target === overlay){ close('cancel'); return; }
+        const btn = e.target.closest('[data-act]');
+        if(!btn) return;
+        close(btn.dataset.act);
+      });
+      const first = overlay.querySelector('input, select, textarea');
+      if(first) first.focus();
+    });
   }
 
   function renderStats(){
@@ -277,13 +1032,6 @@
     document.getElementById('tabCountClients').textContent = clientIds.size ? '('+clientIds.size+')' : '';
   }
 
-  function renderSyncNote(){
-    const el = document.getElementById('syncNote');
-    const m = state.syncStatus;
-    if(!m || !m.last_synced_at){ el.innerHTML = '<span>Данные ещё не синхронизированы</span>'; return; }
-    el.innerHTML = 'Синхронизировано: <b>'+esc(fmtDateTime(m.last_synced_at))+'</b>';
-  }
-
   function populateMasters(){
     const sel = document.getElementById('masterFilter');
     sel.querySelectorAll('option:not(:first-child)').forEach(o => o.remove());
@@ -297,9 +1045,17 @@
 
   function filteredBookings(){
     const q = state.search.trim().toLowerCase();
+    const fromDay = state.dateFrom || null;
+    const toDay = state.dateTo || null;
     return state.bookings.filter(b => {
       if(state.status && b.status !== state.status) return false;
       if(state.master && b.master !== state.master) return false;
+      if(fromDay || toDay){
+        const d = new Date(b.start);
+        const dayStr = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+        if(fromDay && dayStr < fromDay) return false;
+        if(toDay && dayStr > toDay) return false;
+      }
       if(q){
         const hay = [b.client_name, b.client_phone, b.master, (b.services||[]).join(' ')].join(' ').toLowerCase();
         if(!hay.includes(q)) return false;
@@ -375,7 +1131,2114 @@
     )).join('');
   }
 
-  function renderAll(){ renderStats(); renderSyncNote(); renderBookings(); renderClients(); }
+  function renderAll(){ renderStats(); renderBookings(); renderClients(); }
+
+  // ---------------- masters ----------------
+  function filteredMasters(){
+    const q = state.masterSearch.trim().toLowerCase();
+    let list = state.masters.slice().sort((a,b) => (a.zone||'').localeCompare(b.zone||'','ru') || a.name.localeCompare(b.name,'ru'));
+    if(q) list = list.filter(m => m.name.toLowerCase().includes(q) || (m.zone||'').toLowerCase().includes(q));
+    return list;
+  }
+
+  function renderZoneOptions(){
+    const dl = document.getElementById('zoneOptions');
+    const zones = Array.from(new Set(state.masters.map(m => m.zone).filter(Boolean)));
+    dl.innerHTML = zones.map(z => '<option value="'+esc(z)+'">').join('');
+  }
+
+  function renderMasters(){
+    const rows = filteredMasters();
+    const body = document.getElementById('mastersBody');
+    const empty = document.getElementById('mastersEmpty');
+    document.getElementById('mastersCount').textContent = rows.length + ' мастеров';
+    document.getElementById('tabCountMasters').textContent = state.masters.length ? '('+state.masters.length+')' : '';
+    renderZoneOptions();
+    if(!rows.length){ body.innerHTML = ''; empty.hidden = false; return; }
+    empty.hidden = true;
+    body.innerHTML = rows.map(m => {
+      const active = m.active !== false;
+      return '<tr'+(active ? '' : ' class="master-inactive"')+'>' +
+      '<td><b>'+esc(m.name)+'</b></td>' +
+      '<td>'+esc(m.zone||'—')+'</td>' +
+      '<td class="num">'+Math.round(m.commission_rate*100)+'%</td>' +
+      '<td><div class="master-status-cell">' +
+        '<span class="pill '+(active ? 'good' : 'plain')+'">'+(active ? 'Активен' : 'Не обслуживает')+'</span>' +
+        '<button type="button" class="mini-action-btn" data-toggle-active="'+esc(m.name)+'">'+(active ? 'Деактивировать' : 'Активировать')+'</button>' +
+      '</div></td>' +
+      '</tr>';
+    }).join('');
+    scheduleSave('masters');
+  }
+
+  function toggleMasterActive(name){
+    const m = state.masters.find(x => x.name === name);
+    if(!m) return;
+    m.active = m.active === false ? true : false;
+    renderMasters();
+    renderCloseDay();
+    renderAnalytics();
+  }
+  document.getElementById('mastersBody').addEventListener('click', e => {
+    const btn = e.target.closest('[data-toggle-active]');
+    if(!btn) return;
+    toggleMasterActive(btn.dataset.toggleActive);
+  });
+
+  function addMaster(){
+    const nameEl = document.getElementById('newMasterName');
+    const zoneEl = document.getElementById('newMasterZone');
+    const rateEl = document.getElementById('newMasterRate');
+    const name = nameEl.value.trim();
+    const zone = zoneEl.value.trim();
+    const rateNum = Number(rateEl.value);
+    if(!name){ nameEl.focus(); return; }
+    if(state.masters.some(m => m.name.toLowerCase() === name.toLowerCase())){
+      showAlertDialog('Мастер с таким именем уже есть.');
+      return;
+    }
+    const rate = (rateEl.value !== '' && !isNaN(rateNum)) ? Math.min(100, Math.max(0, rateNum))/100 : 0.5;
+    state.masters.push({ name, zone: zone || null, commission_rate: rate, active: true });
+    nameEl.value = ''; zoneEl.value = ''; rateEl.value = '';
+    document.getElementById('addMasterRow').hidden = true;
+    renderMasters();
+    populateMasters();
+    renderAnalytics();
+    renderCloseDay();
+  }
+
+  // ---------------- consumables price list ----------------
+  function filteredConsPrices(){
+    const q = state.consSearch.trim().toLowerCase();
+    let list = state.consumablePrices.slice().sort((a,b) => a.item.localeCompare(b.item,'ru'));
+    if(q) list = list.filter(c => c.item.toLowerCase().includes(q));
+    return list;
+  }
+
+  function renderConsPrices(){
+    const rows = filteredConsPrices();
+    const body = document.getElementById('consPriceBody');
+    const empty = document.getElementById('consPriceEmpty');
+    document.getElementById('consPriceCount').textContent = rows.length + ' позиций';
+    document.getElementById('tabCountConsPrice').textContent = state.consumablePrices.length ? '('+state.consumablePrices.length+')' : '';
+    if(!rows.length){ body.innerHTML = ''; empty.hidden = false; return; }
+    empty.hidden = true;
+    body.innerHTML = rows.map(c => (
+      '<tr data-item="'+esc(c.item)+'">' +
+      '<td><b>'+esc(c.item)+'</b></td>' +
+      '<td class="num"><input type="number" class="cp-price-input" min="0" step="50" value="'+c.price+'" data-item="'+esc(c.item)+'"> ₸</td>' +
+      '<td class="cp-actions"><button type="button" class="mini-action-btn cp-delete-btn" data-item="'+esc(c.item)+'">Удалить</button></td>' +
+      '</tr>'
+    )).join('');
+    scheduleSave('consumable_prices');
+  }
+
+  document.getElementById('consPriceBody').addEventListener('change', e => {
+    if(!e.target.matches('.cp-price-input')) return;
+    const c = state.consumablePrices.find(x => x.item === e.target.dataset.item);
+    if(c) c.price = Number(e.target.value) || 0;
+  });
+  document.getElementById('consPriceBody').addEventListener('click', async e => {
+    const btn = e.target.closest('.cp-delete-btn');
+    if(!btn) return;
+    const item = btn.dataset.item;
+    if(!await showConfirmDialog('Удалить «'+item+'» из прайс-листа?')) return;
+    state.consumablePrices = state.consumablePrices.filter(c => c.item !== item);
+    renderConsPrices();
+    populateConsumableOptions();
+  });
+
+  function addConsPrice(){
+    const itemEl = document.getElementById('newConsPriceItem');
+    const priceEl = document.getElementById('newConsPricePrice');
+    const item = itemEl.value.trim();
+    const price = Number(priceEl.value) || 0;
+    if(!item){ itemEl.focus(); return; }
+    if(state.consumablePrices.some(c => c.item.toLowerCase() === item.toLowerCase())){
+      showAlertDialog('Такой расходник уже есть в прайсе.');
+      return;
+    }
+    state.consumablePrices.push({ item, price });
+    itemEl.value = ''; priceEl.value = '';
+    document.getElementById('addConsPriceRow').hidden = true;
+    renderConsPrices();
+    populateConsumableOptions();
+  }
+
+  // ---------------- analytics (demo data) ----------------
+  // Mirrors the salon's monthly tracking spreadsheet: per master, per
+  // day, revenue and consumables are logged separately; profit, master
+  // salary and salon net are always computed, never stored — same
+  // formulas as the source sheet (profit = revenue − consumables;
+  // salary = profit × commission rate; salon net = profit − salary).
+  // The master roster lives in state so the "Мастера" tab can add to it —
+  // in production this would be a `masters` table in Supabase, read and
+  // written through get_analytics()/a small upsert RPC.
+  state.masters = [];
+  function pad2(n){ return String(n).padStart(2,'0'); }
+  function toDateStr(d){ return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate()); }
+  function eachDay(fromStr, toStr){
+    const out = [];
+    const d = new Date(fromStr+'T00:00:00');
+    const end = new Date(toStr+'T00:00:00');
+    while(d <= end){ out.push(toDateStr(d)); d.setDate(d.getDate()+1); }
+    return out;
+  }
+
+  // Real imported August-2026 revenue/consumables/service-count log,
+  // filtered to an arbitrary date range — stands in for what
+  // get_analytics() would return from Supabase.
+  // Cached per (range, roster) purely to avoid re-filtering on every
+  // expand/collapse click in renderAnalytics().
+  let analyticsCache = { key: null, data: null };
+  function getSampleAnalytics(fromStr, toStr){
+    const key = fromStr+'|'+toStr+'|'+state.masters.map(m=>m.name+':'+m.commission_rate).join(',');
+    if(analyticsCache.key !== key){
+      analyticsCache = { key, data: buildSampleAnalyticsRange(fromStr, toStr) };
+    }
+    return analyticsCache.data;
+  }
+  // Service categories per zone — mirrors the grouping in the salon's
+  // «Услуги Август» sheet (each zone offers its own set of services).
+  const ZONE_CATEGORIES = {
+    'Женский зал': ['Стрижка','Окрашивание','Укладка','Лечение'],
+    'Мужской зал': ['Стрижка','Окрашивание','Укладка'],
+    'Нейл зал': ['Маникюр','Педикюр','Комплекс','Наращивание'],
+    'Зона визажа': ['Макияж','Коррекция бровей','Ботокс','Губы'],
+  };
+  function categoriesForZone(zone){ return ZONE_CATEGORIES[zone] || ['Стрижка','Окрашивание','Укладка','Маникюр']; }
+
+  // ---- Analytics charts (dataviz skill): fixed zone -> color slot, so a
+  // zone always carries the same hue across both stacked bars and the
+  // legend, independent of how the numbers happen to rank that period.
+  const ZONE_ORDER = Object.keys(ZONE_CATEGORIES);
+  function zoneColorVar(zone){
+    const idx = ZONE_ORDER.indexOf(zone);
+    return 'var(--series-'+((idx >= 0 ? idx : 0) % 4 + 1)+')';
+  }
+  function ensureChartTooltip(){
+    let tip = document.getElementById('chartTooltip');
+    if(!tip){
+      tip = document.createElement('div');
+      tip.id = 'chartTooltip';
+      tip.className = 'chart-tooltip';
+      tip.hidden = true;
+      document.body.appendChild(tip);
+    }
+    return tip;
+  }
+  // Bound once on a stable ancestor — renderAnalytics() rewrites the charts'
+  // innerHTML on every call, but delegation from a parent that never gets
+  // replaced means the marks stay hoverable without re-binding each time.
+  function bindChartTooltips(root){
+    const tip = ensureChartTooltip();
+    root.addEventListener('mousemove', e => {
+      const mark = e.target.closest('[data-tip]');
+      if(!mark){ tip.hidden = true; return; }
+      tip.textContent = mark.dataset.tip;
+      tip.style.left = (e.clientX + 14) + 'px';
+      tip.style.top = (e.clientY + 14) + 'px';
+      tip.hidden = false;
+    });
+    root.addEventListener('mouseleave', () => { tip.hidden = true; });
+  }
+  // Horizontal bar chart — single measure (count), so a single hue is the
+  // right treatment (sequential, not categorical): magnitude is the story,
+  // not identity. Shows the top 8; the table below carries the full list.
+  function renderServicesChart(categoryRows){
+    const el = document.getElementById('chartServices');
+    if(!categoryRows.length){ el.innerHTML = '<div class="chart-empty-note">Нет данных за этот период</div>'; return; }
+    const top = categoryRows.slice(0, 8);
+    const max = top[0][1] || 1;
+    el.innerHTML = top.map(([cat, count]) => {
+      const pct = Math.max(4, Math.round(count/max*100));
+      return '<div class="hbar-row">' +
+        '<span class="hbar-label" title="'+esc(cat)+'">'+esc(cat)+'</span>' +
+        '<span class="hbar-track"><span class="hbar-fill" style="width:'+pct+'%" data-tip="'+esc(cat)+': '+count+'"></span></span>' +
+        '<span class="hbar-value">'+count+'</span>' +
+        '</div>';
+    }).join('');
+  }
+  // Single-row 100%-stacked bar — part-to-whole across the 4 zones. Two of
+  // these (services, ЧП салона) share one legend below, since the zone ->
+  // color mapping is identical for both.
+  function renderZoneStack(elId, zoneTotals, key, fmt){
+    const el = document.getElementById(elId);
+    const parts = ZONE_ORDER.map(zone => [zone, (zoneTotals.get(zone) || {})[key] || 0]);
+    const total = parts.reduce((s,[,v]) => s+v, 0);
+    if(total <= 0){
+      el.style.height = 'auto';
+      el.innerHTML = '<div class="chart-empty-note" style="padding:0 0 4px;">Нет данных за этот период</div>';
+      return;
+    }
+    el.style.height = '';
+    el.innerHTML = parts.filter(([,v]) => v > 0).map(([zone, v]) => {
+      const pct = v/total*100;
+      const showLabel = pct >= 10;
+      return '<span class="stack-seg" style="flex:'+pct.toFixed(2)+' 0 0; background:'+zoneColorVar(zone)+';" data-tip="'+esc(zone)+': '+fmt(v)+' ('+Math.round(pct)+'%)">' +
+        (showLabel ? '<span class="stack-seg-label">'+Math.round(pct)+'%</span>' : '') +
+        '</span>';
+    }).join('');
+  }
+  function renderZoneLegend(){
+    const el = document.getElementById('zoneLegend');
+    el.innerHTML = ZONE_ORDER.map(zone =>
+      '<span><span class="swatch" style="background:'+zoneColorVar(zone)+';"></span>'+esc(zone)+'</span>'
+    ).join('');
+  }
+  // The August-2026 import is frozen: those dates keep the exact, already
+  // reconciled numbers from the spreadsheet (its own category tallies don't
+  // line up 1:1 with individual booking.services strings, so recomputing
+  // them from bookings would be less accurate, not more). Every other date
+  // is computed live from state.bookings + Закрытие дня — that's the path
+  // zapis.kz bookings flow through going forward.
+  let FROZEN_DATES = new Set();
+  let FROZEN_ANALYTICS_REVENUE = [], FROZEN_ANALYTICS_CONSUMABLES = [], FROZEN_ANALYTICS_SERVICE_COUNTS = [];
+
+  // Best-effort «услуга → категория» match for live bookings: exact match
+  // against the master's zone vocabulary first, then a loose substring
+  // match, then just the zone's first category. Real service names coming
+  // from zapis.kz won't always line up cleanly (typos, case, synonyms) —
+  // this is a stand-in until there's a proper service→category mapping.
+  function serviceCategory(serviceName, zone){
+    const cats = categoriesForZone(zone);
+    const norm = (serviceName||'').trim().toLowerCase();
+    const exact = cats.find(c => c.toLowerCase() === norm);
+    if(exact) return exact;
+    const partial = cats.find(c => norm.includes(c.toLowerCase()) || c.toLowerCase().includes(norm));
+    return partial || cats[0];
+  }
+
+  function buildLiveAnalyticsRange(fromStr, toStr){
+    const revenue = [], consumables = [], serviceCounts = [];
+    for(const b of state.bookings){
+      const date = dayStr(b.start);
+      if(date < fromStr || date > toStr) continue;
+      if(FROZEN_DATES.has(date)) continue; // handled by the frozen import instead
+      if(visitStatus(b.id) !== 'completed') continue;
+      const price = dayClose.prices[b.id] || 0;
+      revenue.push({ entry_date: date, master: b.master, amount: price });
+      for(const c of (dayClose.consumables[b.id] || [])){
+        consumables.push({ entry_date: date, master: b.master, item: c.item, qty: c.qty, unit_price: c.unitCost, total: c.qty*c.unitCost });
+      }
+      const zone = getVisitZone(b);
+      const counted = new Map();
+      for(const s of (b.services || [])){
+        const cat = serviceCategory(s, zone);
+        counted.set(cat, (counted.get(cat)||0) + 1);
+      }
+      for(const [cat, count] of counted) serviceCounts.push({ entry_date: date, master: b.master, category: cat, count });
+    }
+    return { revenue, consumables, serviceCounts };
+  }
+
+  function buildSampleAnalyticsRange(fromStr, toStr){
+    const inRange = d => d >= fromStr && d <= toStr;
+    const live = buildLiveAnalyticsRange(fromStr, toStr);
+    return {
+      masters: state.masters,
+      revenue: FROZEN_ANALYTICS_REVENUE.filter(r => inRange(r.entry_date)).concat(live.revenue),
+      consumables: FROZEN_ANALYTICS_CONSUMABLES.filter(r => inRange(r.entry_date)).concat(live.consumables),
+      serviceCounts: FROZEN_ANALYTICS_SERVICE_COUNTS.filter(r => inRange(r.entry_date)).concat(live.serviceCounts),
+    };
+  }
+
+  // ---- period bucketing, for the по-дням/неделям/месяцам/годам grid ----
+  function mondayOf(dateStr){
+    const d = new Date(dateStr+'T00:00:00');
+    const offset = (d.getDay()+6)%7; // 0=Monday
+    d.setDate(d.getDate()-offset);
+    return toDateStr(d);
+  }
+  function bucketKey(dateStr, granularity){
+    if(granularity === 'day') return dateStr;
+    if(granularity === 'week') return mondayOf(dateStr);
+    if(granularity === 'month') return dateStr.slice(0,7);
+    return dateStr.slice(0,4); // year
+  }
+  function bucketLabel(key, granularity){
+    if(granularity === 'day'){ const [,m,d] = key.split('-'); return d+'.'+m; }
+    if(granularity === 'week'){ const [,m,d] = key.split('-'); return 'с '+d+'.'+m; }
+    if(granularity === 'month'){ const [y,m] = key.split('-'); return monthsShort[Number(m)-1]+' '+y; }
+    return key;
+  }
+  function orderedBuckets(fromStr, toStr, granularity){
+    const seen = new Map();
+    for(const date of eachDay(fromStr, toStr)){
+      const key = bucketKey(date, granularity);
+      if(!seen.has(key)) seen.set(key, true);
+    }
+    return Array.from(seen.keys());
+  }
+
+  function renderAnalytics(){
+    const from = document.getElementById('analyticsFrom').value;
+    const to = document.getElementById('analyticsTo').value;
+    const granularity = document.getElementById('analyticsGranularity').value;
+    if(!from || !to || from > to) return;
+    const data = getSampleAnalytics(from, to);
+    const fmt = n => Math.round(n).toLocaleString('ru-RU') + ' ₸';
+
+    // ---- per-master totals for the whole range (stat tiles + summary table) ----
+    const byMaster = new Map();
+    for(const m of data.masters) byMaster.set(m.name, { ...m, revenue:0, consumables:0, services:0 });
+    for(const r of data.revenue){ const m = byMaster.get(r.master); if(m) m.revenue += Number(r.amount); }
+    for(const c of data.consumables){ const m = byMaster.get(c.master); if(m) m.consumables += Number(c.total); }
+    for(const s of data.serviceCounts){ const m = byMaster.get(s.master); if(m) m.services += Number(s.count); }
+
+    const rows = Array.from(byMaster.values()).map(m => {
+      const profit = m.revenue - m.consumables;
+      const salary = Math.round(profit * m.commission_rate);
+      const net = profit - salary;
+      return { ...m, profit, salary, net };
+    }).sort((a,b) => (a.zone||'').localeCompare(b.zone||'','ru') || b.revenue - a.revenue);
+
+    const totalRevenue = rows.reduce((s,r)=>s+r.revenue,0);
+    const totalConsumables = rows.reduce((s,r)=>s+r.consumables,0);
+    const totalProfit = rows.reduce((s,r)=>s+r.profit,0);
+    const totalSalary = rows.reduce((s,r)=>s+r.salary,0);
+    const totalNet = rows.reduce((s,r)=>s+r.net,0);
+    // Закуп: pulled from actual day-closing procurement entries (real data,
+    // not the sample generator) — same as it will work once the CRM is live.
+    let totalProcurement = 0;
+    for(const date in dayClose.procurement){
+      if(date < from || date > to) continue;
+      for(const p of dayClose.procurement[date]) totalProcurement += p.qty * p.unitCost;
+    }
+    const tiles = document.querySelectorAll('#analyticsStats .value');
+    tiles[0].textContent = fmt(totalRevenue);
+    tiles[1].textContent = fmt(totalConsumables);
+    tiles[2].textContent = fmt(totalProcurement);
+    tiles[3].textContent = fmt(totalProfit);
+    tiles[4].textContent = fmt(totalSalary);
+    tiles[5].textContent = fmt(totalNet);
+
+    // ---- Популярные услуги: total count per service category, like the
+    // top section of the «Услуги Август» sheet ----
+    const categoryTotals = new Map();
+    for(const s of data.serviceCounts){
+      categoryTotals.set(s.category, (categoryTotals.get(s.category)||0) + Number(s.count));
+    }
+    const categoryRows = Array.from(categoryTotals.entries()).sort((a,b) => b[1]-a[1]);
+    const servicesBody = document.getElementById('analyticsServicesBody');
+    const servicesEmpty = document.getElementById('analyticsServicesEmpty');
+    if(!categoryRows.length){ servicesBody.innerHTML = ''; servicesEmpty.hidden = false; }
+    else{
+      servicesEmpty.hidden = true;
+      servicesBody.innerHTML = categoryRows.map(([cat, count]) =>
+        '<tr><td>'+esc(cat)+'</td><td class="num">'+count+'</td></tr>'
+      ).join('');
+    }
+    renderServicesChart(categoryRows);
+
+    // ---- По залам: services rendered + ЧП салона, grouped by zone —
+    // same shape as the sheet's «Услуг Оказано / ЧП Салона» block ----
+    const zoneTotals = new Map();
+    for(const r of rows){
+      const zone = r.zone || 'Без зоны';
+      if(!zoneTotals.has(zone)) zoneTotals.set(zone, { services:0, net:0 });
+      const z = zoneTotals.get(zone);
+      z.services += r.services; z.net += r.net;
+    }
+    const zoneRows = Array.from(zoneTotals.entries()).sort((a,b) => b[1].net-a[1].net);
+    const zonesBody = document.getElementById('analyticsZonesBody');
+    const zonesEmpty = document.getElementById('analyticsZonesEmpty');
+    if(!zoneRows.length){ zonesBody.innerHTML = ''; zonesEmpty.hidden = false; }
+    else{
+      zonesEmpty.hidden = true;
+      zonesBody.innerHTML = zoneRows.map(([zone, z]) =>
+        '<tr><td>'+esc(zone)+'</td><td class="num">'+z.services+'</td><td class="num">'+fmt(z.net)+'</td></tr>'
+      ).join('');
+    }
+    renderZoneStack('chartZoneServices', zoneTotals, 'services', v => v+' услуг');
+    renderZoneStack('chartZoneProfit', zoneTotals, 'net', fmt);
+    renderZoneLegend();
+
+    const body = document.getElementById('analyticsBody');
+    const empty = document.getElementById('analyticsEmpty');
+    if(!rows.length){ body.innerHTML = ''; empty.hidden = false; }
+    else{
+      empty.hidden = true;
+      let html = '';
+      let lastZone = null;
+      for(const r of rows){
+        if(r.zone !== lastZone){
+          html += '<tr class="zone-row"><td colspan="7">'+esc(r.zone||'Без зоны')+'</td></tr>';
+          lastZone = r.zone;
+        }
+        html += '<tr>' +
+          '<td>'+esc(r.name)+' <span class="rate-pill">'+Math.round(r.commission_rate*100)+'%</span></td>' +
+          '<td class="num">'+r.services+'</td>' +
+          '<td class="num">'+fmt(r.revenue)+'</td>' +
+          '<td class="num">'+fmt(r.consumables)+'</td>' +
+          '<td class="num">'+fmt(r.profit)+'</td>' +
+          '<td class="num">'+fmt(r.salary)+'</td>' +
+          '<td class="num">'+fmt(r.net)+'</td>' +
+          '</tr>';
+      }
+      html += '<tr class="total-row"><td>Итого</td><td class="num">'+rows.reduce((s,r)=>s+r.services,0)+'</td>' +
+        '<td class="num">'+fmt(totalRevenue)+'</td><td class="num">'+fmt(totalConsumables)+'</td>' +
+        '<td class="num">'+fmt(totalProfit)+'</td><td class="num">'+fmt(rows.reduce((s,r)=>s+r.salary,0))+'</td>' +
+        '<td class="num">'+fmt(totalNet)+'</td></tr>';
+      body.innerHTML = html;
+    }
+
+    // ---- detailed grid: master rows × day/week/month/year columns ----
+    // Mirrors the source spreadsheet's per-master block: Общая сумма,
+    // then (when expanded) Расходники, Прибыль, ЗП мастера, ЧП салона,
+    // and one row per service category — all on the same period columns.
+    const buckets = orderedBuckets(from, to, granularity);
+    function sumByMasterBucket(list, valueFn){
+      const map = new Map(); // "master||bucket" -> amount
+      for(const item of list){
+        const key = item.master+'||'+bucketKey(item.entry_date, granularity);
+        map.set(key, (map.get(key)||0) + valueFn(item));
+      }
+      return map;
+    }
+    const revByMasterBucket = sumByMasterBucket(data.revenue, r => Number(r.amount));
+    const consByMasterBucket = sumByMasterBucket(data.consumables, c => Number(c.total));
+    // master -> category -> "bucket" -> count
+    const catByMaster = new Map();
+    for(const s of data.serviceCounts){
+      if(!catByMaster.has(s.master)) catByMaster.set(s.master, new Map());
+      const catMap = catByMaster.get(s.master);
+      if(!catMap.has(s.category)) catMap.set(s.category, new Map());
+      const bMap = catMap.get(s.category);
+      const key = bucketKey(s.entry_date, granularity);
+      bMap.set(key, (bMap.get(key)||0) + Number(s.count));
+    }
+
+    const head = document.getElementById('analyticsGridHead');
+    const gridBody = document.getElementById('analyticsGridBody');
+    const gridEmpty = document.getElementById('analyticsGridEmpty');
+    const gridPanel = head.closest('.panel');
+
+    if(!buckets.length || !rows.length){
+      head.innerHTML = '<th>Мастер</th>'; gridBody.innerHTML = '';
+      gridEmpty.hidden = false; gridPanel.querySelector('.table-scroll').hidden = true;
+      return;
+    }
+    gridEmpty.hidden = true; gridPanel.querySelector('.table-scroll').hidden = false;
+
+    head.innerHTML = '<th>Мастер</th>' +
+      buckets.map(b => '<th class="num">'+esc(bucketLabel(b, granularity))+'</th>').join('') +
+      '<th class="num">Итого</th>';
+
+    function moneyCells(map, keyPrefix){
+      let total = 0;
+      const cells = buckets.map(b => {
+        const v = map.get(keyPrefix+'||'+b) || 0;
+        total += v;
+        return '<td class="num'+(v ? '' : ' zero')+'">'+(v ? fmt(v) : '—')+'</td>';
+      }).join('');
+      return { cells, total };
+    }
+    function countCells(bMap){
+      let total = 0;
+      const cells = buckets.map(b => {
+        const v = (bMap && bMap.get(b)) || 0;
+        total += v;
+        return '<td class="num'+(v ? '' : ' zero')+'">'+(v ? v : '—')+'</td>';
+      }).join('');
+      return { cells, total };
+    }
+
+    let gridHtml = '';
+    let lastZone2 = null;
+    const colTotals = buckets.map(() => 0);
+    let grandTotal = 0;
+    for(const r of rows){
+      if(r.zone !== lastZone2){
+        gridHtml += '<tr class="zone-row"><td colspan="'+(buckets.length+2)+'">'+esc(r.zone||'Без зоны')+'</td></tr>';
+        lastZone2 = r.zone;
+      }
+      const expanded = state.analyticsExpanded.has(r.name);
+      const rev = moneyCells(revByMasterBucket, r.name);
+      buckets.forEach((b,i) => { colTotals[i] += revByMasterBucket.get(r.name+'||'+b) || 0; });
+      grandTotal += rev.total;
+
+      gridHtml += '<tr><td><button type="button" class="grid-expand-btn" data-master="'+esc(r.name)+'">'+(expanded?'▾':'▸')+'</button>'+esc(r.name)+'</td>'+rev.cells+'<td class="num">'+fmt(rev.total)+'</td></tr>';
+
+      if(expanded){
+        const cons = moneyCells(consByMasterBucket, r.name);
+        const rate = r.commission_rate;
+        const profitCells = buckets.map(b => {
+          const v = (revByMasterBucket.get(r.name+'||'+b)||0) - (consByMasterBucket.get(r.name+'||'+b)||0);
+          return { v, td: '<td class="num'+(v?'':' zero')+'">'+(v?fmt(v):'—')+'</td>' };
+        });
+        const salaryCells = profitCells.map(p => Math.round(p.v*rate));
+        const netCells = profitCells.map((p,i) => p.v - salaryCells[i]);
+
+        gridHtml += '<tr class="metric-row"><td>Расходники</td>'+cons.cells+'<td class="num">'+fmt(cons.total)+'</td></tr>';
+        gridHtml += '<tr class="metric-row"><td>Прибыль</td>'+profitCells.map(p=>p.td).join('')+'<td class="num">'+fmt(rev.total-cons.total)+'</td></tr>';
+        gridHtml += '<tr class="metric-row"><td>ЗП мастера</td>'+salaryCells.map(v=>'<td class="num'+(v?'':' zero')+'">'+(v?fmt(v):'—')+'</td>').join('')+'<td class="num">'+fmt(salaryCells.reduce((s,v)=>s+v,0))+'</td></tr>';
+        gridHtml += '<tr class="metric-row"><td>ЧП салона</td>'+netCells.map(v=>'<td class="num'+(v?'':' zero')+'">'+(v?fmt(v):'—')+'</td>').join('')+'<td class="num">'+fmt(netCells.reduce((s,v)=>s+v,0))+'</td></tr>';
+
+        const catMap = catByMaster.get(r.name);
+        if(catMap && catMap.size){
+          const cats = Array.from(catMap.keys()).sort((a,b)=>a.localeCompare(b,'ru'));
+          for(const cat of cats){
+            const cc = countCells(catMap.get(cat));
+            gridHtml += '<tr class="category-row"><td>'+esc(cat)+'</td>'+cc.cells+'<td class="num">'+cc.total+'</td></tr>';
+          }
+        }
+      }
+    }
+    gridHtml += '<tr class="total-row"><td>Итого</td>' +
+      colTotals.map(v => '<td class="num">'+fmt(v)+'</td>').join('') +
+      '<td class="num">'+fmt(grandTotal)+'</td></tr>';
+    gridBody.innerHTML = gridHtml;
+  }
+  document.getElementById('analyticsGridBody').addEventListener('click', e => {
+    const btn = e.target.closest('.grid-expand-btn');
+    if(!btn) return;
+    const name = btn.dataset.master;
+    if(state.analyticsExpanded.has(name)) state.analyticsExpanded.delete(name);
+    else state.analyticsExpanded.add(name);
+    renderAnalytics();
+  });
+
+  document.getElementById('analyticsGranularity').addEventListener('change', renderAnalytics);
+  document.getElementById('analyticsFrom').addEventListener('change', renderAnalytics);
+  document.getElementById('analyticsTo').addEventListener('change', renderAnalytics);
+  (function(){
+    const today = new Date();
+    const monthAgo = new Date(today); monthAgo.setDate(monthAgo.getDate()-29);
+    document.getElementById('analyticsFrom').value = toDateStr(monthAgo);
+    document.getElementById('analyticsTo').value = toDateStr(today);
+    document.getElementById('analyticsGranularity').value = 'day';
+  })();
+
+  // ---------------- close-day (link visits to revenue) ----------------
+  // Instead of one lump revenue figure per master per day, each visit
+  // (booking) gets its own price, entered here once it's actually
+  // finished. Demo-only price hints below stand in for a real price
+  // list — the real version would likely pull from zapis.kz or a
+  // salon-maintained price table.
+  const SERVICE_PRICE_HINTS = {
+    'Маникюр классический': 6000, 'Педикюр аппаратный': 8000, 'Наращивание ресниц 2D': 15000,
+    'Окрашивание': 25000, 'Стрижка женская': 8000, 'Оформление бровей': 3000,
+    'Стрижка мужская': 5000, 'Укладка': 7000, 'Маникюр + покрытие гель-лак': 9000,
+    'Коррекция бровей': 3000, 'Окрашивание бровей': 3000,
+  };
+  // Закуп categories — match the real "Закуп" spreadsheet tab, which
+  // divides purchases into four sections (each with its own subtotal):
+  // consumables (paints, disposables — feeds Инвентаризация usage),
+  // retail product for resale, Nail-zone-specific supplies, and general
+  // salon/admin purchases (snacks, cleaning, repairs, marketing, etc.).
+  const PROCUREMENT_CATEGORIES = ['Расходники', 'Продукция', 'Nail зал', 'Салон'];
+  const PROCUREMENT_ITEMS = {
+    'Расходники': ['Краска Kapus','Оксидант Kapus','Пудра Kapus','Краска Screen','Оксидант Screen','Пудра Screen',
+      'Пудра Loreal','Краска Majarel','Краска Inoa, Dialight','Оксидант Majarel','Одноразовые пеньюары',
+      'Перчатки одноразовые','Фольга','Шампунь 5 л.','Бальзам 5 л.','Шампунь для окрашенных','Маска для окрашенных',
+      'Спрей для обьёма','Двухфазный спрей','Спрей термозащитный','Лак для волос Шварцкопф','Укладчики',
+      'Гидропластика','Лечение Pro Longer','Пиллинг головы Screen','Расчёски','Шапочки одн., зажимы алюминиевые',
+      'Невидимки','Пенюары парикмахерские','Краситель Эстель','Оксидант Эстель','Пудра Эстель','Цвет Эстель',
+      'Краситель Новель','Оксидант Новель','Аромамасло','Шампунь ШГО','Оксидант 5л','Ремувер'],
+    'Продукция': ['Косметика Screen','Косметика Gk','Косметика'],
+    'Nail зал': ['Гель Kinetiks','Гель Luxio','База','Топ','Calgel','Вата','Спирт','Кисть','Крем для рук','Скраб',
+      'Крафтовые пакеты','Жидкость для снятия геля','Кутиклер','Масло для кутикулы','Парафин','Тапочки для парафина',
+      'Тапочки одноразовые','Педикюрные пакеты','Набор для японского маникюра','Лампа для сушки геля','Пылесос',
+      'Лезвие','Глина','Жабо','Одеколон','Бальзам Эстель','Оксидант De Luxe','Воск для депиляции','Мыло для бритья',
+      'Лак для ногтей','База Ruber'],
+    'Салон': ['Конфеты, печенье','Орешки','Заварка','Сахар','Соль','Зубочистки','Кофемашина','Одноразовые стаканы',
+      'Вода','Жидкость для мытья посуды','Порошок для стирки','Кондиционер для стирки','Доместос',
+      'Швабра, тряпки для пола','Тряпки для пыли','Канцелярские товары','Мусорные пакеты (большие)',
+      'Мусорные пакеты (маленькие)','Цветы','Мебель','Вывеска','Полотенце','Футболки','Доставка','Визитки',
+      'Сертификаты','Наклейки логотипы','СММ','Подарки гостям','Блогер','Электрик','Лампочки','Сантехник',
+      'Дезинфекция','Туал. бумага для гостей','Туал. бумага для сотрудников','Салфетки','Z полотенце',
+      'Баланс телефона','Батарейки','Часы настенные','Подставка для сумок, телефона','Реклама 2ГИС','Бэйджи',
+      'Камеры','Ваза','USB для телефона','Посуда для салона','Ширма','Зеркало','Ремонт кондиционеров','СЭС',
+      'Горшки','Ёлочные украшения','Шары','Термопот','Корпоратив','Ремонт салона','Аптека',
+      'Гигиенические принадлежности','Фрукты','Влажные салфетки','Диффузор','Видеонаблюдение'],
+  };
+  function populateProcurementOptions(){
+    const sel = document.getElementById('newProcCategory');
+    sel.innerHTML = PROCUREMENT_CATEGORIES.map(c => '<option value="'+esc(c)+'">'+esc(c)+'</option>').join('');
+  }
+  // Custom scrollable suggestion dropdown for "Наименование" in Закуп —
+  // a native <input list="datalist"> here doesn't reliably scroll long
+  // lists (e.g. "Салон" has 60+ items) inside the artifact frame, so this
+  // is a small hand-built combobox instead: filters PROCUREMENT_ITEMS for
+  // the selected category as you type, click (or Enter) to pick.
+  function renderProcItemSuggestions(query){
+    const cat = document.getElementById('newProcCategory').value || PROCUREMENT_CATEGORIES[0];
+    const list = PROCUREMENT_ITEMS[cat] || [];
+    const q = (query || '').trim().toLowerCase();
+    const matches = q ? list.filter(i => i.toLowerCase().includes(q)) : list;
+    const box = document.getElementById('newProcItemSuggest');
+    if(!matches.length){
+      box.innerHTML = '<div class="no-match">Ничего не найдено</div>';
+      box.hidden = false;
+      return;
+    }
+    box.innerHTML = matches.map(i => '<div data-val="'+esc(i)+'">'+esc(i)+'</div>').join('');
+    box.hidden = false;
+  }
+  function pickProcItem(value){
+    const itemEl = document.getElementById('newProcItem');
+    itemEl.value = value;
+    document.getElementById('newProcItemSuggest').hidden = true;
+    const known = getConsumablePrice(value);
+    const costEl = document.getElementById('newProcCost');
+    if(known != null && !costEl.value) costEl.value = known;
+  }
+  document.getElementById('newProcCategory').addEventListener('change', () => {
+    document.getElementById('newProcItem').value = '';
+    document.getElementById('newProcItemSuggest').hidden = true;
+  });
+  document.getElementById('newProcItemSuggest').addEventListener('mousedown', e => {
+    const opt = e.target.closest('[data-val]');
+    if(!opt) return;
+    e.preventDefault();
+    pickProcItem(opt.dataset.val);
+  });
+  document.addEventListener('click', e => {
+    if(!e.target.closest('.proc-item-wrap')) document.getElementById('newProcItemSuggest').hidden = true;
+  });
+  // Consumables price list — lives in state so the "Расходники Прайс"
+  // tab can edit it; the item name in "Закрытие дня" auto-fills its cost
+  // from here (in production this is the Расходники Прайс table).
+  state.consumablePrices = [];
+  function getConsumablePrice(item){
+    const p = state.consumablePrices.find(c => c.item === item);
+    return p ? p.price : null;
+  }
+  // bookingId -> price, bookingId -> [{item, cost}], dateStr -> bool,
+  // set of bookingIds with the "+ Расходник" form open.
+  // procurement: dateStr -> [{item, qty, unitCost}] — what the salon
+  // bought that day (Закуп), independent of any visit/master; feeds
+  // Инвентаризация together with the consumables usage log above.
+  // productSales: dateStr -> [{item, qty, unitPrice}] — retail sale of consumables
+  // straight to a client, not tied to a visit/master; the whole sale amount
+  // goes to salon profit and the stock leaves inventory like any other use.
+  // serviceStatus: bookingId -> 'pending' | 'completed' | 'cancelled'. No
+  // entry means 'pending' («Ожидает подтверждения»), the default for every
+  // visit when it first appears in Закрытие дня. Only 'completed' visits
+  // count toward the day's totals; 'cancelled' visits are resolved too (so
+  // they don't block closing the day) but contribute nothing financially —
+  // only 'pending' visits are excluded from the day's report.
+  // writeoffs: dateStr -> [{item, qty, reason}] — stock written off from
+  // Инвентаризация (spoilage, loss, breakage) — reduces "Остаток" the same
+  // way usage does, tracked separately in Инвентаризация → История.
+  // adjustments: dateStr -> [{item, qty, note, field?}] — a signed
+  // stock-count correction made from the item's inline «Редактировать» row.
+  // field: 'bought'|'used' entries (current) add qty — which can be
+  // negative — straight to that one total. Older entries have no field:
+  // qty > 0 added to "Закуплено", qty < 0 added to "Использовано" (kept
+  // working for backward compatibility). Also kept in История.
+  // visitZone: bookingId -> zone override — a master normally works in one
+  // zone (state.masters[].zone), but some masters cover more than one, so a
+  // visit can be tagged with a different zone than the master's default
+  // right here in «Закрытие дня». Only set when it differs from the default.
+  const dayClose = {
+    prices: {},
+    consumables: {},
+    procurement: {},
+    productSales: {},
+    serviceStatus: {},
+    writeoffs: {},
+    adjustments: {},
+    closed: {},
+    openForms: new Set(),
+    visitZone: {},
+  };
+  function visitStatus(bookingId){ return dayClose.serviceStatus[bookingId] || 'pending'; }
+  function getVisitZone(b){
+    if(dayClose.visitZone[b.id]) return dayClose.visitZone[b.id];
+    const master = state.masters.find(m => m.name === b.master);
+    return master ? master.zone : null;
+  }
+
+  function dayStr(iso){
+    const d = new Date(iso);
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  }
+  function timeStr(iso){
+    const d = new Date(iso);
+    return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  }
+  function suggestedPrice(b){
+    if(!b.services || !b.services.length) return 8000;
+    return b.services.reduce((sum,s) => sum + (SERVICE_PRICE_HINTS[s] || 8000), 0);
+  }
+  function masterRate(name){
+    const m = state.masters.find(x => x.name === name);
+    return m ? m.commission_rate : 0.5;
+  }
+  function populateConsumableOptions(){
+    document.getElementById('consumableOptions').innerHTML =
+      state.consumablePrices.map(c => '<option value="'+esc(c.item)+'">').join('');
+  }
+  function visitConsumablesTotal(bookingId){
+    return (dayClose.consumables[bookingId] || []).reduce((s,c) => s + c.qty * c.unitCost, 0);
+  }
+  // The consumable's cost comes entirely out of the master's share and
+  // goes entirely to the salon — it isn't split by the commission rate.
+  function visitSplit(price, rate, consumablesTotal){
+    const master = Math.max(0, Math.round(price * rate) - consumablesTotal);
+    const salon = Math.round(price * (1 - rate)) + consumablesTotal;
+    return { master, salon };
+  }
+
+  function renderCloseDayServices(){
+    const date = document.getElementById('closeDayDate').value;
+    if(!date) return;
+    const visits = state.bookings.filter(b => dayStr(b.start) === date).sort((a,b) => new Date(a.start) - new Date(b.start));
+
+    const statusEl = document.getElementById('closeDayStatus');
+    const closed = !!dayClose.closed[date];
+    // A closed day is locked: prices, consumables and visit status can't be
+    // edited until someone explicitly unlocks it (see closeDayUnlock below).
+    const dayEditable = !closed;
+    statusEl.textContent = closed ? 'День закрыт' : 'День открыт';
+    statusEl.className = 'day-status ' + (closed ? 'closed' : 'open');
+
+    // A visit still «Ожидает подтверждения» blocks closing the day — its
+    // price/consumables haven't been confirmed yet, so it can't be counted.
+    const pendingCount = visits.filter(v => v.status !== 'NOT_SERVED' && visitStatus(v.id) === 'pending').length;
+    const pendingNote = document.getElementById('closeDayPendingNote');
+    const saveBtn = document.getElementById('closeDaySave');
+    const unlockBtn = document.getElementById('closeDayUnlock');
+    pendingNote.hidden = pendingCount === 0 || closed;
+    pendingNote.textContent = pendingCount ? 'Не подтверждено услуг: ' + pendingCount : '';
+    saveBtn.hidden = closed;
+    saveBtn.disabled = pendingCount > 0;
+    saveBtn.title = pendingCount > 0 ? 'Подтвердите или отмените все услуги, чтобы закрыть день' : '';
+    unlockBtn.hidden = !closed;
+
+    const container = document.getElementById('closeDayGroups');
+    const empty = document.getElementById('closeDayEmpty');
+    const totalWrap = document.getElementById('closeDayTotal');
+
+    if(!visits.length){
+      container.innerHTML = ''; empty.hidden = false; totalWrap.hidden = true;
+      return;
+    }
+    empty.hidden = true; totalWrap.hidden = false;
+
+    const byMaster = new Map();
+    for(const v of visits){
+      if(!byMaster.has(v.master)) byMaster.set(v.master, []);
+      byMaster.get(v.master).push(v);
+    }
+
+    let html = '';
+    for(const [master, list] of byMaster){
+      html += '<div class="cd-master-group" data-master="'+esc(master)+'">' +
+        '<div class="cd-master-head"><span class="cd-master-name-group"><b>'+esc(master)+'</b><span class="rate-pill">'+Math.round(masterRate(master)*100)+'%</span></span><span class="cd-subtotal" data-role="subtotal">—</span></div>';
+      for(const v of list){
+        const notServed = v.status === 'NOT_SERVED';
+        const vStatus = visitStatus(v.id);
+        const locked = notServed || vStatus !== 'pending' || !dayEditable;
+        const price = dayClose.prices[v.id] != null ? dayClose.prices[v.id] : (notServed ? 0 : suggestedPrice(v));
+        dayClose.prices[v.id] = price;
+        const statusPillHtml = notServed ? '' :
+          vStatus === 'pending' ? '<span class="pill warn">Ожидает подтверждения</span>' :
+          vStatus === 'completed' ? '<span class="pill good">Завершена</span>' :
+          '<span class="pill bad">Отменена</span>';
+        const zone = getVisitZone(v);
+        const zoneSelectHtml = '<select class="cd-zone-select" data-booking="'+v.id+'" '+(locked?'disabled':'')+'>' +
+          ZONE_ORDER.map(z => '<option value="'+esc(z)+'" '+(z===zone?'selected':'')+'>'+esc(z)+'</option>').join('') +
+          (zone && ZONE_ORDER.indexOf(zone) === -1 ? '<option value="'+esc(zone)+'" selected>'+esc(zone)+'</option>' : '') +
+          '</select>';
+        html += '<div class="cd-visit'+(notServed?' not-served':'')+'" data-booking="'+v.id+'">' +
+          '<span class="cd-time">'+timeStr(v.start)+'</span>' +
+          '<span class="cd-client">' +
+            '<span class="cd-client-name-row"><b>'+esc(v.client_name||'Без имени')+'</b>'+statusPillHtml+'</span>' +
+            '<span class="cd-client-services">'+esc((v.services||[]).join(', '))+' · '+zoneSelectHtml+'</span>' +
+          '</span>' +
+          '<span class="cd-price-wrap"><input type="number" min="0" step="500" value="'+price+'" '+(locked?'disabled':'')+'><span class="cd-currency">₸</span></span>' +
+          '</div>';
+        if(!notServed){
+          const cons = dayClose.consumables[v.id] || [];
+          const consTotal = cons.reduce((s,c)=>s+c.qty*c.unitCost,0);
+          const split = visitSplit(price, masterRate(master), consTotal);
+          const chips = cons.map((c,idx) =>
+            '<span class="cd-cons-chip">'+esc(c.item)+' ×'+c.qty+' · '+Math.round(c.qty*c.unitCost).toLocaleString('ru-RU')+' ₸' +
+            (vStatus === 'pending' && dayEditable ? '<button type="button" class="cd-cons-remove" data-booking="'+v.id+'" data-idx="'+idx+'">×</button>' : '') +
+            '</span>'
+          ).join('');
+          const formOpen = dayEditable && dayClose.openForms.has(v.id);
+          const formHtml = formOpen ?
+            '<div class="cd-cons-form">' +
+              '<input type="text" class="cd-cons-item" list="consumableOptions" placeholder="Расходник">' +
+              '<input type="number" class="cd-cons-qty" placeholder="Кол-во" min="1" step="1" value="1">' +
+              '<input type="number" class="cd-cons-cost" placeholder="Цена за ед." min="0" step="50">' +
+              '<span class="cd-cons-total-preview">= 0 ₸</span>' +
+              '<button type="button" class="mini-action-btn cd-cons-save" data-booking="'+v.id+'">Добавить</button>' +
+              '<button type="button" class="mini-action-btn cd-cons-cancel" data-booking="'+v.id+'">Отмена</button>' +
+            '</div>' : '';
+          const splitHtml = vStatus === 'cancelled'
+            ? '<span class="cd-status-note">Отменено — не учитывается</span>'
+            : '%мастера <b>'+split.master.toLocaleString('ru-RU')+' ₸</b> · %салона <b>'+split.salon.toLocaleString('ru-RU')+' ₸</b>' +
+              (vStatus === 'pending' && dayEditable ? ' <span class="cd-status-note">(предварительно)</span>' : '');
+          const statusHtml = !dayEditable
+            ? '<span class="cd-locked-note">День закрыт — правки заблокированы</span>'
+            : vStatus === 'pending'
+            ? '<button type="button" class="mini-action-btn cd-status-complete" data-booking="'+v.id+'">Завершить</button>' +
+              '<button type="button" class="mini-action-btn cd-status-cancel" data-booking="'+v.id+'">Отменить</button>'
+            : '<button type="button" class="mini-action-btn cd-status-revert" data-booking="'+v.id+'">↺ Изменить</button>';
+          html += '<div class="cd-visit-extra">' +
+            '<div class="cd-visit-extra-top">' +
+              '<div class="cd-consumables">' + chips +
+                (vStatus === 'pending' && dayEditable ? '<button type="button" class="cd-add-consumable-btn" data-booking="'+v.id+'" '+(formOpen?'hidden':'')+'>+ Расходник</button>' + formHtml : '') +
+              '</div>' +
+              '<div class="cd-split">'+splitHtml+'</div>' +
+            '</div>' +
+            '<div class="cd-status-row">'+statusHtml+'</div>' +
+          '</div>';
+        }
+      }
+      html += '</div>';
+    }
+    container.innerHTML = html;
+    updateCloseDayTotals();
+  }
+
+  function updateCloseDayTotals(){
+    let grand = 0, grandCons = 0, grandMaster = 0, grandSalon = 0;
+    document.querySelectorAll('.cd-master-group').forEach(group => {
+      const master = group.dataset.master;
+      const rate = masterRate(master);
+      let subtotal = 0;
+      group.querySelectorAll('.cd-visit').forEach(row => {
+        const input = row.querySelector('input');
+        const v = Number(input.value) || 0;
+        const bookingId = row.dataset.booking;
+        dayClose.prices[bookingId] = v;
+        if(row.classList.contains('not-served')) return;
+        const status = visitStatus(bookingId);
+        const consTotal = visitConsumablesTotal(bookingId);
+        const split = visitSplit(v, rate, consTotal);
+        const splitEl = row.nextElementSibling && row.nextElementSibling.querySelector('.cd-split');
+        // Only a confirmed («Завершена») visit counts toward the day's
+        // totals. A cancelled visit is resolved (doesn't block closing the
+        // day) but contributes nothing; a pending one shows a preview split
+        // so the admin can see what confirming will produce, but neither
+        // its price nor its split feeds the report yet.
+        if(status === 'cancelled'){
+          if(splitEl) splitEl.innerHTML = '<span class="cd-status-note">Отменено — не учитывается</span>';
+          return;
+        }
+        if(splitEl) splitEl.innerHTML = '%мастера <b>'+split.master.toLocaleString('ru-RU')+' ₸</b> · %салона <b>'+split.salon.toLocaleString('ru-RU')+' ₸</b>' +
+          (status === 'pending' ? ' <span class="cd-status-note">(предварительно)</span>' : '');
+        if(status !== 'completed') return;
+        subtotal += v;
+        grandCons += consTotal; grandMaster += split.master; grandSalon += split.salon;
+      });
+      group.querySelector('[data-role="subtotal"]').textContent = Math.round(subtotal).toLocaleString('ru-RU') + ' ₸';
+      grand += subtotal;
+    });
+    // Продажа продукции: whole sale amount goes straight to salon profit
+    // (no master involved) and also rolls into «Расходники за день», per
+    // request — both tiles show it, with a footnote on this one.
+    const date = document.getElementById('closeDayDate').value;
+    const sales = (date && dayClose.productSales[date]) || [];
+    const salesTotal = sales.reduce((s,r) => s + r.qty * r.unitPrice, 0);
+    grand += salesTotal;
+    grandSalon += salesTotal;
+    grandCons += salesTotal;
+    document.getElementById('closeDayTotalValue').textContent = Math.round(grand).toLocaleString('ru-RU') + ' ₸';
+    const consEl = document.getElementById('closeDayConsValue');
+    const consHint = document.getElementById('closeDayConsHint');
+    const masterEl = document.getElementById('closeDayMasterValue');
+    const salonEl = document.getElementById('closeDaySalonValue');
+    if(consEl) consEl.textContent = Math.round(grandCons).toLocaleString('ru-RU') + ' ₸';
+    if(consHint){
+      if(salesTotal > 0){
+        consHint.hidden = false;
+        consHint.textContent = 'Включая продажу продукции на ' + Math.round(salesTotal).toLocaleString('ru-RU') + ' ₸';
+      } else {
+        consHint.hidden = true;
+      }
+    }
+    if(masterEl) masterEl.textContent = Math.round(grandMaster).toLocaleString('ru-RU') + ' ₸';
+    if(salonEl) salonEl.textContent = Math.round(grandSalon).toLocaleString('ru-RU') + ' ₸';
+  }
+
+  // ---------------- close-day: Расходники (day's consumables log) ----------------
+  // Read/manage view over the same dayClose.consumables entered per
+  // visit in the Услуги tab — nothing new is entered here, it just
+  // rolls everything up into one list for the day.
+  function renderConsLog(){
+    const date = document.getElementById('closeDayDate').value;
+    if(!date) return;
+    // Only confirmed («Завершена») visits feed this log — same rule as the
+    // day's money totals, so a still-pending or cancelled visit's
+    // consumables don't show up here until (or unless) it's confirmed.
+    const visits = state.bookings.filter(b => dayStr(b.start) === date && visitStatus(b.id) === 'completed');
+    const rows = [];
+    for(const v of visits){
+      const cons = dayClose.consumables[v.id] || [];
+      cons.forEach((c, idx) => rows.push({ v, c, idx }));
+    }
+    const sales = dayClose.productSales[date] || [];
+    const body = document.getElementById('consLogBody');
+    const empty = document.getElementById('consLogEmpty');
+    const footnote = document.getElementById('consLogSalesFootnote');
+    if(!rows.length && !sales.length){ body.innerHTML = ''; empty.hidden = false; footnote.hidden = true; return; }
+    empty.hidden = true;
+    let total = 0;
+    let html = rows.map(({v,c,idx}) => {
+      const sum = c.qty * c.unitCost;
+      total += sum;
+      return '<tr>' +
+        '<td>'+esc(v.master)+'</td>' +
+        '<td>'+esc(v.client_name||'Без имени')+'</td>' +
+        '<td>'+esc(c.item)+'</td>' +
+        '<td class="num">'+c.qty+'</td>' +
+        '<td class="num">'+Math.round(c.unitCost).toLocaleString('ru-RU')+' ₸</td>' +
+        '<td class="num">'+Math.round(sum).toLocaleString('ru-RU')+' ₸</td>' +
+        '<td class="cp-actions"><span class="cd-status-note" title="Чтобы изменить, сначала верните услугу в статус «Ожидает подтверждения»">Завершено</span></td>' +
+        '</tr>';
+    }).join('');
+    // Продажа продукции rolls into the same report/total — no master or
+    // client tied to a retail sale, so those columns just say «Продажа».
+    let salesTotal = 0;
+    html += sales.map(s => {
+      const sum = s.qty * s.unitPrice;
+      salesTotal += sum;
+      return '<tr>' +
+        '<td>—</td>' +
+        '<td>Продажа продукции</td>' +
+        '<td>'+esc(s.item)+'</td>' +
+        '<td class="num">'+s.qty+'</td>' +
+        '<td class="num">'+Math.round(s.unitPrice).toLocaleString('ru-RU')+' ₸</td>' +
+        '<td class="num">'+Math.round(sum).toLocaleString('ru-RU')+' ₸</td>' +
+        '<td class="cp-actions"></td>' +
+        '</tr>';
+    }).join('');
+    total += salesTotal;
+    html += '<tr class="total-row"><td colspan="5">Итого</td><td class="num">'+Math.round(total).toLocaleString('ru-RU')+' ₸</td><td></td></tr>';
+    body.innerHTML = html;
+    if(salesTotal > 0){
+      footnote.hidden = false;
+      footnote.textContent = 'Включая продажу продукции на ' + Math.round(salesTotal).toLocaleString('ru-RU') + ' ₸';
+    } else {
+      footnote.hidden = true;
+    }
+  }
+  document.getElementById('consLogBody').addEventListener('click', e => {
+    const btn = e.target.closest('.cd-cons-remove');
+    if(!btn) return;
+    const bookingId = btn.dataset.booking;
+    const idx = Number(btn.dataset.idx);
+    dayClose.consumables[bookingId].splice(idx, 1);
+    renderCloseDay();
+    renderInventory();
+  });
+
+  // ---------------- close-day: Закуп (procurement) ----------------
+  // Grouped by category (Расходники / Продукция / Nail зал / Салон), each
+  // with its own subtotal row — matches the real "Закуп" sheet's layout.
+  function renderProcurement(){
+    const date = document.getElementById('closeDayDate').value;
+    if(!date) return;
+    const rows = dayClose.procurement[date] || [];
+    const body = document.getElementById('procurementBody');
+    const empty = document.getElementById('procurementEmpty');
+    if(!rows.length){ body.innerHTML = ''; empty.hidden = false; return; }
+    empty.hidden = true;
+    const withIdx = rows.map((p, idx) => ({ ...p, idx }));
+    const cats = PROCUREMENT_CATEGORIES.slice();
+    const extra = Array.from(new Set(withIdx.map(p => p.category || 'Расходники'))).filter(c => !cats.includes(c));
+    cats.push(...extra);
+    let grandTotal = 0;
+    let html = '';
+    cats.forEach(cat => {
+      const items = withIdx.filter(p => (p.category || 'Расходники') === cat);
+      if(!items.length) return;
+      let catTotal = 0;
+      html += '<tr class="cat-row"><td colspan="5">'+esc(cat)+'</td></tr>';
+      html += items.map(p => {
+        const sum = p.qty * p.unitCost;
+        catTotal += sum;
+        return '<tr>' +
+          '<td>'+esc(p.item)+'</td>' +
+          '<td class="num">'+p.qty+'</td>' +
+          '<td class="num">'+Math.round(p.unitCost).toLocaleString('ru-RU')+' ₸</td>' +
+          '<td class="num">'+Math.round(sum).toLocaleString('ru-RU')+' ₸</td>' +
+          '<td class="cp-actions"><button type="button" class="mini-action-btn proc-remove" data-idx="'+p.idx+'">Удалить</button></td>' +
+          '</tr>';
+      }).join('');
+      grandTotal += catTotal;
+      html += '<tr class="cat-subtotal"><td>Итого — '+esc(cat)+'</td><td></td><td></td><td class="num">'+Math.round(catTotal).toLocaleString('ru-RU')+' ₸</td><td></td></tr>';
+    });
+    html += '<tr class="total-row"><td>Итого за день</td><td></td><td></td><td class="num">'+Math.round(grandTotal).toLocaleString('ru-RU')+' ₸</td><td></td></tr>';
+    body.innerHTML = html;
+  }
+  // If the entered name isn't a known item in the chosen category, ask
+  // before creating it as a new Закуп position. Confirmed positions in
+  // «Расходники» also join the shared consumables price list, so they're
+  // immediately selectable in the per-visit consumables picker and in
+  // Продажа продукции — the same list feeds both.
+  function registerNewProcurementItem(item, category){
+    const known = PROCUREMENT_ITEMS[category] || (PROCUREMENT_ITEMS[category] = []);
+    if(!known.some(i => i.toLowerCase() === item.toLowerCase())) known.push(item);
+    if(category === 'Расходники' && !state.consumablePrices.some(c => c.item.toLowerCase() === item.toLowerCase())){
+      state.consumablePrices.push({ item, price: 0 });
+      populateConsumableOptions();
+      renderConsPrices();
+    }
+  }
+  async function addProcurement(){
+    const date = document.getElementById('closeDayDate').value;
+    if(!date) return;
+    const catEl = document.getElementById('newProcCategory');
+    const itemEl = document.getElementById('newProcItem');
+    const qtyEl = document.getElementById('newProcQty');
+    const costEl = document.getElementById('newProcCost');
+    const category = catEl.value || PROCUREMENT_CATEGORIES[0];
+    const item = itemEl.value.trim();
+    const qty = Number(qtyEl.value) || 1;
+    const unitCost = Number(costEl.value) || 0;
+    if(!item){ itemEl.focus(); return; }
+    // Checked before the price validation below, so the prompt appears as
+    // soon as an unlisted name is submitted — even if price isn't filled in yet.
+    const known = PROCUREMENT_ITEMS[category] || [];
+    if(!known.some(i => i.toLowerCase() === item.toLowerCase())){
+      const ok = await showConfirmDialog('Такой позиции не существует. Создать новую позицию закупа?');
+      if(!ok) return;
+      registerNewProcurementItem(item, category);
+    }
+    if(unitCost <= 0){ costEl.focus(); return; }
+    if(!dayClose.procurement[date]) dayClose.procurement[date] = [];
+    dayClose.procurement[date].push({ item, qty, unitCost, category });
+    itemEl.value = ''; qtyEl.value = '1'; costEl.value = '';
+    document.getElementById('addProcurementRow').hidden = true;
+    renderCloseDay();
+    renderInventory();
+  }
+  document.getElementById('procurementBody').addEventListener('click', e => {
+    const btn = e.target.closest('.proc-remove');
+    if(!btn) return;
+    const date = document.getElementById('closeDayDate').value;
+    dayClose.procurement[date].splice(Number(btn.dataset.idx), 1);
+    renderCloseDay();
+    renderInventory();
+  });
+  document.getElementById('addProcurementToggle').addEventListener('click', () => {
+    const row = document.getElementById('addProcurementRow');
+    row.hidden = !row.hidden;
+    if(!row.hidden) document.getElementById('newProcItem').focus();
+  });
+  document.getElementById('addProcurementCancel').addEventListener('click', () => {
+    document.getElementById('addProcurementRow').hidden = true;
+  });
+  document.getElementById('addProcurementSave').addEventListener('click', addProcurement);
+  document.getElementById('newProcCost').addEventListener('keydown', e => { if(e.key === 'Enter') addProcurement(); });
+  document.getElementById('newProcItem').addEventListener('input', e => {
+    const known = getConsumablePrice(e.target.value);
+    const costEl = document.getElementById('newProcCost');
+    if(known != null && !costEl.value) costEl.value = known;
+    renderProcItemSuggestions(e.target.value);
+  });
+  document.getElementById('newProcItem').addEventListener('focus', e => renderProcItemSuggestions(e.target.value));
+  document.getElementById('newProcItem').addEventListener('keydown', e => {
+    if(e.key === 'Escape') document.getElementById('newProcItemSuggest').hidden = true;
+  });
+
+  // ---------------- close-day: Продажа продукции (retail sale to a client) ----------------
+  // Independent of any visit/master — the whole sale amount goes to salon
+  // profit, and the stock leaves inventory the same as service usage.
+  function renderProductSales(){
+    const date = document.getElementById('closeDayDate').value;
+    if(!date) return;
+    const rows = dayClose.productSales[date] || [];
+    const body = document.getElementById('productSaleBody');
+    const empty = document.getElementById('productSaleEmpty');
+    if(!rows.length){ body.innerHTML = ''; empty.hidden = false; return; }
+    empty.hidden = true;
+    let total = 0;
+    body.innerHTML = rows.map((s, idx) => {
+      const sum = s.qty * s.unitPrice;
+      total += sum;
+      return '<tr>' +
+        '<td>'+esc(s.item)+'</td>' +
+        '<td class="num">'+s.qty+'</td>' +
+        '<td class="num">'+Math.round(s.unitPrice).toLocaleString('ru-RU')+' ₸</td>' +
+        '<td class="num">'+Math.round(sum).toLocaleString('ru-RU')+' ₸</td>' +
+        '<td class="cp-actions"><button type="button" class="mini-action-btn sale-remove" data-idx="'+idx+'">Удалить</button></td>' +
+        '</tr>';
+    }).join('') +
+      '<tr class="total-row"><td>Итого</td><td></td><td></td><td class="num">'+Math.round(total).toLocaleString('ru-RU')+' ₸</td><td></td></tr>';
+  }
+  function addProductSale(){
+    const date = document.getElementById('closeDayDate').value;
+    if(!date) return;
+    const itemEl = document.getElementById('newSaleItem');
+    const qtyEl = document.getElementById('newSaleQty');
+    const priceEl = document.getElementById('newSalePrice');
+    const item = itemEl.value.trim();
+    const qty = Number(qtyEl.value) || 1;
+    const unitPrice = Number(priceEl.value) || 0;
+    if(!item || unitPrice <= 0){ itemEl.focus(); return; }
+    if(!dayClose.productSales[date]) dayClose.productSales[date] = [];
+    dayClose.productSales[date].push({ item, qty, unitPrice });
+    itemEl.value = ''; qtyEl.value = '1'; priceEl.value = '';
+    document.getElementById('addProductSaleRow').hidden = true;
+    updateSaleTotalPreview();
+    renderCloseDay();
+    renderInventory();
+  }
+  function updateSaleTotalPreview(){
+    const qty = Number(document.getElementById('newSaleQty').value) || 0;
+    const price = Number(document.getElementById('newSalePrice').value) || 0;
+    document.getElementById('newSaleTotalPreview').textContent = '= ' + Math.round(qty*price).toLocaleString('ru-RU') + ' ₸';
+  }
+  document.getElementById('productSaleBody').addEventListener('click', e => {
+    const btn = e.target.closest('.sale-remove');
+    if(!btn) return;
+    const date = document.getElementById('closeDayDate').value;
+    dayClose.productSales[date].splice(Number(btn.dataset.idx), 1);
+    renderCloseDay();
+    renderInventory();
+  });
+  document.getElementById('addProductSaleToggle').addEventListener('click', () => {
+    const row = document.getElementById('addProductSaleRow');
+    row.hidden = !row.hidden;
+    if(!row.hidden) document.getElementById('newSaleItem').focus();
+  });
+  document.getElementById('addProductSaleCancel').addEventListener('click', () => {
+    document.getElementById('addProductSaleRow').hidden = true;
+  });
+  document.getElementById('addProductSaleSave').addEventListener('click', addProductSale);
+  document.getElementById('newSalePrice').addEventListener('keydown', e => { if(e.key === 'Enter') addProductSale(); });
+  document.getElementById('newSaleItem').addEventListener('input', e => {
+    const known = getConsumablePrice(e.target.value);
+    const priceEl = document.getElementById('newSalePrice');
+    if(known != null && !priceEl.value){ priceEl.value = known; updateSaleTotalPreview(); }
+  });
+  document.getElementById('newSaleQty').addEventListener('input', updateSaleTotalPreview);
+  document.getElementById('newSalePrice').addEventListener('input', updateSaleTotalPreview);
+
+  // ---------------- close-day sub-tabs ----------------
+  document.querySelectorAll('.cd-subtab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.cd-subtab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const sub = btn.dataset.subtab;
+      document.getElementById('cd-panel-services').hidden = sub !== 'services';
+      document.getElementById('cd-panel-consumables').hidden = sub !== 'consumables';
+      document.getElementById('cd-panel-procurement').hidden = sub !== 'procurement';
+    });
+  });
+
+  // ---------------- inventory sub-tabs ----------------
+  document.querySelectorAll('[data-invsubtab]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('[data-invsubtab]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const sub = btn.dataset.invsubtab;
+      document.getElementById('inv-panel-items').hidden = sub !== 'items';
+      document.getElementById('inv-panel-history').hidden = sub !== 'history';
+    });
+  });
+
+  // ---------------- inventory (Закуп − Расходники, running stock) ----------------
+  // Which Закуп category an item belongs to — inferred from the first
+  // procurement entry that used this name. Unknown (—) for items that only
+  // ever showed up via Расходники Прайс without a matching Закуп entry.
+  function itemCategory(item){
+    for(const date in dayClose.procurement){
+      const p = dayClose.procurement[date].find(x => x.item === item);
+      if(p) return p.category || 'Расходники';
+    }
+    return null;
+  }
+  // Raw per-item totals, unfiltered — shared by the on-screen table and
+  // the XLSX export so both agree on what "Закуплено/Использовано/Остаток"
+  // means.
+  function computeInventoryTotals(){
+    const totals = new Map(); // item -> { bought, boughtValue, used }
+    function get(item){
+      if(!totals.has(item)) totals.set(item, { bought:0, boughtValue:0, used:0 });
+      return totals.get(item);
+    }
+    for(const date in dayClose.procurement){
+      for(const p of dayClose.procurement[date]){
+        const t = get(p.item);
+        t.bought += p.qty; t.boughtValue += p.qty * p.unitCost;
+      }
+    }
+    // Only a confirmed visit's consumables actually leave the shelf — a
+    // pending or cancelled one hasn't (yet, or ever) happened.
+    for(const bookingId in dayClose.consumables){
+      if(visitStatus(bookingId) !== 'completed') continue;
+      for(const c of dayClose.consumables[bookingId]){
+        const t = get(c.item);
+        t.used += c.qty;
+      }
+    }
+    for(const date in dayClose.productSales){
+      for(const s of dayClose.productSales[date]){
+        const t = get(s.item);
+        t.used += s.qty;
+      }
+    }
+    for(const date in dayClose.writeoffs){
+      for(const w of dayClose.writeoffs[date]){
+        const t = get(w.item);
+        t.used += w.qty;
+      }
+    }
+    for(const date in dayClose.adjustments){
+      for(const a of dayClose.adjustments[date]){
+        const t = get(a.item);
+        // New-style entries (from editing «Закуплено»/«Использовано» directly
+        // in the row) carry an explicit field and a signed delta that can go
+        // either way. Older entries (from correcting «Остаток» as a whole)
+        // have no field — qty>0 meant "found more stock" (added to bought),
+        // qty<0 meant "found less" (added to used) — kept for those.
+        if(a.field === 'used') t.used += a.qty;
+        else if(a.field === 'bought') t.bought += a.qty;
+        else if(a.qty > 0) t.bought += a.qty; else t.used += -a.qty;
+      }
+    }
+    const rows = Array.from(totals.entries()).map(([item, t]) => ({ item, ...t, left: t.bought - t.used, category: itemCategory(item) }));
+    rows.sort((a,b) => a.item.localeCompare(b.item,'ru'));
+    return rows;
+  }
+  // Applies the same search + «В наличии/Отсутствуют» filter the table and
+  // the export both respect, so the report always matches what's on screen.
+  function filteredInventoryRows(){
+    const q = state.invSearch ? state.invSearch.trim().toLowerCase() : '';
+    let rows = computeInventoryTotals();
+    if(q) rows = rows.filter(r => r.item.toLowerCase().includes(q));
+    if(state.invStockFilter === 'in') rows = rows.filter(r => r.left > 0);
+    else if(state.invStockFilter === 'out') rows = rows.filter(r => r.left <= 0);
+    if(state.invCategoryFilter) rows = rows.filter(r => r.category === state.invCategoryFilter);
+    return rows;
+  }
+  // Редактирование позиции разворачивается прямо в строке таблицы (вместо
+  // всплывающего окна) — только одна позиция может быть в режиме
+  // редактирования одновременно, хранится в state.invEditingItem.
+  function renderInventoryEditRow(r){
+    const cat = r.category || PROCUREMENT_CATEGORIES[0];
+    const catOptions = PROCUREMENT_CATEGORIES.map(c => '<option value="'+esc(c)+'"'+(c===cat?' selected':'')+'>'+esc(c)+'</option>').join('');
+    const price = getConsumablePrice(r.item) || 0;
+    return (
+      '<tr class="inv-edit-row" data-item="'+esc(r.item)+'" data-old-category="'+esc(r.category||'')+'" data-old-bought="'+r.bought+'" data-old-used="'+r.used+'">' +
+      '<td><input type="text" class="inv-edit-name" value="'+esc(r.item)+'" style="width:100%;"></td>' +
+      '<td><select class="inv-edit-category">'+catOptions+'</select></td>' +
+      '<td class="num"><input type="number" class="inv-edit-bought" value="'+r.bought+'" step="1" style="width:80px;text-align:right;"></td>' +
+      '<td class="num"><input type="number" class="inv-edit-used" value="'+r.used+'" step="1" style="width:80px;text-align:right;"></td>' +
+      '<td class="num pnl-muted inv-edit-left-preview" title="Остаток считается автоматически: Закуплено − Использовано">'+r.left+'</td>' +
+      '<td class="num">' +
+        '<input type="number" class="inv-edit-price" min="0" step="50" value="'+price+'" style="width:90px;text-align:right;"'+(cat!=='Расходники'?' disabled':'')+'>' +
+      '</td>' +
+      '<td class="cp-actions">' +
+        '<button type="button" class="mini-action-btn inv-edit-save">Сохранить</button> ' +
+        '<button type="button" class="mini-action-btn inv-edit-cancel">Отмена</button>' +
+      '</td>' +
+      '</tr>'
+    );
+  }
+  function renderInventory(){
+    const rows = filteredInventoryRows();
+    const body = document.getElementById('inventoryBody');
+    const empty = document.getElementById('inventoryEmpty');
+    document.getElementById('inventoryCount').textContent = rows.length + ' позиций';
+    // Позиция могла пропасть из выборки (фильтр/поиск изменился) — тогда
+    // закрываем незавершённое редактирование, чтобы не остаться в подвисшем
+    // состоянии.
+    if(state.invEditingItem && !rows.some(r => r.item === state.invEditingItem)) state.invEditingItem = null;
+    if(!rows.length){
+      body.innerHTML = '';
+      empty.hidden = false;
+    } else {
+      empty.hidden = true;
+      body.innerHTML = rows.map(r => {
+        if(state.invEditingItem === r.item) return renderInventoryEditRow(r);
+        return (
+        '<tr>' +
+        '<td><b>'+esc(r.item)+'</b></td>' +
+        '<td>'+(r.category ? '<span class="rate-pill">'+esc(r.category)+'</span>' : '<span class="cd-status-note">—</span>')+'</td>' +
+        '<td class="num">'+r.bought+'</td>' +
+        '<td class="num">'+r.used+'</td>' +
+        '<td class="num"'+(r.left < 0 ? ' style="color:var(--bad);font-weight:600;"' : '')+'>'+r.left+'</td>' +
+        '<td class="num">'+Math.round(r.boughtValue).toLocaleString('ru-RU')+' ₸</td>' +
+        '<td class="cp-actions">' +
+          '<button type="button" class="mini-action-btn inv-edit-btn" data-item="'+esc(r.item)+'">Редактировать</button> ' +
+          '<button type="button" class="mini-action-btn inv-writeoff-btn" data-item="'+esc(r.item)+'" data-left="'+r.left+'">Списать</button>' +
+        '</td>' +
+        '</tr>'
+        );
+      }).join('');
+    scheduleSave('day_close');
+    scheduleSave('inventory_edits');
+  }
+    renderInventoryHistory();
+  }
+  document.getElementById('searchInventory').addEventListener('input', e => { state.invSearch = e.target.value; renderInventory(); });
+  document.getElementById('invStockChips').addEventListener('click', e => {
+    const chip = e.target.closest('.chip');
+    if(!chip) return;
+    document.querySelectorAll('#invStockChips .chip').forEach(c => c.classList.remove('on'));
+    chip.classList.add('on');
+    state.invStockFilter = chip.dataset.stock;
+    renderInventory();
+  });
+  document.getElementById('invCategoryFilter').addEventListener('change', e => {
+    state.invCategoryFilter = e.target.value;
+    renderInventory();
+  });
+
+  // ---------------- Инвентаризация: списание позиции ----------------
+  // A manual stock deduction independent of visit usage or a retail sale
+  // (breakage, spoilage, loss, count correction) — reduces "Остаток" the
+  // same way usage does, and stays visible in История as its own entry.
+  function todayStr(){
+    const d = new Date();
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  }
+  async function showWriteoffDialog(item, left){
+    const html =
+      '<p style="margin-bottom:14px;"><b>Списать «'+esc(item)+'»</b>'+
+        (left != null ? '<br><span class="cd-status-note">Текущий остаток: '+left+'</span>' : '')+'</p>' +
+      '<div class="modal-form-row">' +
+        '<input type="number" id="woQty" placeholder="Количество" min="1" step="1" value="1" style="width:110px;">' +
+        '<input type="date" id="woDate" value="'+todayStr()+'">' +
+      '</div>' +
+      '<div class="modal-form-row">' +
+        '<input type="text" id="woReason" placeholder="Причина (необязательно)">' +
+      '</div>' +
+      '<div class="confirm-actions">' +
+        '<button type="button" class="am-cancel" data-act="cancel">Отмена</button>' +
+        '<button type="button" class="cd-save-btn" data-act="ok">Списать</button>' +
+      '</div>';
+    const { act, modal } = await openModal(html);
+    if(act !== 'ok') return null;
+    const qty = Number(modal.querySelector('#woQty').value) || 0;
+    if(qty <= 0) return null;
+    return {
+      qty,
+      reason: modal.querySelector('#woReason').value.trim(),
+      date: modal.querySelector('#woDate').value || todayStr(),
+    };
+  }
+  function writeOffInventoryItem(item, qty, reason, date){
+    if(!dayClose.writeoffs[date]) dayClose.writeoffs[date] = [];
+    dayClose.writeoffs[date].push({ item, qty, reason: reason || '' });
+    renderInventory();
+  }
+
+  // ---------------- Инвентаризация: редактирование позиции ----------------
+  // Renames/reclassifies an item everywhere it appears (Закуп entries,
+  // consumables usage, product sales, write-offs, the Закуп autocomplete
+  // lists, and the shared consumables price list) — fixes a typo made when
+  // the item was first created on the fly. Logged into История as an "edit"
+  // entry so the correction stays auditable rather than silently rewriting
+  // history. The edit form itself opens inline in the row (see
+  // renderInventoryEditRow above) rather than in a popup.
+  function renameInventoryItem(oldItem, oldCategory, newItem, newCategory, newPrice, oldBought, newBought, oldUsed, newUsed){
+    for(const date in dayClose.procurement){
+      dayClose.procurement[date].forEach(p => { if(p.item === oldItem){ p.item = newItem; p.category = newCategory; } });
+    }
+    for(const bookingId in dayClose.consumables){
+      dayClose.consumables[bookingId].forEach(c => { if(c.item === oldItem) c.item = newItem; });
+    }
+    for(const date in dayClose.productSales){
+      dayClose.productSales[date].forEach(s => { if(s.item === oldItem) s.item = newItem; });
+    }
+    for(const date in dayClose.writeoffs){
+      dayClose.writeoffs[date].forEach(w => { if(w.item === oldItem) w.item = newItem; });
+    }
+    for(const date in dayClose.adjustments){
+      dayClose.adjustments[date].forEach(a => { if(a.item === oldItem) a.item = newItem; });
+    }
+    PROCUREMENT_CATEGORIES.forEach(cat => {
+      const list = PROCUREMENT_ITEMS[cat];
+      if(!list) return;
+      const idx = list.findIndex(i => i.toLowerCase() === oldItem.toLowerCase());
+      if(idx !== -1) list.splice(idx, 1);
+    });
+    const newList = PROCUREMENT_ITEMS[newCategory] || (PROCUREMENT_ITEMS[newCategory] = []);
+    if(!newList.some(i => i.toLowerCase() === newItem.toLowerCase())) newList.push(newItem);
+    const cp = state.consumablePrices.find(c => c.item === oldItem);
+    if(newCategory === 'Расходники'){
+      if(cp){ cp.item = newItem; if(newPrice != null) cp.price = newPrice; }
+      else if(!state.consumablePrices.some(c => c.item.toLowerCase() === newItem.toLowerCase())){
+        state.consumablePrices.push({ item: newItem, price: newPrice || 0 });
+      }
+    } else if(cp){
+      state.consumablePrices = state.consumablePrices.filter(c => c !== cp);
+    }
+    populateConsumableOptions();
+    renderConsPrices();
+    // Only log a "Правка" entry when the name or category actually changed
+    // — a pure quantity fix is its own "Корректировка" entry below.
+    if(oldItem !== newItem || oldCategory !== newCategory){
+      state.inventoryEdits.push({ date: todayStr(), oldItem, newItem, newCategory });
+    }
+    // Changed «Закуплено»/«Использовано» totals are stock-count corrections,
+    // not a rename — each logged as its own signed adjustment entry (they
+    // can move independently, so up to two separate entries) under the
+    // (possibly new) item name, rather than silently rewriting history.
+    const boughtDelta = (oldBought != null && newBought != null) ? (newBought - oldBought) : 0;
+    const usedDelta = (oldUsed != null && newUsed != null) ? (newUsed - oldUsed) : 0;
+    if(boughtDelta !== 0 || usedDelta !== 0){
+      const date = todayStr();
+      if(!dayClose.adjustments[date]) dayClose.adjustments[date] = [];
+      if(boughtDelta !== 0) dayClose.adjustments[date].push({ item: newItem, field: 'bought', qty: boughtDelta, note: 'Корректировка «Закуплено» при редактировании' });
+      if(usedDelta !== 0) dayClose.adjustments[date].push({ item: newItem, field: 'used', qty: usedDelta, note: 'Корректировка «Использовано» при редактировании' });
+    }
+    renderInventory();
+  }
+  document.getElementById('inventoryBody').addEventListener('click', async e => {
+    const editBtn = e.target.closest('.inv-edit-btn');
+    if(editBtn){
+      state.invEditingItem = editBtn.dataset.item;
+      renderInventory();
+      return;
+    }
+    const cancelBtn = e.target.closest('.inv-edit-cancel');
+    if(cancelBtn){
+      state.invEditingItem = null;
+      renderInventory();
+      return;
+    }
+    const saveBtn = e.target.closest('.inv-edit-save');
+    if(saveBtn){
+      const tr = saveBtn.closest('.inv-edit-row');
+      const item = tr.dataset.item;
+      const oldCategory = tr.dataset.oldCategory || PROCUREMENT_CATEGORIES[0];
+      const oldBought = Number(tr.dataset.oldBought) || 0;
+      const oldUsed = Number(tr.dataset.oldUsed) || 0;
+      const newItem = tr.querySelector('.inv-edit-name').value.trim();
+      if(!newItem) return;
+      const newCategory = tr.querySelector('.inv-edit-category').value;
+      const priceEl = tr.querySelector('.inv-edit-price');
+      const newPrice = newCategory === 'Расходники' ? (Number(priceEl.value) || 0) : null;
+      const boughtVal = Number(tr.querySelector('.inv-edit-bought').value);
+      const usedVal = Number(tr.querySelector('.inv-edit-used').value);
+      const newBought = Number.isFinite(boughtVal) ? boughtVal : oldBought;
+      const newUsed = Number.isFinite(usedVal) ? usedVal : oldUsed;
+      state.invEditingItem = null;
+      renameInventoryItem(item, oldCategory, newItem, newCategory, newPrice, oldBought, newBought, oldUsed, newUsed);
+      return;
+    }
+    const woBtn = e.target.closest('.inv-writeoff-btn');
+    if(woBtn){
+      const item = woBtn.dataset.item;
+      const left = woBtn.dataset.left !== '' ? Number(woBtn.dataset.left) : null;
+      const result = await showWriteoffDialog(item, left);
+      if(result) writeOffInventoryItem(item, result.qty, result.reason, result.date);
+    }
+  });
+  // Цена за единицу имеет смысл только для категории «Расходники» — при
+  // смене категории прямо в строке редактирования включаем/выключаем поле.
+  document.getElementById('inventoryBody').addEventListener('change', e => {
+    if(!e.target.classList.contains('inv-edit-category')) return;
+    const tr = e.target.closest('.inv-edit-row');
+    const priceEl = tr && tr.querySelector('.inv-edit-price');
+    if(priceEl) priceEl.disabled = e.target.value !== 'Расходники';
+  });
+  // «Остаток» не редактируется напрямую — считается на лету как
+  // Закуплено − Использовано, пока меняются эти два поля.
+  document.getElementById('inventoryBody').addEventListener('input', e => {
+    if(!e.target.classList.contains('inv-edit-bought') && !e.target.classList.contains('inv-edit-used')) return;
+    const tr = e.target.closest('.inv-edit-row');
+    if(!tr) return;
+    const bought = Number(tr.querySelector('.inv-edit-bought').value) || 0;
+    const used = Number(tr.querySelector('.inv-edit-used').value) || 0;
+    const preview = tr.querySelector('.inv-edit-left-preview');
+    if(preview) preview.textContent = bought - used;
+  });
+
+  // ---------------- Инвентаризация: история закупа и списания расходников ----------------
+  // Chronological log combining procurement ("in", entered by admin in Закуп)
+  // and consumables usage ("out", entered per visit in Услуги) — for audit /
+  // tracking purposes, alongside the aggregate stock table above.
+  function getInventoryHistory(){
+    const entries = [];
+    for(const date in dayClose.procurement){
+      for(const p of dayClose.procurement[date]){
+        entries.push({
+          date, type: 'in', item: p.item, qty: p.qty, unitCost: p.unitCost,
+          sum: p.qty * p.unitCost, who: 'Закуп · ' + (p.category || 'Расходники'), category: p.category || 'Расходники'
+        });
+      }
+    }
+    for(const bookingId in dayClose.consumables){
+      if(visitStatus(bookingId) !== 'completed') continue;
+      const b = state.bookings.find(x => x.id === bookingId);
+      const date = b ? dayStr(b.start) : '';
+      const who = b ? (b.master + (b.client_name ? ' · ' + b.client_name : '')) : 'Неизвестная запись';
+      for(const c of dayClose.consumables[bookingId]){
+        entries.push({
+          date, type: 'out', item: c.item, qty: c.qty, unitCost: c.unitCost,
+          sum: c.qty * c.unitCost, who, category: itemCategory(c.item)
+        });
+      }
+    }
+    for(const date in dayClose.productSales){
+      for(const s of dayClose.productSales[date]){
+        entries.push({
+          date, type: 'sale', item: s.item, qty: s.qty, unitCost: s.unitPrice,
+          sum: s.qty * s.unitPrice, who: 'Продажа клиенту', category: itemCategory(s.item)
+        });
+      }
+    }
+    for(const date in dayClose.writeoffs){
+      for(const w of dayClose.writeoffs[date]){
+        entries.push({
+          date, type: 'writeoff', item: w.item, qty: w.qty, unitCost: 0,
+          sum: 0, who: w.reason ? 'Списание · ' + w.reason : 'Списание', category: itemCategory(w.item)
+        });
+      }
+    }
+    for(const date in dayClose.adjustments){
+      for(const a of dayClose.adjustments[date]){
+        entries.push({
+          date, type: 'adjustment', item: a.item, qty: a.qty, unitCost: 0, sum: 0,
+          who: a.note || (a.qty > 0 ? 'Корректировка остатка (+)' : 'Корректировка остатка (−)'), category: itemCategory(a.item)
+        });
+      }
+    }
+    for(const ed of state.inventoryEdits){
+      entries.push({
+        date: ed.date, type: 'edit', item: ed.newItem, qty: 0, unitCost: 0, sum: 0,
+        who: 'Правка · «' + ed.oldItem + '» → «' + ed.newItem + '» (' + ed.newCategory + ')', category: ed.newCategory
+      });
+    }
+    entries.sort((a,b) => b.date.localeCompare(a.date));
+    return entries;
+  }
+  // Shared by the on-screen table and the «движение позиций» export below —
+  // same search text, type/category chip and date range as whatever's on screen.
+  function filteredInventoryHistory(){
+    const q = state.invHistorySearch ? state.invHistorySearch.trim().toLowerCase() : '';
+    let rows = getInventoryHistory();
+    if(state.invHistoryType) rows = rows.filter(r => r.type === state.invHistoryType);
+    if(state.invHistoryCategory) rows = rows.filter(r => r.category === state.invHistoryCategory);
+    if(state.invHistoryFrom) rows = rows.filter(r => r.date && r.date >= state.invHistoryFrom);
+    if(state.invHistoryTo) rows = rows.filter(r => r.date && r.date <= state.invHistoryTo);
+    if(q) rows = rows.filter(r => r.item.toLowerCase().includes(q));
+    return rows;
+  }
+  function renderInventoryHistory(){
+    const rows = filteredInventoryHistory();
+    const body = document.getElementById('invHistoryBody');
+    const empty = document.getElementById('invHistoryEmpty');
+    document.getElementById('invHistoryCount').textContent = rows.length + ' записей';
+    if(!rows.length){
+      body.innerHTML = '';
+      empty.hidden = false;
+      return;
+    }
+    empty.hidden = true;
+    const TYPE_PILLS = {
+      in: '<span class="pill good">Закуп</span>',
+      sale: '<span class="pill info">Продажа</span>',
+      out: '<span class="pill warn">Расход</span>',
+      writeoff: '<span class="pill bad">Списание</span>',
+      edit: '<span class="pill plain">Правка</span>',
+    };
+    function typePill(r){
+      if(r.type === 'adjustment') return r.qty > 0 ? '<span class="pill good">Корректировка +</span>' : '<span class="pill bad">Корректировка −</span>';
+      return TYPE_PILLS[r.type] || '';
+    }
+    body.innerHTML = rows.map(r => (
+      '<tr>' +
+      '<td>'+esc(r.date || '—')+'</td>' +
+      '<td>'+typePill(r)+'</td>' +
+      '<td><b>'+esc(r.item)+'</b></td>' +
+      '<td>'+esc(r.who)+'</td>' +
+      '<td class="num">'+(r.qty ? (r.type === 'adjustment' && r.qty > 0 ? '+' : '') + r.qty : '—')+'</td>' +
+      '<td class="num">'+(r.unitCost ? Math.round(r.unitCost).toLocaleString('ru-RU')+' ₸' : '—')+'</td>' +
+      '<td class="num">'+(r.sum ? Math.round(r.sum).toLocaleString('ru-RU')+' ₸' : '—')+'</td>' +
+      '</tr>'
+    )).join('');
+  }
+  document.getElementById('searchInvHistory').addEventListener('input', e => { state.invHistorySearch = e.target.value; renderInventoryHistory(); });
+  document.getElementById('invHistoryChips').addEventListener('click', e => {
+    const chip = e.target.closest('.chip');
+    if(!chip) return;
+    document.querySelectorAll('#invHistoryChips .chip').forEach(c => c.classList.remove('on'));
+    chip.classList.add('on');
+    state.invHistoryType = chip.dataset.invtype;
+    renderInventoryHistory();
+  });
+  document.getElementById('invHistoryCategoryFilter').addEventListener('change', e => {
+    state.invHistoryCategory = e.target.value;
+    renderInventoryHistory();
+  });
+  document.getElementById('invHistoryFrom').addEventListener('change', e => { state.invHistoryFrom = e.target.value; renderInventoryHistory(); });
+  document.getElementById('invHistoryTo').addEventListener('change', e => { state.invHistoryTo = e.target.value; renderInventoryHistory(); });
+  document.getElementById('invHistoryDateReset').addEventListener('click', () => {
+    state.invHistoryFrom = ''; state.invHistoryTo = '';
+    document.getElementById('invHistoryFrom').value = '';
+    document.getElementById('invHistoryTo').value = '';
+    renderInventoryHistory();
+  });
+
+  function renderCloseDay(){
+    renderCloseDayServices();
+    renderConsLog();
+    renderProcurement();
+    renderProductSales();
+    scheduleSave('day_close');
+  }
+
+  // ---------------- Закрытие дня: скачивание отчётов (CSV) ----------------
+  // Three separate reports for the selected day — мастера, расходники,
+  // закуп — each pulled fresh from dayClose state (not the last-rendered
+  // DOM), matching exactly what counts toward that day's totals.
+  function showReportToast(msg){
+    let toast = document.getElementById('reportToast');
+    if(!toast){
+      toast = document.createElement('div');
+      toast.id = 'reportToast';
+      toast.className = 'report-toast';
+      document.body.appendChild(toast);
+    }
+    toast.textContent = msg;
+    toast.classList.add('show');
+    clearTimeout(showReportToast._t);
+    showReportToast._t = setTimeout(() => toast.classList.remove('show'), 3200);
+  }
+  // Builds a one-sheet .xlsx workbook from a rows-of-arrays table (header
+  // row first) via SheetJS, loaded from cdnjs — see the <script> tag at
+  // the top of the file.
+  function rowsToXlsxBlob(sheetName, rows){
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const colCount = rows.reduce((n, r) => Math.max(n, r.length), 0);
+    ws['!cols'] = Array.from({length: colCount}, (_, i) => {
+      const width = rows.reduce((w, r) => Math.max(w, String(r[i] == null ? '' : r[i]).length), 8);
+      return { wch: Math.min(width + 2, 40) };
+    });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    return new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  }
+  async function downloadXlsxReport(filename, sheetName, rows){
+    if(typeof XLSX === 'undefined'){
+      showReportToast('Не удалось сформировать отчёт: библиотека Excel не загрузилась.');
+      return;
+    }
+    try{
+      const blob = rowsToXlsxBlob(sheetName, rows);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    }catch(err){
+      showReportToast('Не удалось сформировать отчёт.');
+    }
+  }
+  // Только завершённые визиты — то же правило, что даёт итоги дня.
+  function buildMastersReportRows(date){
+    const visits = state.bookings.filter(b => dayStr(b.start) === date);
+    const byMaster = new Map();
+    for(const v of visits){
+      if(v.status === 'NOT_SERVED' || visitStatus(v.id) !== 'completed') continue;
+      const price = dayClose.prices[v.id] || 0;
+      const consTotal = visitConsumablesTotal(v.id);
+      const split = visitSplit(price, masterRate(v.master), consTotal);
+      if(!byMaster.has(v.master)) byMaster.set(v.master, { count:0, revenue:0, consumables:0, masterPay:0, salonNet:0 });
+      const m = byMaster.get(v.master);
+      m.count += 1; m.revenue += price; m.consumables += consTotal; m.masterPay += split.master; m.salonNet += split.salon;
+    }
+    const rows = [['Мастер','Ставка, %','Услуг завершено','Выручка, ₸','Расходники, ₸','ЗП мастера, ₸','ЧП салона, ₸']];
+    const totals = { count:0, revenue:0, consumables:0, masterPay:0, salonNet:0 };
+    Array.from(byMaster.entries()).sort((a,b) => a[0].localeCompare(b[0],'ru')).forEach(([master, m]) => {
+      rows.push([master, Math.round(masterRate(master)*100), m.count, Math.round(m.revenue), Math.round(m.consumables), Math.round(m.masterPay), Math.round(m.salonNet)]);
+      totals.count += m.count; totals.revenue += m.revenue; totals.consumables += m.consumables; totals.masterPay += m.masterPay; totals.salonNet += m.salonNet;
+    });
+    rows.push(['Итого', '', totals.count, Math.round(totals.revenue), Math.round(totals.consumables), Math.round(totals.masterPay), Math.round(totals.salonNet)]);
+    return rows;
+  }
+  function buildConsReportRows(date){
+    const visits = state.bookings.filter(b => dayStr(b.start) === date && visitStatus(b.id) === 'completed');
+    const rows = [['Мастер','Клиент','Расходник','Кол-во','Цена за ед., ₸','Сумма, ₸']];
+    let total = 0;
+    for(const v of visits){
+      for(const c of (dayClose.consumables[v.id] || [])){
+        const sum = c.qty * c.unitCost;
+        total += sum;
+        rows.push([v.master, v.client_name || 'Без имени', c.item, c.qty, Math.round(c.unitCost), Math.round(sum)]);
+      }
+    }
+    // Продажа продукции rolls into the same report/total — see the
+    // footnote row appended below.
+    let salesTotal = 0;
+    for(const s of (dayClose.productSales[date] || [])){
+      const sum = s.qty * s.unitPrice;
+      salesTotal += sum;
+      rows.push(['—', 'Продажа продукции', s.item, s.qty, Math.round(s.unitPrice), Math.round(sum)]);
+    }
+    total += salesTotal;
+    rows.push(['Итого','','','','', Math.round(total)]);
+    if(salesTotal > 0) rows.push(['Включая продажу продукции на ' + Math.round(salesTotal).toLocaleString('ru-RU') + ' ₸']);
+    return rows;
+  }
+  // Grouped by category with a subtotal per section, same structure as
+  // the real "Закуп" sheet (Закуп Расходников / Закуп Продукции / Nail
+  // Зал / Закуп Салона, each totalled separately).
+  function buildProcurementReportRows(date){
+    const items = dayClose.procurement[date] || [];
+    const rows = [['Категория','Наименование','Кол-во','Цена за ед., ₸','Сумма, ₸']];
+    const cats = PROCUREMENT_CATEGORIES.slice();
+    const extra = Array.from(new Set(items.map(p => p.category || 'Расходники'))).filter(c => !cats.includes(c));
+    cats.push(...extra);
+    let grandTotal = 0;
+    cats.forEach(cat => {
+      const catItems = items.filter(p => (p.category || 'Расходники') === cat);
+      if(!catItems.length) return;
+      let catTotal = 0;
+      catItems.forEach(p => {
+        const sum = p.qty * p.unitCost;
+        catTotal += sum;
+        rows.push([cat, p.item, p.qty, Math.round(p.unitCost), Math.round(sum)]);
+      });
+      grandTotal += catTotal;
+      rows.push(['ИТОГО — ' + cat, '', '', '', Math.round(catTotal)]);
+    });
+    rows.push(['Итого за день', '', '', '', Math.round(grandTotal)]);
+    return rows;
+  }
+  // Инвентаризация report — mirrors exactly what's on screen: same search
+  // text and «Все/В наличии/Отсутствуют» filter as filteredInventoryRows().
+  function buildInventoryReportRows(){
+    const rows = [['Наименование','Категория','Закуплено','Использовано','Остаток','Стоимость закупа, ₸','Статус']];
+    filteredInventoryRows().forEach(r => {
+      rows.push([r.item, r.category || '—', r.bought, r.used, r.left, Math.round(r.boughtValue), r.left > 0 ? 'В наличии' : 'Отсутствует']);
+    });
+    return rows;
+  }
+  document.getElementById('downloadInvReport').addEventListener('click', () => {
+    downloadXlsxReport('otchet-inventarizaciya-'+todayStr()+'.xlsx', 'Инвентаризация', buildInventoryReportRows());
+  });
+  // Движение позиций — every line from «История» (закуп, расход, продажа,
+  // списание, корректировка, правка), respecting whatever search/type/date
+  // filters are currently applied on screen, same as the stock report above.
+  const HISTORY_TYPE_LABELS = {
+    in: 'Закуп', out: 'Расход', sale: 'Продажа', writeoff: 'Списание', edit: 'Правка',
+  };
+  function historyTypeLabel(r){
+    if(r.type === 'adjustment') return r.qty > 0 ? 'Корректировка +' : 'Корректировка −';
+    return HISTORY_TYPE_LABELS[r.type] || r.type;
+  }
+  function buildInventoryHistoryReportRows(){
+    const rows = [['Дата','Тип','Наименование','Мастер / Клиент','Кол-во','Цена за ед., ₸','Сумма, ₸']];
+    filteredInventoryHistory().forEach(r => {
+      rows.push([r.date || '—', historyTypeLabel(r), r.item, r.who, r.qty || 0, Math.round(r.unitCost||0), Math.round(r.sum||0)]);
+    });
+    return rows;
+  }
+  document.getElementById('downloadInvHistoryReport').addEventListener('click', () => {
+    downloadXlsxReport('dvizhenie-pozitsiy-'+todayStr()+'.xlsx', 'Движение позиций', buildInventoryHistoryReportRows());
+  });
+  document.getElementById('downloadMastersReport').addEventListener('click', () => {
+    const date = document.getElementById('closeDayDate').value;
+    if(!date) return;
+    downloadXlsxReport('otchet-mastera-'+date+'.xlsx', 'Мастера', buildMastersReportRows(date));
+  });
+  document.getElementById('downloadConsReport').addEventListener('click', () => {
+    const date = document.getElementById('closeDayDate').value;
+    if(!date) return;
+    downloadXlsxReport('otchet-rashodniki-'+date+'.xlsx', 'Расходники', buildConsReportRows(date));
+  });
+  document.getElementById('downloadProcReport').addEventListener('click', () => {
+    const date = document.getElementById('closeDayDate').value;
+    if(!date) return;
+    downloadXlsxReport('otchet-zakup-'+date+'.xlsx', 'Закуп', buildProcurementReportRows(date));
+  });
+
+  document.getElementById('closeDayGroups').addEventListener('input', e => {
+    if(dayClose.closed[document.getElementById('closeDayDate').value]) return;
+    if(e.target.matches('input[type="number"]:not(.cd-cons-cost):not(.cd-cons-qty)')) updateCloseDayTotals();
+  });
+  // Zone override for a visit — most masters only ever work one zone, so
+  // this is only stored when it actually differs from the master's own.
+  document.getElementById('closeDayGroups').addEventListener('change', e => {
+    if(!e.target.matches('.cd-zone-select')) return;
+    if(dayClose.closed[document.getElementById('closeDayDate').value]) return;
+    const bookingId = e.target.dataset.booking;
+    const booking = state.bookings.find(b => b.id === bookingId);
+    const master = booking ? state.masters.find(m => m.name === booking.master) : null;
+    const defaultZone = master ? master.zone : null;
+    if(e.target.value === defaultZone) delete dayClose.visitZone[bookingId];
+    else dayClose.visitZone[bookingId] = e.target.value;
+  });
+  document.getElementById('closeDayGroups').addEventListener('click', e => {
+    // Defense in depth: a closed day renders no editable controls at all,
+    // but guard the mutations too in case of stale DOM state.
+    if(dayClose.closed[document.getElementById('closeDayDate').value]) return;
+    const addBtn = e.target.closest('.cd-add-consumable-btn');
+    if(addBtn){ dayClose.openForms.add(addBtn.dataset.booking); renderCloseDay(); return; }
+    const cancelBtn = e.target.closest('.cd-cons-cancel');
+    if(cancelBtn){ dayClose.openForms.delete(cancelBtn.dataset.booking); renderCloseDay(); return; }
+    const saveBtn = e.target.closest('.cd-cons-save');
+    if(saveBtn){
+      const bookingId = saveBtn.dataset.booking;
+      const form = saveBtn.closest('.cd-cons-form');
+      const item = form.querySelector('.cd-cons-item').value.trim();
+      const qty = Number(form.querySelector('.cd-cons-qty').value) || 1;
+      const unitCost = Number(form.querySelector('.cd-cons-cost').value) || 0;
+      if(item && unitCost > 0){
+        if(!dayClose.consumables[bookingId]) dayClose.consumables[bookingId] = [];
+        dayClose.consumables[bookingId].push({ item, qty, unitCost });
+      }
+      dayClose.openForms.delete(bookingId);
+      renderCloseDay();
+      renderInventory();
+      return;
+    }
+    const removeBtn = e.target.closest('.cd-cons-remove');
+    if(removeBtn){
+      const bookingId = removeBtn.dataset.booking;
+      const idx = Number(removeBtn.dataset.idx);
+      dayClose.consumables[bookingId].splice(idx, 1);
+      renderCloseDay();
+      renderInventory();
+      return;
+    }
+    const completeBtn = e.target.closest('.cd-status-complete');
+    if(completeBtn){
+      dayClose.serviceStatus[completeBtn.dataset.booking] = 'completed';
+      renderCloseDay();
+      renderInventory();
+      return;
+    }
+    const statusCancelBtn = e.target.closest('.cd-status-cancel');
+    if(statusCancelBtn){
+      dayClose.serviceStatus[statusCancelBtn.dataset.booking] = 'cancelled';
+      renderCloseDay();
+      renderInventory();
+      return;
+    }
+    const revertBtn = e.target.closest('.cd-status-revert');
+    if(revertBtn){
+      dayClose.serviceStatus[revertBtn.dataset.booking] = 'pending';
+      renderCloseDay();
+      renderInventory();
+    }
+  });
+  document.getElementById('closeDayGroups').addEventListener('input', e => {
+    const form = e.target.closest('.cd-cons-form');
+    if(!form) return;
+    if(e.target.matches('.cd-cons-item')){
+      const known = getConsumablePrice(e.target.value);
+      if(known != null){
+        const costInput = form.querySelector('.cd-cons-cost');
+        if(!costInput.value) costInput.value = known;
+      }
+    }
+    const qty = Number(form.querySelector('.cd-cons-qty').value) || 0;
+    const unitCost = Number(form.querySelector('.cd-cons-cost').value) || 0;
+    form.querySelector('.cd-cons-total-preview').textContent = '= ' + Math.round(qty*unitCost).toLocaleString('ru-RU') + ' ₸';
+  });
+  document.getElementById('closeDaySave').addEventListener('click', () => {
+    const date = document.getElementById('closeDayDate').value;
+    if(!date || document.getElementById('closeDaySave').disabled) return;
+    dayClose.closed[date] = true;
+    renderCloseDay();
+  });
+  // Unlocking a closed day is deliberately a couple of clicks away — this
+  // reopens editing for a historical, already-closed day (useful for fixing
+  // a mistake found later). No access restriction yet; the plan is to put
+  // this behind an owner password later, alongside P&L access.
+  document.getElementById('closeDayUnlock').addEventListener('click', async () => {
+    const date = document.getElementById('closeDayDate').value;
+    if(!date) return;
+    const ok = await showConfirmDialog('Разблокировать «'+date+'»? День снова станет доступен для редактирования — не забудьте закрыть его повторно после исправлений.', { okText: 'Разблокировать' });
+    if(!ok) return;
+    dayClose.closed[date] = false;
+    renderCloseDay();
+  });
+  document.getElementById('closeDayDate').addEventListener('change', renderCloseDay);
+  (function(){
+    const d = new Date();
+    document.getElementById('closeDayDate').value = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  })();
+
+  // ---------------------------------------------------------------------
+  // P&L — password-gated tab for the salon owner. Revenue/payroll/procurement
+  // lines are computed live from the same dayClose/state.bookings data every
+  // other tab reads (no separate «frozen» handling needed — these are plain
+  // monetary sums, not the category-matching problem Analytics has to solve).
+  // Costs the app has no other record of (rent, admin/tech/accountant/SMM
+  // salary, utilities, ads, taxes, bank commission) and «от продажи
+  // продукции» (not captured per-visit in the imported history) are plain
+  // editable fields per month, seeded from the reference table for
+  // 2026-01..08 above.
+  // ---------------------------------------------------------------------
+  const PNL_ROW_LABELS = {
+    fromUslug: 'От услуг', productSales: 'От продажи продукции', fromConsumables: 'От продажи расходников',
+    prihod: 'Приход',
+    masterPay: 'ЗП мастеров', adminSalary: 'ЗП админ сотрудников', techSalary: 'ЗП тех персонала',
+    accountantSalary: 'ЗП бухгалтера', smmSalary: 'ЗП СММ', procSalon: 'Закуп салона',
+    procProduct: 'Закуп продукции (продажа)', procConsumables: 'Закуп расходников', rent: 'Аренда',
+    utilities: 'Коммунальные услуги', internet: 'Интернет', security: 'Охрана',
+    adsGeneral: 'Реклама', ads2gis: '2ГИС', adsInstagram: 'Инстаграм',
+    opex: 'Операционный расход',
+    taxes: 'Налоги', bankCommission: 'Коммисия банка', net: 'Чистая прибыль',
+  };
+  function pnlMonthRange(monthStr){
+    const [y, m] = monthStr.split('-').map(Number);
+    const from = monthStr + '-01';
+    const to = monthStr + '-' + String(new Date(y, m, 0).getDate()).padStart(2, '0');
+    return { from, to };
+  }
+  // Same «completed visits only» rule as Закрытие дня / Analytics.
+  function buildPnlComputed(monthStr){
+    const { from, to } = pnlMonthRange(monthStr);
+    let revenue = 0, consumablesRevenue = 0, masterPay = 0;
+    let procSalon = 0, procProduct = 0, procConsumables = 0;
+    for(const b of state.bookings){
+      const date = dayStr(b.start);
+      if(date < from || date > to) continue;
+      if(visitStatus(b.id) !== 'completed') continue;
+      const price = dayClose.prices[b.id] || 0;
+      const consTotal = visitConsumablesTotal(b.id);
+      revenue += price;
+      consumablesRevenue += consTotal;
+      masterPay += visitSplit(price, masterRate(b.master), consTotal).master;
+    }
+    for(const date in dayClose.procurement){
+      if(date < from || date > to) continue;
+      for(const p of dayClose.procurement[date]){
+        const sum = p.qty * p.unitCost;
+        const cat = p.category || 'Расходники';
+        if(cat === 'Салон') procSalon += sum;
+        else if(cat === 'Продукция') procProduct += sum;
+        // «Nail зал» закуп не выделен отдельной строкой в референсной
+        // таблице — включаем его в «Закуп расходников».
+        else procConsumables += sum;
+      }
+    }
+    // «От продажи продукции» не привязана к мастеру — берём её из отдельной
+    // категории закупа «Продукция» (закуп тоже не привязан к мастеру), без
+    // вычитания из других строк.
+    const productSales = procProduct;
+    return {
+      fromUslug: revenue - consumablesRevenue,
+      productSales, fromConsumables: consumablesRevenue,
+      prihod: revenue,
+      masterPay, procSalon, procProduct, procConsumables,
+    };
+  }
+  function buildPnlMonth(monthStr){
+    const computed = buildPnlComputed(monthStr);
+    const fixed = state.pnlFixed[monthStr] || PNL_EMPTY_MONTH;
+    const opex = computed.masterPay + fixed.adminSalary + fixed.techSalary + fixed.accountantSalary + fixed.smmSalary
+      + computed.procSalon + computed.procProduct + computed.procConsumables
+      + fixed.rent + fixed.utilities + fixed.internet + fixed.security
+      + fixed.adsGeneral + fixed.ads2gis + fixed.adsInstagram;
+    const gross = computed.prihod - opex;
+    const net = gross - fixed.taxes - fixed.bankCommission;
+    return Object.assign({}, computed, fixed, { opex, net });
+  }
+  function pnlFmt(n){ return Math.round(n || 0).toLocaleString('ru-RU'); }
+  const PNL_EDITABLE = ['adminSalary','techSalary','accountantSalary','smmSalary','rent','utilities','internet','security','adsGeneral','ads2gis','adsInstagram','taxes','bankCommission'];
+  function renderPnl(){
+    const months = PNL_MONTHS.map(m => ({ key: m, data: buildPnlMonth(m) }));
+
+    // ---- год целиком: сумма по всем 12 месяцам ----
+    const yearPrihod = months.reduce((s,m) => s + m.data.prihod, 0);
+    const yearOpex = months.reduce((s,m) => s + m.data.opex, 0);
+    const yearTaxes = months.reduce((s,m) => s + m.data.taxes + m.data.bankCommission, 0);
+    const yearExpenses = yearOpex + yearTaxes; // опер. расход + налоги + комиссия банка
+    const yearNet = months.reduce((s,m) => s + m.data.net, 0);
+    const statTiles = document.querySelectorAll('#pnlStats .value');
+    const fmtTenge = n => Math.round(n).toLocaleString('ru-RU') + ' ₸';
+    statTiles[0].textContent = fmtTenge(yearPrihod);
+    statTiles[1].textContent = fmtTenge(yearExpenses);
+    statTiles[2].textContent = fmtTenge(yearNet);
+
+    const head = document.getElementById('pnlHead');
+    head.innerHTML = '<th>Показатель</th>' + months.map(m => {
+      const [y, mo] = m.key.split('-');
+      return '<th class="num">' + monthsShort[Number(mo)-1].charAt(0).toUpperCase() + monthsShort[Number(mo)-1].slice(1) + ' ' + y + '</th>';
+    }).join('');
+
+    function valueCell(key, m){
+      if(PNL_EDITABLE.includes(key)){
+        return '<td class="num"><input type="text" inputmode="numeric" class="pnl-input" data-month="'+m.key+'" data-field="'+key+'" value="'+pnlFmt(m.data[key])+'"></td>';
+      }
+      return '<td class="num">'+pnlFmt(m.data[key])+'</td>';
+    }
+    function row(key, opts){
+      opts = opts || {};
+      const cls = opts.cls ? ' class="'+opts.cls+'"' : '';
+      return '<tr'+cls+'><td>'+PNL_ROW_LABELS[key]+'</td>' + months.map(m => valueCell(key, m)).join('') + '</tr>';
+    }
+    function sectionRow(label){
+      return '<tr class="pnl-section"><td>'+label+'</td>'+months.map(()=>'<td></td>').join('')+'</tr>';
+    }
+    const rows = [
+      sectionRow('Приход'),
+      row('fromUslug'), row('productSales'), row('fromConsumables'),
+      row('prihod', { cls: 'pnl-total' }),
+      sectionRow('Расходы'),
+      row('masterPay'), row('adminSalary'), row('techSalary'), row('accountantSalary'), row('smmSalary'),
+      row('procSalon'), row('procProduct'), row('procConsumables'),
+      row('rent'), row('utilities'), row('internet'), row('security'),
+      row('adsGeneral'), row('ads2gis'), row('adsInstagram'),
+      row('opex', { cls: 'pnl-total' }),
+      row('taxes'), row('bankCommission'),
+      row('net', { cls: 'pnl-net' }),
+    ];
+    document.getElementById('pnlBody').innerHTML = rows.join('');
+    scheduleSave('pnl_fixed');
+  }
+  function buildPnlReportRows(){
+    const months = PNL_MONTHS.map(m => buildPnlMonth(m));
+    const header = ['Показатель'].concat(PNL_MONTHS.map(m => {
+      const [y, mo] = m.split('-');
+      return monthsShort[Number(mo)-1] + ' ' + y;
+    }));
+    const keys = ['fromUslug','productSales','fromConsumables','prihod','masterPay','adminSalary','techSalary',
+      'accountantSalary','smmSalary','procSalon','procProduct','procConsumables','rent','utilities','internet',
+      'security','adsGeneral','ads2gis','adsInstagram','opex','taxes','bankCommission','net'];
+    const rows = [header];
+    keys.forEach(k => rows.push([PNL_ROW_LABELS[k]].concat(months.map(m => Math.round(m[k] || 0)))));
+    return rows;
+  }
+  document.getElementById('pnlBody').addEventListener('change', e => {
+    const input = e.target.closest('.pnl-input');
+    if(!input) return;
+    const month = input.dataset.month, field = input.dataset.field;
+    const val = Number(String(input.value).replace(/[^\d.-]/g, '')) || 0;
+    state.pnlFixed[month][field] = val;
+    renderPnl();
+  });
+  function pnlShow(unlocked){
+    document.getElementById('pnlLocked').hidden = unlocked;
+    document.getElementById('pnlUnlockedPanel').hidden = !unlocked;
+    if(unlocked) renderPnl();
+  }
+  function pnlTryUnlock(){
+    const input = document.getElementById('pnlPasswordInput');
+    const err = document.getElementById('pnlLockError');
+    if(input.value === PNL_PASSWORD){
+      state.pnlUnlocked = true;
+      err.hidden = true;
+      input.value = '';
+      pnlShow(true);
+    } else {
+      err.hidden = false;
+      input.value = '';
+      input.focus();
+    }
+  }
+  document.getElementById('pnlUnlockBtn').addEventListener('click', pnlTryUnlock);
+  document.getElementById('pnlPasswordInput').addEventListener('keydown', e => { if(e.key === 'Enter') pnlTryUnlock(); });
+  document.getElementById('pnlLockBtn').addEventListener('click', () => {
+    state.pnlUnlocked = false;
+    pnlShow(false);
+  });
+  document.getElementById('downloadPnlReport').addEventListener('click', () => {
+    downloadXlsxReport('otchet-pl-2026.xlsx', 'P&L 2026', buildPnlReportRows());
+  });
 
   document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
@@ -384,6 +3247,23 @@
       state.tab = tab.dataset.tab;
       document.getElementById('view-bookings').hidden = state.tab !== 'bookings';
       document.getElementById('view-clients').hidden = state.tab !== 'clients';
+      document.getElementById('view-masters').hidden = state.tab !== 'masters';
+      document.getElementById('view-cons-price').hidden = state.tab !== 'cons-price';
+      document.getElementById('view-inventory').hidden = state.tab !== 'inventory';
+      document.getElementById('view-analytics').hidden = state.tab !== 'analytics';
+      document.getElementById('view-close-day').hidden = state.tab !== 'close-day';
+      document.getElementById('view-pnl').hidden = state.tab !== 'pnl';
+      // Analytics now reads live prices/consumables/status straight out of
+      // Закрытие дня, so re-render on every visit to pick up anything
+      // changed there since the cached range was last built.
+      if(state.tab === 'analytics'){ analyticsCache.key = null; renderAnalytics(); }
+      // Same reasoning for P&L: re-render live-computed rows whenever the
+      // tab is opened, in case Закрытие дня changed since the last visit.
+      if(state.tab === 'pnl'){
+        pnlShow(state.pnlUnlocked);
+        document.getElementById('pnlPasswordInput').value = '';
+        document.getElementById('pnlLockError').hidden = true;
+      }
     });
   });
   document.getElementById('searchBookings').addEventListener('input', e => { state.search = e.target.value; renderBookings(); });
@@ -396,10 +3276,105 @@
     state.status = chip.dataset.status;
     renderBookings();
   });
+  document.getElementById('dateFrom').addEventListener('change', e => { state.dateFrom = e.target.value; renderBookings(); });
+  document.getElementById('dateTo').addEventListener('change', e => { state.dateTo = e.target.value; renderBookings(); });
+  document.getElementById('dateReset').addEventListener('click', () => {
+    state.dateFrom = ''; state.dateTo = '';
+    document.getElementById('dateFrom').value = '';
+    document.getElementById('dateTo').value = '';
+    renderBookings();
+  });
   document.getElementById('searchClients').addEventListener('input', e => { state.clientSearch = e.target.value; renderClients(); });
   document.getElementById('sortClients').addEventListener('change', e => { state.clientSort = e.target.value; renderClients(); });
 
-  // ---------------- data loading ----------------
+  document.getElementById('searchMasters').addEventListener('input', e => { state.masterSearch = e.target.value; renderMasters(); });
+  document.getElementById('addMasterToggle').addEventListener('click', () => {
+    const row = document.getElementById('addMasterRow');
+    row.hidden = !row.hidden;
+    if(!row.hidden) document.getElementById('newMasterName').focus();
+  });
+  document.getElementById('addMasterCancel').addEventListener('click', () => {
+    document.getElementById('addMasterRow').hidden = true;
+    document.getElementById('newMasterName').value = '';
+    document.getElementById('newMasterZone').value = '';
+    document.getElementById('newMasterRate').value = '';
+  });
+  document.getElementById('addMasterSave').addEventListener('click', addMaster);
+  document.getElementById('newMasterRate').addEventListener('keydown', e => { if(e.key === 'Enter') addMaster(); });
+  document.getElementById('newMasterName').addEventListener('keydown', e => { if(e.key === 'Enter') addMaster(); });
+
+  document.getElementById('searchConsPrice').addEventListener('input', e => { state.consSearch = e.target.value; renderConsPrices(); });
+  document.getElementById('addConsPriceToggle').addEventListener('click', () => {
+    const row = document.getElementById('addConsPriceRow');
+    row.hidden = !row.hidden;
+    if(!row.hidden) document.getElementById('newConsPriceItem').focus();
+  });
+  document.getElementById('addConsPriceCancel').addEventListener('click', () => {
+    document.getElementById('addConsPriceRow').hidden = true;
+    document.getElementById('newConsPriceItem').value = '';
+    document.getElementById('newConsPricePrice').value = '';
+  });
+  document.getElementById('addConsPriceSave').addEventListener('click', addConsPrice);
+  document.getElementById('newConsPriceItem').addEventListener('keydown', e => { if(e.key === 'Enter') addConsPrice(); });
+  document.getElementById('newConsPricePrice').addEventListener('keydown', e => { if(e.key === 'Enter') addConsPrice(); });
+
+  // ---------------- persistence: debounced save-back to Supabase ----------------
+  // Each of the 5 render functions below already runs right after every
+  // mutation the panel makes (add a master, log a procurement line, close
+  // the day, rename an inventory item, edit a P&L figure...) so hooking a
+  // debounced save onto them covers every write path without touching each
+  // individual mutation site.
+  let currentPassword = null;
+  const saveTimers = {};
+  function serializeDayClose(){
+    return {
+      prices: dayClose.prices, consumables: dayClose.consumables,
+      procurement: dayClose.procurement, productSales: dayClose.productSales,
+      serviceStatus: dayClose.serviceStatus, writeoffs: dayClose.writeoffs,
+      adjustments: dayClose.adjustments, closed: dayClose.closed,
+      visitZone: dayClose.visitZone,
+    };
+  }
+  const KV_GETTERS = {
+    masters: () => state.masters,
+    consumable_prices: () => state.consumablePrices,
+    day_close: serializeDayClose,
+    inventory_edits: () => state.inventoryEdits,
+    pnl_fixed: () => state.pnlFixed,
+  };
+  function scheduleSave(key){
+    if(!currentPassword) return; // nothing to save to before login
+    clearTimeout(saveTimers[key]);
+    saveTimers[key] = setTimeout(() => saveKV(key), 800);
+  }
+  async function saveKV(key){
+    if(!currentPassword) return;
+    try{
+      const res = await fetch(SUPABASE_URL + '/rest/v1/rpc/save_kv', {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: 'Bearer ' + SUPABASE_ANON_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ password: currentPassword, p_key: key, p_value: KV_GETTERS[key]() }),
+      });
+      if(!res.ok) throw new Error('save-failed');
+      setSaveNote('Сохранено');
+    }catch(e){
+      setSaveNote('Не удалось сохранить — проверьте связь', true);
+    }
+  }
+  function setSaveNote(text, isError){
+    const el = document.getElementById('saveNote');
+    if(!el) return;
+    el.textContent = text;
+    el.style.color = isError ? 'var(--bad)' : 'var(--muted)';
+    clearTimeout(setSaveNote._t);
+    setSaveNote._t = setTimeout(() => { el.textContent = ''; }, 3000);
+  }
+
+  // ---------------- data loading from Supabase ----------------
   async function loadData(password){
     const res = await fetch(SUPABASE_URL + '/rest/v1/rpc/get_dashboard', {
       method: 'POST',
@@ -413,19 +3388,64 @@
     if(!res.ok) throw new Error('bad-password-or-network');
     const rows = await res.json();
     const row = Array.isArray(rows) ? rows[0] : rows;
-    return { bookings: row.bookings || [], syncStatus: row.sync_status || null };
+    return { bookings: row.bookings || [], syncStatus: row.sync_status || null, kv: row.kv || {} };
+  }
+
+  function applyKv(kv){
+    state.masters = kv.masters || [];
+    state.consumablePrices = kv.consumable_prices || [];
+    const dc = kv.day_close || {};
+    dayClose.prices = dc.prices || {};
+    dayClose.consumables = dc.consumables || {};
+    dayClose.procurement = dc.procurement || {};
+    dayClose.productSales = dc.productSales || {};
+    dayClose.serviceStatus = dc.serviceStatus || {};
+    dayClose.writeoffs = dc.writeoffs || {};
+    dayClose.adjustments = dc.adjustments || {};
+    dayClose.closed = dc.closed || {};
+    dayClose.visitZone = dc.visitZone || {};
+    state.inventoryEdits = kv.inventory_edits || [];
+    const pf = kv.pnl_fixed || {};
+    PNL_MONTHS.forEach(m => { state.pnlFixed[m] = Object.assign({}, PNL_EMPTY_MONTH, pf[m] || {}); });
+    const frozen = kv.frozen || {};
+    FROZEN_DATES = new Set(frozen.dates || []);
+    FROZEN_ANALYTICS_REVENUE = frozen.analyticsRevenue || [];
+    FROZEN_ANALYTICS_CONSUMABLES = frozen.analyticsConsumables || [];
+    FROZEN_ANALYTICS_SERVICE_COUNTS = frozen.analyticsServiceCounts || [];
+  }
+
+  function renderEverything(){
+    populateMasters();
+    renderAll();
+    renderMasters();
+    renderConsPrices();
+    analyticsCache.key = null;
+    renderAnalytics();
+    populateConsumableOptions();
+    populateProcurementOptions();
+    renderCloseDay();
+    renderInventory();
+    if(state.tab === 'pnl') renderPnl();
+  }
+
+  function renderSyncNote(){
+    const el = document.getElementById('syncNote');
+    const m = state.syncStatus;
+    if(!m || !m.last_synced_at){ el.textContent = 'Данные ещё не синхронизированы'; return; }
+    el.innerHTML = 'Синхронизировано: <b>'+esc(fmtDateTime(m.last_synced_at))+'</b>';
   }
 
   async function refresh(){
+    if(!currentPassword) return;
     const btn = document.getElementById('refreshBtn');
     btn.disabled = true; btn.textContent = '↻ Обновляю…';
     try{
-      const password = localStorage.getItem('ibcrm_pw');
-      const data = await loadData(password);
+      const data = await loadData(currentPassword);
       state.bookings = data.bookings;
       state.syncStatus = data.syncStatus;
-      populateMasters();
-      renderAll();
+      applyKv(data.kv);
+      renderEverything();
+      renderSyncNote();
     }catch(e){
       // silent — keep showing last-known data rather than a scary error on refresh
     }finally{
@@ -443,26 +3463,29 @@
     btn.disabled = true; btn.textContent = 'Проверяю…';
     try{
       const data = await loadData(password);
+      currentPassword = password;
       localStorage.setItem('ibcrm_pw', password);
       state.bookings = data.bookings;
       state.syncStatus = data.syncStatus;
+      applyKv(data.kv);
       document.getElementById('gate').hidden = true;
       document.getElementById('app').hidden = false;
-      populateMasters();
-      renderAll();
+      renderEverything();
+      renderSyncNote();
     }catch(e){
       errEl.textContent = 'Неверный пароль или нет связи с сервером.';
     }finally{
       btn.disabled = false; btn.textContent = 'Войти';
     }
   }
-
   document.getElementById('gateSubmit').addEventListener('click', () => {
     tryEnter(document.getElementById('gatePassword').value);
   });
   document.getElementById('gatePassword').addEventListener('keydown', e => {
     if(e.key === 'Enter') tryEnter(e.target.value);
   });
+
+  bindChartTooltips(document.querySelector('.analytics-split'));
 
   // Auto-enter if a password was remembered from a previous visit.
   const remembered = localStorage.getItem('ibcrm_pw');
