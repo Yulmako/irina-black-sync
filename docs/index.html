@@ -373,6 +373,13 @@
   .cd-master-was{font-size:11px; color:var(--muted);}
   .cd-master-missing{font-size:11px; color:var(--bad, #b3261e); border:1px solid currentColor; border-radius:999px; padding:0 7px;}
   .master-dialog-input{width:100%; margin-top:12px; padding:10px 12px; border-radius:9px; border:1px solid var(--border); background:var(--bg); color:var(--ink); font:inherit; font-size:14px;}
+  .master-options{margin-top:8px; max-height:230px; overflow:auto; border:1px solid var(--border); border-radius:9px; background:var(--bg);}
+  .master-option{display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; padding:8px 12px; border:none; border-bottom:1px solid var(--border); background:none; color:var(--ink); font:inherit; font-size:13.5px; text-align:left; cursor:pointer;}
+  .master-option:last-child{border-bottom:none;}
+  .master-option:hover, .master-option.selected{background:var(--accent-soft);}
+  .master-option .mo-meta{font-size:12px; color:var(--muted); white-space:nowrap;}
+  .master-option .mo-meta b{color:var(--ink); font-weight:700;}
+  .master-options-empty{padding:10px 12px; font-size:13px; color:var(--muted);}
   .master-dialog-err{margin:8px 0 0; font-size:13px; color:var(--bad, #b3261e);}
   .cd-zone-select:disabled{opacity:.65; cursor:default; background:transparent; border-color:transparent; padding-left:0; appearance:none;}
   .cd-visit .cd-price-wrap{display:flex; align-items:center; gap:5px; flex:none;}
@@ -664,7 +671,7 @@
     <div class="panel" id="analyticsLocked">
       <div class="pnl-lock-box">
         <div class="pnl-lock-title">Доступ ограничен</div>
-        <p class="pnl-lock-note">Аналитика видна только владельцу салона. Введите пароль (тот же, что для P&amp;L), чтобы продолжить.</p>
+        <p class="pnl-lock-note">Аналитика видна только владельцу салона. Введите пароль, чтобы продолжить.</p>
         <div class="pnl-lock-form">
           <input type="password" id="analyticsPasswordInput" placeholder="Пароль" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false">
           <button type="button" class="cd-save-btn" id="analyticsUnlockBtn">Войти</button>
@@ -3595,8 +3602,8 @@
     const overlay = document.createElement('div');
     overlay.className = 'confirm-overlay';
     overlay.innerHTML = '<div class="confirm-modal"><p><b>Сменить мастера</b><br>'+esc(timeStr(b.start)+' · '+(b.client_name || 'Без имени'))+'<br><span class="cd-status-note">Сейчас: '+esc(current)+(dayClose.masterOverride[bookingId] ? ' (в записи: '+esc(b.master)+')' : '')+'</span></p>' +
-      '<input type="text" class="master-dialog-input" list="masterDialogOptions" placeholder="Выберите мастера из списка" autocomplete="off">' +
-      '<datalist id="masterDialogOptions">'+active.filter(m => m.name !== current).map(m => '<option value="'+esc(m.name)+'">').join('')+'</datalist>' +
+      '<input type="text" class="master-dialog-input" placeholder="Найти мастера по имени" autocomplete="off">' +
+      '<div class="master-options" role="listbox"></div>' +
       '<p class="master-dialog-err" hidden></p>' +
       '<div class="confirm-actions">' +
         (dayClose.masterOverride[bookingId] ? '<button type="button" class="am-cancel" data-act="reset">Как в записи</button>' : '') +
@@ -3604,6 +3611,17 @@
         '<button type="button" class="cd-save-btn" data-act="ok">Сменить</button></div></div>';
     document.body.appendChild(overlay);
     const input = overlay.querySelector('input'), err = overlay.querySelector('.master-dialog-err');
+    const optsEl = overlay.querySelector('.master-options');
+    const candidates = active.filter(m => m.name !== current);
+    function renderOptions(){
+      const q = input.value.trim().toLowerCase();
+      const list = candidates.filter(m => !q || m.name.toLowerCase().includes(q));
+      optsEl.innerHTML = list.length ? list.map(m =>
+        '<button type="button" class="master-option'+(m.name.toLowerCase()===q?' selected':'')+'" data-name="'+esc(m.name)+'" role="option">' +
+        '<span class="mo-name">'+esc(m.name)+'</span><span class="mo-meta">'+(m.zone ? esc(m.zone)+' · ' : '')+'<b>'+Math.round(m.commission_rate*100)+'%</b></span></button>'
+      ).join('') : '<div class="master-options-empty">Такого мастера нет в списке</div>';
+    }
+    renderOptions();
     function close(){ overlay.remove(); document.removeEventListener('keydown', onKey); }
     function fail(msg){ err.textContent = msg; err.hidden = false; input.focus(); }
     function save(){
@@ -3618,13 +3636,15 @@
     document.addEventListener('keydown', onKey);
     overlay.addEventListener('click', e => {
       if(e.target === overlay){ close(); return; }
+      const opt = e.target.closest('.master-option');
+      if(opt){ input.value = opt.dataset.name; err.hidden = true; renderOptions(); input.focus(); return; }
       const btn = e.target.closest('[data-act]');
       if(!btn) return;
       if(btn.dataset.act === 'ok') save();
       else if(btn.dataset.act === 'reset'){ close(); applyMasterChange(bookingId, b.master); }
       else close();
     });
-    input.addEventListener('input', () => { err.hidden = true; });
+    input.addEventListener('input', () => { err.hidden = true; renderOptions(); });
     input.focus();
   }
   document.getElementById('closeDayGroups').addEventListener('click', e => {
