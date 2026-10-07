@@ -300,6 +300,16 @@
     padding:9px 12px; border-radius:9px; border:1px solid var(--border);
     background:var(--surface); color:var(--ink); font:inherit; font-size:14px;
   }
+  .add-master-row select, .add-master-row input[type="number"], .add-master-row input[type="date"]{
+    padding:9px 12px; border-radius:9px; border:1px solid var(--border);
+    background:var(--surface); color:var(--ink); font:inherit; font-size:14px; font-variant-numeric:tabular-nums;
+  }
+  .add-master-row select{padding-right:8px; cursor:pointer;}
+  .add-master-row input::placeholder{color:var(--muted); opacity:.85;}
+  .add-master-row input:focus, .add-master-row select:focus{outline:2px solid var(--accent); outline-offset:-1px;}
+  .add-master-row .am-field{display:flex; flex-direction:column; gap:3px; min-width:0;}
+  .add-master-row .am-field > span{font-size:11px; color:var(--muted); font-weight:600; letter-spacing:.02em;}
+  .add-master-hint{flex:1 1 100%; font-size:12px; color:var(--muted); margin:2px 0 0; line-height:1.45;}
   #newMasterName{flex:1 1 180px; min-width:140px;}
   #newMasterZone{flex:1 1 160px; min-width:130px;}
   .am-rate-wrap{display:flex; align-items:center; gap:6px; color:var(--muted); font-size:13.5px;}
@@ -308,9 +318,10 @@
     background:var(--surface); color:var(--ink); font:inherit; font-size:14px;
     font-variant-numeric:tabular-nums; text-align:right;
   }
-  #addProductSaleRow .am-rate-wrap input, #addProcurementRow .am-rate-wrap input{width:104px;}
+  #addProductSaleRow .am-rate-wrap input, #addProcurementRow .am-rate-wrap input, #addStockRow .am-rate-wrap input{width:124px;}
   .proc-item-wrap{position:relative; flex:1 1 220px; min-width:160px;}
   .proc-item-wrap input{width:100%;}
+  .add-master-row .proc-item-wrap input[type="text"]{width:100%;}
   .proc-item-suggest{
     position:absolute; top:calc(100% + 4px); left:0; right:0; z-index:50;
     max-height:240px; overflow-y:auto; background:var(--surface); border:1px solid var(--border);
@@ -557,6 +568,15 @@
     .cd-client-name-row > *{max-width:100%;}
     .cd-status-row{justify-content:flex-start;}
     .cd-cons-form input[type="text"]{width:100%; flex:1 1 100%;}
+    .add-master-row{padding:12px;}
+    #addStockRow .am-field, #addStockRow .proc-item-wrap{flex:1 1 100%;}
+    #addStockRow .am-field:nth-child(1), #addStockRow .am-field:nth-child(2), #addStockRow .am-field:nth-child(4), #addStockRow .am-field:nth-child(5){flex:1 1 calc(50% - 4px);}
+    #addStockRow input[type="date"], #addStockRow select, #addStockRow input[type="number"], #addStockRow .am-rate-wrap{width:100%;}
+    #addStockRow .am-rate-wrap input{flex:1 1 auto; width:100%; min-width:0;}
+    .add-master-row select, #addProcurementRow select{width:100% !important; flex:1 1 100%;}
+    #addProcurementRow .proc-item-wrap{flex:1 1 100%;}
+    #addProcurementRow input[type="number"]{flex:1 1 90px; width:auto !important;}
+    .add-master-row > .cd-save-btn, .add-master-row > .am-cancel{flex:1 1 calc(50% - 4px); min-height:44px;}
     .master-option{flex-wrap:wrap; gap:2px 12px;}
     .master-option .mo-meta{white-space:normal;}
   }
@@ -1031,7 +1051,24 @@
         </select>
         <div class="spacer"></div>
         <span class="result-count" id="inventoryCount"></span>
+        <button type="button" class="refresh-btn" id="addStockToggle">Добавить поступление</button>
         <button type="button" class="refresh-btn" id="downloadInvReport">Скачать отчёт</button>
+      </div>
+      <div class="add-master-row" id="addStockRow" hidden>
+        <label class="am-field"><span>Дата</span><input type="date" id="newStockDate"></label>
+        <label class="am-field"><span>Категория</span><select id="newStockCategory"></select></label>
+        <label class="am-field proc-item-wrap" style="flex:1 1 220px;"><span>Наименование</span>
+          <input type="text" id="newStockItem" placeholder="Начните вводить название" autocomplete="off">
+          <div class="proc-item-suggest" id="newStockItemSuggest" hidden></div>
+        </label>
+        <label class="am-field"><span>Кол-во</span><input type="number" id="newStockQty" placeholder="Кол-во" min="1" step="1" value="1" style="width:84px;"></label>
+        <label class="am-field"><span>Цена за ед. (необязательно)</span>
+          <div class="am-rate-wrap"><input type="number" id="newStockCost" placeholder="Цена" min="0" step="50"><span>₸</span></div>
+        </label>
+        <label class="am-field" style="flex:1 1 180px;"><span>Комментарий (необязательно)</span><input type="text" id="newStockNote" placeholder="Например: подарок, найдено при пересчёте" autocomplete="off"></label>
+        <button type="button" class="cd-save-btn" id="addStockSave">Добавить</button>
+        <button type="button" class="am-cancel" id="addStockCancel">Отмена</button>
+        <p class="add-master-hint">Поступление пополняет остаток и записывается в «Историю изменений». В расходы и P&amp;L оно не попадает — для покупки используйте «Закрытие дня → Закуп».</p>
       </div>
       <div class="table-scroll">
         <table>
@@ -1050,6 +1087,7 @@
         <div class="chip-row" id="invHistoryChips">
           <span class="chip on" data-invtype="">Все</span>
           <span class="chip" data-invtype="in">Закуп</span>
+          <span class="chip" data-invtype="receipt">Поступление</span>
           <span class="chip" data-invtype="out">Расход</span>
           <span class="chip" data-invtype="sale">Продажа</span>
           <span class="chip" data-invtype="writeoff">Списание</span>
@@ -1075,7 +1113,7 @@
       </div>
       <div class="table-scroll">
         <table>
-          <thead><tr><th>Дата</th><th>Тип</th><th>Наименование</th><th>Мастер / Клиент</th><th class="num">Кол-во</th><th class="num">Цена за ед.</th><th class="num">Сумма</th></tr></thead>
+          <thead><tr><th>Дата</th><th>Тип</th><th>Наименование</th><th>Мастер / Клиент</th><th class="num">Кол-во</th><th class="num">Цена за ед.</th><th class="num">Сумма</th><th></th></tr></thead>
           <tbody id="invHistoryBody"></tbody>
         </table>
       </div>
@@ -2301,7 +2339,10 @@
   };
   function populateProcurementOptions(){
     const sel = document.getElementById('newProcCategory');
-    sel.innerHTML = PROCUREMENT_CATEGORIES.map(c => '<option value="'+esc(c)+'">'+esc(c)+'</option>').join('');
+    const html = PROCUREMENT_CATEGORIES.map(c => '<option value="'+esc(c)+'">'+esc(c)+'</option>').join('');
+    sel.innerHTML = html;
+    const sel2 = document.getElementById('newStockCategory');
+    if(sel2) sel2.innerHTML = html;
   }
   // Custom scrollable suggestion dropdown for "Наименование" in Закуп —
   // a native <input list="datalist"> here doesn't reliably scroll long
@@ -2382,6 +2423,7 @@
     prices: {},
     consumables: {},
     procurement: {},
+    stockIn: {},
     productSales: {},
     serviceStatus: {},
     writeoffs: {},
@@ -2921,6 +2963,10 @@
       const p = dayClose.procurement[date].find(x => x.item === item);
       if(p) return p.category || 'Расходники';
     }
+    for(const date in dayClose.stockIn){
+      const p = dayClose.stockIn[date].find(x => x.item === item);
+      if(p) return p.category || 'Расходники';
+    }
     return null;
   }
   // Raw per-item totals, unfiltered — shared by the on-screen table and
@@ -2936,6 +2982,12 @@
       for(const p of dayClose.procurement[date]){
         const t = get(p.item);
         t.bought += p.qty; t.boughtValue += p.qty * p.unitCost;
+      }
+    }
+    for(const date in dayClose.stockIn){
+      for(const p of dayClose.stockIn[date]){
+        const t = get(p.item);
+        t.bought += p.qty; t.boughtValue += p.qty * (p.unitCost || 0);
       }
     }
     // Only a confirmed visit's consumables actually leave the shelf — a
@@ -3047,6 +3099,94 @@
   }
     renderInventoryHistory();
   }
+  // ---------------- Инвентаризация: поступление позиции ----------------
+  // Пополнение остатка напрямую, без закупа: подарок, найденное при
+  // пересчёте, перенос из другого места. Не учитывается в расходах и P&L
+  // (только остаток), но всегда видно в «Истории изменений».
+  function stockSuggestions(query){
+    const cat = document.getElementById('newStockCategory').value || PROCUREMENT_CATEGORIES[0];
+    const list = PROCUREMENT_ITEMS[cat] || [];
+    const q = (query || '').trim().toLowerCase();
+    const matches = q ? list.filter(i => i.toLowerCase().includes(q)) : list;
+    const box = document.getElementById('newStockItemSuggest');
+    box.innerHTML = matches.length
+      ? matches.map(i => '<div data-val="'+esc(i)+'">'+esc(i)+'</div>').join('')
+      : '<div class="no-match">Такой позиции пока нет — она будет создана</div>';
+    box.hidden = false;
+  }
+  function pickStockItem(value){
+    document.getElementById('newStockItem').value = value;
+    document.getElementById('newStockItemSuggest').hidden = true;
+    const known = getConsumablePrice(value);
+    const costEl = document.getElementById('newStockCost');
+    if(known != null && known > 0 && !costEl.value) costEl.value = known;
+  }
+  document.getElementById('addStockToggle').addEventListener('click', () => {
+    const row = document.getElementById('addStockRow');
+    row.hidden = !row.hidden;
+    if(!row.hidden){
+      const d = document.getElementById('newStockDate');
+      if(!d.value) d.value = todayStr();
+      document.getElementById('newStockItem').focus();
+    }
+  });
+  document.getElementById('addStockCancel').addEventListener('click', () => {
+    document.getElementById('addStockRow').hidden = true;
+  });
+  document.getElementById('newStockCategory').addEventListener('change', () => {
+    document.getElementById('newStockItem').value = '';
+    document.getElementById('newStockItemSuggest').hidden = true;
+  });
+  document.getElementById('newStockItem').addEventListener('focus', e => stockSuggestions(e.target.value));
+  document.getElementById('newStockItem').addEventListener('input', e => {
+    stockSuggestions(e.target.value);
+    const known = getConsumablePrice(e.target.value);
+    const costEl = document.getElementById('newStockCost');
+    if(known != null && known > 0 && !costEl.value) costEl.value = known;
+  });
+  document.getElementById('newStockItemSuggest').addEventListener('mousedown', e => {
+    const opt = e.target.closest('[data-val]');
+    if(!opt) return;
+    e.preventDefault();
+    pickStockItem(opt.dataset.val);
+  });
+  document.addEventListener('click', e => {
+    if(!e.target.closest('#addStockRow .proc-item-wrap')) document.getElementById('newStockItemSuggest').hidden = true;
+  });
+  async function addStock(){
+    const dateEl = document.getElementById('newStockDate');
+    const catEl = document.getElementById('newStockCategory');
+    const itemEl = document.getElementById('newStockItem');
+    const qtyEl = document.getElementById('newStockQty');
+    const costEl = document.getElementById('newStockCost');
+    const noteEl = document.getElementById('newStockNote');
+    const date = dateEl.value || todayStr();
+    const category = catEl.value || PROCUREMENT_CATEGORIES[0];
+    const item = itemEl.value.trim();
+    const qty = Number(qtyEl.value);
+    const unitCost = Number(costEl.value) || 0;
+    const note = noteEl.value.trim();
+    if(!item){ itemEl.focus(); return; }
+    if(!(qty > 0)){ qtyEl.focus(); return; }
+    const known = PROCUREMENT_ITEMS[category] || [];
+    if(!known.some(i => i.toLowerCase() === item.toLowerCase())){
+      const ok = await showConfirmDialog('Такой позиции не существует. Создать новую позицию?');
+      if(!ok) return;
+      registerNewProcurementItem(item, category);
+    }
+    if(!dayClose.stockIn[date]) dayClose.stockIn[date] = [];
+    const entry = { item, qty, unitCost, category };
+    if(note) entry.note = note;
+    dayClose.stockIn[date].push(entry);
+    itemEl.value = ''; qtyEl.value = '1'; costEl.value = ''; noteEl.value = '';
+    document.getElementById('addStockRow').hidden = true;
+    renderInventory();
+  }
+  document.getElementById('addStockSave').addEventListener('click', addStock);
+  ['newStockQty','newStockCost','newStockNote'].forEach(id => {
+    document.getElementById(id).addEventListener('keydown', e => { if(e.key === 'Enter') addStock(); });
+  });
+
   document.getElementById('searchInventory').addEventListener('input', e => { state.invSearch = e.target.value; renderInventory(); });
   document.getElementById('invStockChips').addEventListener('click', e => {
     const chip = e.target.closest('.chip');
@@ -3111,6 +3251,9 @@
   function renameInventoryItem(oldItem, oldCategory, newItem, newCategory, newPrice, oldBought, newBought, oldUsed, newUsed){
     for(const date in dayClose.procurement){
       dayClose.procurement[date].forEach(p => { if(p.item === oldItem){ p.item = newItem; p.category = newCategory; } });
+    }
+    for(const date in dayClose.stockIn){
+      dayClose.stockIn[date].forEach(p => { if(p.item === oldItem){ p.item = newItem; p.category = newCategory; } });
     }
     for(const bookingId in dayClose.consumables){
       dayClose.consumables[bookingId].forEach(c => { if(c.item === oldItem) c.item = newItem; });
@@ -3237,6 +3380,15 @@
         });
       }
     }
+    for(const date in dayClose.stockIn){
+      dayClose.stockIn[date].forEach((p, idx) => {
+        entries.push({
+          date, type: 'receipt', item: p.item, qty: p.qty, unitCost: p.unitCost || 0,
+          sum: p.qty * (p.unitCost || 0), who: 'Поступление · ' + (p.note || 'Инвентаризация'), category: p.category || 'Расходники',
+          ref: { date, idx }
+        });
+      });
+    }
     for(const bookingId in dayClose.consumables){
       if(visitStatus(bookingId) !== 'completed') continue;
       const b = state.bookings.find(x => x.id === bookingId);
@@ -3307,6 +3459,7 @@
     empty.hidden = true;
     const TYPE_PILLS = {
       in: '<span class="pill good">Закуп</span>',
+      receipt: '<span class="pill good">Поступление</span>',
       sale: '<span class="pill info">Продажа</span>',
       out: '<span class="pill warn">Расход</span>',
       writeoff: '<span class="pill bad">Списание</span>',
@@ -3325,9 +3478,22 @@
       '<td class="num">'+(r.qty ? (r.type === 'adjustment' && r.qty > 0 ? '+' : '') + r.qty : '—')+'</td>' +
       '<td class="num">'+(r.unitCost ? Math.round(r.unitCost).toLocaleString('ru-RU')+' ₸' : '—')+'</td>' +
       '<td class="num">'+(r.sum ? Math.round(r.sum).toLocaleString('ru-RU')+' ₸' : '—')+'</td>' +
+      '<td class="cp-actions">'+(r.ref ? '<button type="button" class="mini-action-btn stock-remove" data-date="'+esc(r.ref.date)+'" data-idx="'+r.ref.idx+'" title="Отменить это поступление">Отменить</button>' : '')+'</td>' +
       '</tr>'
     )).join('');
   }
+  document.getElementById('invHistoryBody').addEventListener('click', async e => {
+    const btn = e.target.closest('.stock-remove');
+    if(!btn) return;
+    const list = dayClose.stockIn[btn.dataset.date];
+    const entry = list && list[Number(btn.dataset.idx)];
+    if(!entry) return;
+    const ok = await showConfirmDialog('Отменить поступление «' + entry.item + '» (' + entry.qty + ' шт.)? Остаток уменьшится.');
+    if(!ok) return;
+    list.splice(Number(btn.dataset.idx), 1);
+    if(!list.length) delete dayClose.stockIn[btn.dataset.date];
+    renderInventory();
+  });
   document.getElementById('searchInvHistory').addEventListener('input', e => { state.invHistorySearch = e.target.value; renderInventoryHistory(); });
   document.getElementById('invHistoryChips').addEventListener('click', e => {
     const chip = e.target.closest('.chip');
@@ -3496,7 +3662,7 @@
   // списание, корректировка, правка), respecting whatever search/type/date
   // filters are currently applied on screen, same as the stock report above.
   const HISTORY_TYPE_LABELS = {
-    in: 'Закуп', out: 'Расход', sale: 'Продажа', writeoff: 'Списание', edit: 'Правка',
+    in: 'Закуп', receipt: 'Поступление', out: 'Расход', sale: 'Продажа', writeoff: 'Списание', edit: 'Правка',
   };
   function historyTypeLabel(r){
     if(r.type === 'adjustment') return r.qty > 0 ? 'Корректировка +' : 'Корректировка −';
@@ -4099,7 +4265,7 @@
   function serializeDayClose(){
     return {
       prices: dayClose.prices, consumables: dayClose.consumables,
-      procurement: dayClose.procurement, productSales: dayClose.productSales,
+      procurement: dayClose.procurement, stockIn: dayClose.stockIn, productSales: dayClose.productSales,
       serviceStatus: dayClose.serviceStatus, writeoffs: dayClose.writeoffs,
       adjustments: dayClose.adjustments, closed: dayClose.closed,
       visitZone: dayClose.visitZone, serviceOverride: dayClose.serviceOverride, masterOverride: dayClose.masterOverride,
@@ -4174,6 +4340,7 @@
     dayClose.prices = dc.prices || {};
     dayClose.consumables = dc.consumables || {};
     dayClose.procurement = dc.procurement || {};
+    dayClose.stockIn = dc.stockIn || {};
     dayClose.productSales = dc.productSales || {};
     dayClose.serviceStatus = dc.serviceStatus || {};
     dayClose.writeoffs = dc.writeoffs || {};
