@@ -166,10 +166,14 @@
   .stack-bar{display:flex; height:26px; gap:2px; margin-bottom:16px; border-radius:6px; overflow:hidden;}
   .stack-seg{position:relative; display:flex; align-items:center; justify-content:center; min-width:2px; cursor:default;}
   .stack-seg-label{font-size:11px; font-weight:700; color:#0b0b0b;}
-  .zones-panel{display:flex; flex-direction:column;}
-  .busy-block{margin-top:auto; padding:28px 18px 8px; display:flex; flex-direction:column; gap:16px;}
-  .zones-panel .table-scroll{margin-bottom:26px;}
-  .busy-title{font-family:'Fraunces',serif; font-size:15px; font-weight:600;}
+  .analytics-col{display:flex; flex-direction:column; gap:32px; min-width:0;}
+  .grid-head{display:flex; align-items:center; justify-content:space-between; gap:8px 16px; flex-wrap:wrap; padding-right:18px;}
+  .grid-head .panel-heading{padding-bottom:4px;}
+  .grid-tools{margin:12px 0 0; gap:10px;}
+  .grid-tools select{padding-top:7px; padding-bottom:7px; font-size:13px;}
+  .grid-tools .refresh-btn{padding:8px 14px;}
+  .grid-tools .refresh-btn[disabled]{opacity:.5; cursor:default;}
+  .busy-block{padding:20px 18px 6px; display:flex; flex-direction:column; gap:16px;}
   .busy-tiles{display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px;}
   .busy-tile{background:var(--surface-2); border:1px solid var(--border); border-radius:12px; padding:11px 13px; display:flex; flex-direction:column; justify-content:space-between; gap:8px; min-width:0;}
   .busy-tile.peak{background:var(--accent-soft); border-color:color-mix(in srgb, var(--accent) 45%, transparent);}
@@ -680,6 +684,7 @@
         </div>
         <div class="empty" id="analyticsServicesEmpty" hidden><b>Нет данных за этот период</b>Попробуйте выбрать другой диапазон.</div>
       </div>
+      <div class="analytics-col">
       <div class="panel zones-panel">
         <div class="panel-heading">По залам</div>
         <div class="chart-box">
@@ -696,27 +701,21 @@
           </table>
         </div>
         <div class="empty" id="analyticsZonesEmpty" hidden><b>Нет данных за этот период</b>Попробуйте выбрать другой диапазон.</div>
+      </div>
+      <div class="panel busy-panel">
+        <div class="panel-heading">Загруженность</div>
         <div class="busy-block">
-          <div class="busy-title">Загруженность</div>
           <div class="busy-tiles" id="busySummary"></div>
           <div class="busy-cell"><div class="stack-chart-label">По дням недели</div><div id="busyDays"></div></div>
           <div class="busy-cell"><div class="stack-chart-label">По часам</div><div id="busyHours"></div></div>
           <div class="busy-note" id="busyNote"></div>
         </div>
       </div>
+      </div>
     </div>
 
     <div class="panel" style="margin-bottom:22px;">
-      <div class="table-scroll">
-        <table>
-          <thead><tr id="analyticsGridHead"><th>Мастер</th></tr></thead>
-          <tbody id="analyticsGridBody"></tbody>
-        </table>
-      </div>
-      <div class="empty" id="analyticsGridEmpty" hidden><b>Нет данных за этот период</b>Попробуйте выбрать другой диапазон.</div>
-    </div>
-
-    <div class="panel">
+      <div class="panel-heading">Сводная по мастерам</div>
       <div class="table-scroll">
         <table>
           <thead><tr>
@@ -728,6 +727,28 @@
         </table>
       </div>
       <div class="empty" id="analyticsEmpty" hidden><b>Нет данных за этот период</b>Попробуйте выбрать другой диапазон.</div>
+    </div>
+
+    <div class="panel grid-panel">
+      <div class="grid-head">
+        <div class="panel-heading">Детализация по мастерам</div>
+        <div class="analytics-controls grid-tools">
+          <select id="gridGranularity" aria-label="Разбивка детализации">
+            <option value="auto" selected>Разбивка: авто</option>
+            <option value="day">По дням</option>
+            <option value="week">По неделям</option>
+            <option value="month">По месяцам</option>
+          </select>
+          <button type="button" class="refresh-btn" id="gridDownload">Скачать (CSV)</button>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr id="analyticsGridHead"><th>Мастер</th></tr></thead>
+          <tbody id="analyticsGridBody"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="analyticsGridEmpty" hidden><b>Нет данных за этот период</b>Попробуйте выбрать другой диапазон.</div>
     </div>
   </div>
 
@@ -981,7 +1002,7 @@
     search: '', status: '', master: '', dateFrom: '', dateTo: '',
     clientSearch: '', clientSort: 'visits', masterSearch: '', consSearch: '', invSearch: '',
     invHistorySearch: '', invHistoryType: '', invHistoryFrom: '', invHistoryTo: '',
-    analyticsExpanded: new Set(), inventoryEdits: [], invStockFilter: '', invCategoryFilter: '', invHistoryCategory: '',
+    analyticsExpanded: new Set(), gridGranularity: 'auto', gridExport: null, inventoryEdits: [], invStockFilter: '', invCategoryFilter: '', invHistoryCategory: '',
     pnlUnlocked: false, invEditingItem: null, masterEditing: null };
 
   // P&L — ручные (не рассчитываемые из данных CRM) строки, по месяцам.
@@ -1820,11 +1841,12 @@
     // Mirrors the source spreadsheet's per-master block: Общая сумма,
     // then (when expanded) Расходники, Прибыль, ЗП мастера, ЧП салона,
     // and one row per service category — all on the same period columns.
-    const buckets = orderedBuckets(from, to, granularity);
+    const gridGran = state.gridGranularity === 'auto' ? granularity : state.gridGranularity;
+    const buckets = orderedBuckets(from, to, gridGran);
     function sumByMasterBucket(list, valueFn){
       const map = new Map(); // "master||bucket" -> amount
       for(const item of list){
-        const key = item.master+'||'+bucketKey(item.entry_date, granularity);
+        const key = item.master+'||'+bucketKey(item.entry_date, gridGran);
         map.set(key, (map.get(key)||0) + valueFn(item));
       }
       return map;
@@ -1838,7 +1860,7 @@
       const catMap = catByMaster.get(s.master);
       if(!catMap.has(s.category)) catMap.set(s.category, new Map());
       const bMap = catMap.get(s.category);
-      const key = bucketKey(s.entry_date, granularity);
+      const key = bucketKey(s.entry_date, gridGran);
       bMap.set(key, (bMap.get(key)||0) + Number(s.count));
     }
 
@@ -1849,13 +1871,15 @@
 
     if(!buckets.length || !rows.length){
       head.innerHTML = '<th>Мастер</th>'; gridBody.innerHTML = '';
+      state.gridExport = null; document.getElementById('gridDownload').disabled = true;
       gridEmpty.hidden = false; gridPanel.querySelector('.table-scroll').hidden = true;
       return;
     }
     gridEmpty.hidden = true; gridPanel.querySelector('.table-scroll').hidden = false;
+    document.getElementById('gridDownload').disabled = false;
 
     head.innerHTML = '<th>Мастер</th>' +
-      buckets.map(b => '<th class="num">'+esc(bucketLabel(b, granularity))+'</th>').join('') +
+      buckets.map(b => '<th class="num">'+esc(bucketLabel(b, gridGran))+'</th>').join('') +
       '<th class="num">Итого</th>';
 
     function moneyCells(map, keyPrefix){
@@ -1878,6 +1902,7 @@
     }
 
     let gridHtml = '';
+    const exportRows = [];
     let lastZone2 = null;
     const colTotals = buckets.map(() => 0);
     let grandTotal = 0;
@@ -1892,6 +1917,25 @@
       grandTotal += rev.total;
 
       gridHtml += '<tr><td><button type="button" class="grid-expand-btn" data-master="'+esc(r.name)+'">'+(expanded?'▾':'▸')+'</button>'+esc(r.name)+'</td>'+rev.cells+'<td class="num">'+fmt(rev.total)+'</td></tr>';
+      // выгрузка: все показатели мастера, независимо от того, развёрнута ли строка
+      {
+        const zoneName = r.zone || 'Без зоны';
+        const vals = (map) => buckets.map(b => Math.round(map.get(r.name+'||'+b) || 0));
+        const sum = arr => arr.reduce((x,y) => x+y, 0);
+        const revV = vals(revByMasterBucket), consV = vals(consByMasterBucket);
+        const profV = revV.map((v,i) => v - consV[i]);
+        const salV = profV.map(v => Math.round(v*r.commission_rate));
+        const netV = profV.map((v,i) => v - salV[i]);
+        const put = (label, arr) => exportRows.push([zoneName, r.name, label, ...arr, sum(arr)]);
+        const hasData = sum(revV) || sum(consV) || (catByMaster.get(r.name) && catByMaster.get(r.name).size);
+        if(hasData){
+        put('Выручка', revV); put('Расходники', consV); put('Прибыль', profV); put('ЗП мастера', salV); put('ЧП салона', netV);
+        const cm = catByMaster.get(r.name);
+        if(cm) for(const cat of Array.from(cm.keys()).sort((x,y)=>x.localeCompare(y,'ru'))){
+          const bm = cm.get(cat); put('Услуг: '+cat, buckets.map(b => (bm && bm.get(b)) || 0));
+        }
+        }
+      }
 
       if(expanded){
         const cons = moneyCells(consByMasterBucket, r.name);
@@ -1922,7 +1966,29 @@
       colTotals.map(v => '<td class="num">'+fmt(v)+'</td>').join('') +
       '<td class="num">'+fmt(grandTotal)+'</td></tr>';
     gridBody.innerHTML = gridHtml;
+    state.gridExport = {
+      from, to, gran: gridGran,
+      head: ['Зал','Мастер','Показатель', ...buckets.map(b => bucketLabel(b, gridGran) + (gridGran === 'day' || gridGran === 'week' || gridGran === 'month' ? ' ('+b+')' : '')), 'Итого'],
+      rows: exportRows,
+    };
   }
+  // Скачивание детализации: CSV с разделителем «;» и BOM — Excel на русской
+  // локали открывает его сразу правильно, с кириллицей и столбцами.
+  function downloadGridCsv(){
+    const ex = state.gridExport;
+    if(!ex) return;
+    const cell = v => { const t = String(v); return /[";\n]/.test(t) ? '"'+t.replace(/"/g,'""')+'"' : t; };
+    const lines = [ex.head, ...ex.rows].map(r => r.map(cell).join(';'));
+    const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const gname = { day:'по_дням', week:'по_неделям', month:'по_месяцам', year:'по_годам' }[ex.gran] || ex.gran;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'детализация_мастера_'+ex.from+'_'+ex.to+'_'+gname+'.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
+  document.getElementById('gridDownload').addEventListener('click', downloadGridCsv);
+  document.getElementById('gridGranularity').addEventListener('change', e => { state.gridGranularity = e.target.value; renderAnalytics(); });
   document.getElementById('analyticsGridBody').addEventListener('click', e => {
     const btn = e.target.closest('.grid-expand-btn');
     if(!btn) return;
