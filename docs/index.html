@@ -46,6 +46,7 @@
   img{max-width:100%;}
   html{overflow-x:hidden; -webkit-text-size-adjust:100%; text-size-adjust:100%;}
   body{max-width:100%; overflow-x:hidden; overscroll-behavior-x:none; touch-action:manipulation;}
+  @supports (overflow:clip){ body{overflow-x:clip;} }
   [hidden]{display:none!important;}
 
   /* ---------- scrollbars in the page's palette ---------- */
@@ -87,6 +88,8 @@
 
   .tabs{display:flex; gap:6px; border-bottom:1px solid var(--border); margin-bottom:18px; flex-wrap:wrap;}
   .tab .lbl-short{display:none;}
+  .nav-bar{display:contents;}
+  .nav-toggle{display:none;}
   .tab{white-space:nowrap;}
   .tab{padding:10px 4px; margin-right:12px; font-size:14px; font-weight:600; color:var(--muted); background:none; border:none; cursor:pointer; border-bottom:2px solid transparent; font-family:inherit;}
   .tab.active{color:var(--ink); border-bottom-color:var(--accent);}
@@ -574,13 +577,24 @@
     .sync-actions{margin-left:auto;}
     .sync-warn{max-width:none;}
     /* меню: все разделы на виду, без горизонтальной прокрутки */
-    .tabs{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; overflow:visible; border-bottom:none; margin-bottom:12px;}
-    .tab{flex:none; margin:0; padding:8px 2px; min-height:44px; font-size:11.5px; line-height:1.15; letter-spacing:-.01em; text-align:center; white-space:normal; overflow-wrap:anywhere; hyphens:auto;
-         background:var(--surface); border:1px solid var(--border); border-radius:10px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px; color:var(--muted);}
-    .tab .lbl-full{display:none;}
-    .tab .lbl-short{display:inline;}
-    .tab .count{font-size:10px; display:block;}
-    .tab.active{background:var(--accent-soft); color:var(--accent); border-color:var(--accent);}
+    .wrap > .nav-bar{order:1;}
+    .nav-bar{display:block; position:sticky; top:0; z-index:40; margin:0 -12px 12px; padding:8px 12px; background:var(--bg); border-bottom:1px solid var(--border);}
+    .nav-toggle{display:flex; align-items:center; gap:12px; width:100%; min-height:48px; padding:0 16px; border-radius:12px; border:1px solid var(--border); background:var(--surface); color:var(--ink); font:inherit; font-size:16px; font-weight:700; cursor:pointer; box-shadow:var(--shadow); text-align:left; -webkit-tap-highlight-color:transparent;}
+    .nav-toggle:active{background:var(--surface-2);}
+    .nav-burger{display:flex; flex-direction:column; gap:4px; width:18px; flex:none;}
+    .nav-burger i{display:block; height:2px; border-radius:2px; background:var(--accent); transition:transform .2s, opacity .2s;}
+    .nav-bar.open .nav-burger i:nth-child(1){transform:translateY(6px) rotate(45deg);}
+    .nav-bar.open .nav-burger i:nth-child(2){opacity:0;}
+    .nav-bar.open .nav-burger i:nth-child(3){transform:translateY(-6px) rotate(-45deg);}
+    .nav-current{flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+    .nav-chev{flex:none; color:var(--muted); transition:transform .2s;}
+    .nav-bar.open .nav-chev{transform:rotate(180deg);}
+    .tabs{display:none; position:absolute; left:12px; right:12px; top:100%; margin:6px 0 0; padding:6px; flex-direction:column; gap:2px; border:1px solid var(--border); border-radius:14px; background:var(--surface); box-shadow:0 14px 34px rgba(0,0,0,.22); max-height:calc(100vh - 90px); overflow-y:auto;}
+    .nav-bar.open .tabs{display:flex;}
+    .tab{flex:none; margin:0; padding:0 14px; min-height:48px; font-size:16px; font-weight:600; text-align:left; white-space:nowrap; border:none; border-radius:10px; background:none; color:var(--ink); display:flex; flex-direction:row; align-items:center; justify-content:space-between; gap:10px;}
+    .tab .lbl-short{display:none;}
+    .tab .count{font-size:13px; color:var(--muted);}
+    .tab.active{background:var(--accent-soft); color:var(--accent); font-weight:700;}
     .tab.active .count{color:var(--accent);}
     /* показатели — компактно и только там, где нужны */
     .stats{gap:8px; margin-bottom:12px;}
@@ -637,7 +651,9 @@
     <div class="stat"><span class="label">Доля онлайн-записи</span><span class="value">—</span></div>
   </div>
 
-  <div class="tabs">
+  <div class="nav-bar" id="navBar">
+  <button type="button" class="nav-toggle" id="navToggle" aria-expanded="false" aria-controls="mainTabs"><span class="nav-burger" aria-hidden="true"><i></i><i></i><i></i></span><span class="nav-current" id="navCurrent">Записи</span><span class="nav-chev" aria-hidden="true">▾</span></button>
+  <div class="tabs" id="mainTabs">
     <button class="tab active" data-tab="bookings">Записи <span class="count" id="tabCountBookings"></span></button>
     <button class="tab" data-tab="clients">Клиенты <span class="count" id="tabCountClients"></span></button>
     <button class="tab" data-tab="masters">Мастера <span class="count" id="tabCountMasters"></span></button>
@@ -646,6 +662,7 @@
     <button class="tab" data-tab="close-day">Закрытие дня</button>
     <button class="tab" data-tab="analytics">Аналитика</button>
     <button class="tab" data-tab="pnl">P&amp;L</button>
+  </div>
   </div>
 
   <div id="view-bookings">
@@ -3967,11 +3984,31 @@
     downloadXlsxReport('otchet-pl-2026.xlsx', 'P&L 2026', buildPnlReportRows());
   });
 
+    // ---------- мобильное меню-выпадающий список ----------
+  function tabLabel(tab){
+    const f = tab.querySelector('.lbl-full');
+    if(f) return f.textContent.trim();
+    return tab.childNodes[0].textContent.trim();
+  }
+  function setNavOpen(open){
+    const bar = document.getElementById('navBar'), btn = document.getElementById('navToggle');
+    if(!bar || !btn) return;
+    bar.classList.toggle('open', !!open);
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+  (function(){
+    const btn = document.getElementById('navToggle'), bar = document.getElementById('navBar');
+    if(!btn || !bar) return;
+    btn.addEventListener('click', e => { e.stopPropagation(); setNavOpen(!bar.classList.contains('open')); });
+    document.addEventListener('click', e => { if(!bar.contains(e.target)) setNavOpen(false); });
+    document.addEventListener('keydown', e => { if(e.key === 'Escape') setNavOpen(false); });
+  })();
   document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
       state.tab = tab.dataset.tab;
+      try{ setNavOpen(false); document.getElementById('navCurrent').textContent = tabLabel(tab); }catch(e){}
       try{ document.getElementById('app').setAttribute('data-tab', state.tab); window.scrollTo({top:0}); }catch(e){}
       document.getElementById('view-bookings').hidden = state.tab !== 'bookings';
       document.getElementById('view-clients').hidden = state.tab !== 'clients';
