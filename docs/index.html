@@ -167,6 +167,13 @@
   .stack-seg{position:relative; display:flex; align-items:center; justify-content:center; min-width:2px; cursor:default;}
   .stack-seg-label{font-size:11px; font-weight:700; color:#0b0b0b;}
   .analytics-col{display:flex; flex-direction:column; gap:32px; min-width:0;}
+  /* Детализация скроллится внутри блока: горизонтальная полоса всегда на виду
+     внизу окна таблицы, а шапка с датами и колонка мастеров закреплены. */
+  .grid-panel .table-scroll{max-height:72vh; overflow:auto; overscroll-behavior:contain;}
+  .grid-panel thead th{z-index:3;}
+  .grid-panel #analyticsGridHead th:first-child{z-index:5;}
+  .grid-panel #analyticsGridBody tr.zone-row td:first-child{position:static; box-shadow:none;}
+  .zone-sticky{position:sticky; left:14px; display:inline-block;}
   .grid-head{display:flex; align-items:center; justify-content:space-between; gap:8px 16px; flex-wrap:wrap; padding-right:18px;}
   .grid-head .panel-heading{padding-bottom:4px;}
   .grid-tools{margin:12px 0 0; gap:10px;}
@@ -1908,7 +1915,7 @@
     let grandTotal = 0;
     for(const r of rows){
       if(r.zone !== lastZone2){
-        gridHtml += '<tr class="zone-row"><td colspan="'+(buckets.length+2)+'">'+esc(r.zone||'Без зоны')+'</td></tr>';
+        gridHtml += '<tr class="zone-row"><td colspan="'+(buckets.length+2)+'"><span class="zone-sticky">'+esc(r.zone||'Без зоны')+'</span></td></tr>';
         lastZone2 = r.zone;
       }
       const expanded = state.analyticsExpanded.has(r.name);
