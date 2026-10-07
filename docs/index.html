@@ -180,6 +180,11 @@
   .grid-tools select{padding-top:7px; padding-bottom:7px; font-size:13px;}
   .grid-tools .refresh-btn{padding:8px 14px;}
   .grid-tools .refresh-btn[disabled]{opacity:.5; cursor:default;}
+  .leader-tiles{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; margin-bottom:22px;}
+  @media (max-width:760px){ .leader-tiles{grid-template-columns:1fr;} }
+  .leader-tiles .busy-tile{padding:14px 16px; gap:10px; box-shadow:var(--shadow);}
+  .leader-tiles .bt-label{font-size:12.5px;}
+  .leader-tiles .bt-value{font-size:22px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .busy-block{padding:20px 18px 6px; display:flex; flex-direction:column; gap:16px;}
   .busy-tiles{display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px;}
   .busy-tile{background:var(--surface-2); border:1px solid var(--border); border-radius:12px; padding:11px 13px; display:flex; flex-direction:column; justify-content:space-between; gap:8px; min-width:0;}
@@ -721,6 +726,8 @@
       </div>
     </div>
 
+    <div class="leader-tiles" id="leaderTiles"></div>
+
     <div class="panel" style="margin-bottom:22px;">
       <div class="panel-heading">Сводная по мастерам</div>
       <div class="table-scroll">
@@ -746,7 +753,7 @@
             <option value="week">По неделям</option>
             <option value="month">По месяцам</option>
           </select>
-          <button type="button" class="refresh-btn" id="gridDownload">Скачать (CSV)</button>
+          <button type="button" class="refresh-btn" id="gridDownload">Скачать (Excel)</button>
         </div>
       </div>
       <div class="table-scroll">
@@ -1758,6 +1765,29 @@
     const totalProfit = rows.reduce((s,r)=>s+r.profit,0);
     const totalSalary = rows.reduce((s,r)=>s+r.salary,0);
     const totalNet = rows.reduce((s,r)=>s+r.net,0);
+    // ---- Лидеры периода: кто больше всех принёс выручки, оказал услуг и ЧП салона ----
+    (function(){
+      const el = document.getElementById('leaderTiles');
+      const leaderOf = key => {
+        let best = null;
+        for(const r of rows) if(r[key] > 0 && (!best || r[key] > best[key])) best = r;
+        return best;
+      };
+      const share = (v, total) => total > 0 ? Math.round(v/total*100)+'%' : '—';
+      const totalServices = rows.reduce((s,r)=>s+r.services,0);
+      const defs = [
+        ['Лидер по выручке', 'revenue', fmt, totalRevenue, 'от общей выручки'],
+        ['Лидер по услугам', 'services', v => v+' '+(v%10===1&&v%100!==11?'услуга':(v%10>=2&&v%10<=4&&(v%100<10||v%100>=20)?'услуги':'услуг')), totalServices, 'от всех услуг'],
+        ['Лидер по ЧП салона', 'net', fmt, totalNet, 'от общей ЧП салона'],
+      ];
+      el.innerHTML = defs.map(([label, key, f, total, ofText]) => {
+        const r = leaderOf(key);
+        return '<div class="busy-tile peak"><span class="bt-label">'+label+'</span><span class="bt-bottom">' +
+          (r ? '<span class="bt-value" title="'+esc(r.name)+'">'+esc(r.name)+'</span><span class="bt-sub"><b>'+esc(f(r[key]))+'</b> · '+share(r[key], total)+' '+ofText+'</span>'
+             : '<span class="bt-value">—</span><span class="bt-sub">Нет данных за период</span>') +
+          '</span></div>';
+      }).join('');
+    })();
     // Закуп: pulled from actual day-closing procurement entries (real data,
     // not the sample generator) — same as it will work once the CRM is live.
     let totalProcurement = 0;
@@ -1975,26 +2005,87 @@
     gridBody.innerHTML = gridHtml;
     state.gridExport = {
       from, to, gran: gridGran,
-      head: ['Зал','Мастер','Показатель', ...buckets.map(b => bucketLabel(b, gridGran) + (gridGran === 'day' || gridGran === 'week' || gridGran === 'month' ? ' ('+b+')' : '')), 'Итого'],
+      head: ['Зал','Мастер','Показатель', ...buckets.map(b => {
+        const dmy = k => k.split('-').reverse().join('.');
+        if(gridGran === 'day') return dmy(b);
+        if(gridGran === 'week') return 'неделя с '+dmy(b);
+        return bucketLabel(b, gridGran);
+      }), 'Итого'],
       rows: exportRows,
     };
   }
-  // Скачивание детализации: CSV с разделителем «;» и BOM — Excel на русской
-  // локали открывает его сразу правильно, с кириллицей и столбцами.
-  function downloadGridCsv(){
+  // Скачивание детализации в Excel (.xlsx). Файл собирается прямо в браузере,
+  // без внешних библиотек: .xlsx — это zip из нескольких XML-файлов.
+  const CRC_TABLE = (() => { const t = []; for(let n = 0; n < 256; n++){ let c = n; for(let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+  function crc32(bytes){ let c = 0xFFFFFFFF; for(let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+  function zipStore(files){ // files: [{name, data(Uint8Array)}], без сжатия
+    const enc = new TextEncoder(), chunks = [], central = [];
+    let offset = 0;
+    const u16 = v => [v & 255, (v >>> 8) & 255], u32 = v => [v & 255, (v >>> 8) & 255, (v >>> 16) & 255, (v >>> 24) & 255];
+    for(const f of files){
+      const name = enc.encode(f.name), crc = crc32(f.data), size = f.data.length;
+      const local = new Uint8Array([0x50,0x4B,0x03,0x04, ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21), ...u32(crc), ...u32(size), ...u32(size), ...u16(name.length), ...u16(0)]);
+      chunks.push(local, name, f.data);
+      central.push(new Uint8Array([0x50,0x4B,0x01,0x02, ...u16(20), ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21), ...u32(crc), ...u32(size), ...u32(size), ...u16(name.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(offset)]), name);
+      offset += local.length + name.length + size;
+    }
+    const cdSize = central.reduce((n, c) => n + c.length, 0);
+    const end = new Uint8Array([0x50,0x4B,0x05,0x06, ...u16(0), ...u16(0), ...u16(files.length), ...u16(files.length), ...u32(cdSize), ...u32(offset), ...u16(0)]);
+    return new Blob([...chunks, ...central, end], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  }
+  function xlsxColName(i){ let n = i + 1, s = ''; while(n > 0){ const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; }
+  function xmlEsc(t){ return String(t).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function buildGridXlsx(ex){
+    const enc = new TextEncoder();
+    const rowsAll = [ex.head, ...ex.rows];
+    let sheetRows = '';
+    rowsAll.forEach((row, ri) => {
+      let cells = '';
+      row.forEach((v, ci) => {
+        const ref = xlsxColName(ci) + (ri + 1);
+        if(ri === 0) cells += '<c r="'+ref+'" s="1" t="inlineStr"><is><t>'+xmlEsc(v)+'</t></is></c>';
+        else if(typeof v === 'number') cells += '<c r="'+ref+'" s="2"><v>'+v+'</v></c>';
+        else cells += '<c r="'+ref+'" t="inlineStr"><is><t>'+xmlEsc(v)+'</t></is></c>';
+      });
+      sheetRows += '<row r="'+(ri + 1)+'">'+cells+'</row>';
+    });
+    const lastCol = xlsxColName(ex.head.length - 1), lastRow = rowsAll.length;
+    let cols = '<col min="1" max="1" width="16" customWidth="1"/><col min="2" max="2" width="24" customWidth="1"/><col min="3" max="3" width="30" customWidth="1"/>';
+    if(ex.head.length > 3) cols += '<col min="4" max="'+ex.head.length+'" width="14" customWidth="1"/>';
+    const sheet = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+      '<sheetViews><sheetView workbookViewId="0"><pane xSplit="3" ySplit="1" topLeftCell="D2" activePane="bottomRight" state="frozen"/></sheetView></sheetViews>' +
+      '<cols>'+cols+'</cols><sheetData>'+sheetRows+'</sheetData><autoFilter ref="A1:'+lastCol+lastRow+'"/></worksheet>';
+    const styles = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+      '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>' +
+      '<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF4ECE9"/><bgColor indexed="64"/></patternFill></fill></fills>' +
+      '<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left/><right/><top/><bottom style="thin"><color rgb="FFCCBBBB"/></bottom><diagonal/></border></borders>' +
+      '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+      '<cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
+      '<xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>' +
+      '<xf numFmtId="3" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs>' +
+      '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
+    const files = [
+      ['[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>'],
+      ['_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'],
+      ['xl/workbook.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Детализация" sheetId="1" r:id="rId1"/></sheets></workbook>'],
+      ['xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>'],
+      ['xl/styles.xml', styles],
+      ['xl/worksheets/sheet1.xml', sheet],
+    ].map(([name, xml]) => ({ name, data: enc.encode(xml) }));
+    return zipStore(files);
+  }
+  function downloadGridXlsx(){
     const ex = state.gridExport;
     if(!ex) return;
-    const cell = v => { const t = String(v); return /[";\n]/.test(t) ? '"'+t.replace(/"/g,'""')+'"' : t; };
-    const lines = [ex.head, ...ex.rows].map(r => r.map(cell).join(';'));
-    const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const blob = buildGridXlsx(ex);
     const gname = { day:'по_дням', week:'по_неделям', month:'по_месяцам', year:'по_годам' }[ex.gran] || ex.gran;
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'детализация_мастера_'+ex.from+'_'+ex.to+'_'+gname+'.csv';
+    a.download = 'детализация_мастера_'+ex.from+'_'+ex.to+'_'+gname+'.xlsx';
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   }
-  document.getElementById('gridDownload').addEventListener('click', downloadGridCsv);
+  document.getElementById('gridDownload').addEventListener('click', downloadGridXlsx);
   document.getElementById('gridGranularity').addEventListener('change', e => { state.gridGranularity = e.target.value; renderAnalytics(); });
   document.getElementById('analyticsGridBody').addEventListener('click', e => {
     const btn = e.target.closest('.grid-expand-btn');
