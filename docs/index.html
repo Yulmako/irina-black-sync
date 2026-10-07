@@ -83,11 +83,15 @@
   #analyticsStats .stat{padding:14px 14px;}
   #analyticsStats .value{font-size:18px;}
 
-  .tabs{display:flex; gap:6px; border-bottom:1px solid var(--border); margin-bottom:18px;}
+  .tabs{display:flex; gap:6px; border-bottom:1px solid var(--border); margin-bottom:18px; overflow-x:auto; overflow-y:hidden; -webkit-overflow-scrolling:touch; scrollbar-width:none;}
+  .tabs::-webkit-scrollbar{display:none;}
+  .tab{flex:0 0 auto; white-space:nowrap;}
   .tab{padding:10px 4px; margin-right:18px; font-size:14.5px; font-weight:600; color:var(--muted); background:none; border:none; cursor:pointer; border-bottom:2px solid transparent; font-family:inherit;}
   .tab.active{color:var(--ink); border-bottom-color:var(--accent);}
   .tab .count{color:var(--muted); font-weight:500;}
-  .cd-subtabs{display:flex; gap:4px; border-bottom:1px solid var(--border); margin-bottom:18px;}
+  .cd-subtabs{display:flex; gap:4px; border-bottom:1px solid var(--border); margin-bottom:18px; overflow-x:auto; scrollbar-width:none;}
+  .cd-subtabs::-webkit-scrollbar{display:none;}
+  .cd-subtab-btn{flex:0 0 auto; white-space:nowrap;}
   .cd-subtab-btn{
     padding:9px 4px; margin-right:22px; font-size:13.5px; font-weight:600; color:var(--muted);
     background:none; border:none; cursor:pointer; border-bottom:2px solid transparent; font-family:inherit;
@@ -509,6 +513,49 @@
   }
   #gate button:disabled{opacity:.6; cursor:default;}
   #gate .err{font-size:13px; color:var(--bad); min-height:16px;}
+
+  /* ---------- Мобильная версия ---------- */
+  @media (max-width:600px){
+    header.top h1{font-size:26px;}
+    .stat{padding:13px 14px;}
+    .stat .label{white-space:normal; overflow:visible; text-overflow:clip; line-height:1.25;}
+    .stat .value{font-size:23px;}
+    #analyticsStats .value{font-size:17px;}
+    #pnlStats{grid-template-columns:1fr;}
+    .filters{padding:12px;}
+    .filters input[type="search"]{flex:1 1 100%; min-width:0;}
+    .filters select, .filters input[type="date"]{min-width:0; max-width:100%;}
+    .filters input[type="date"]{flex:1 1 130px;}
+    .cd-summary-tile .value{font-size:19px;}
+    .pnl-lock-box{margin:32px auto; padding:24px 16px;}
+    .pnl-lock-form{flex-wrap:wrap;}
+    .pnl-lock-form input[type="password"]{width:100%; flex:1 1 100%;}
+    .leader-tiles .bt-value{font-size:20px;}
+    .tab{margin-right:14px; font-size:14px;}
+    .filters .result-count{white-space:normal;}
+    .filters .spacer{display:none;}
+    .busy-tiles{grid-template-columns:repeat(2,minmax(0,1fr));}
+    .busy-tiles .busy-tile:nth-child(odd):last-child{grid-column:1 / -1;}
+    .zones-panel th, .zones-panel td{padding-left:8px; padding-right:8px;}
+    .zones-panel th{font-size:10.5px; letter-spacing:.04em;}
+    .panel-heading{padding-left:14px; padding-right:14px;}
+    .date-range{width:100%; flex-wrap:nowrap;}
+    .date-range input[type="date"]{flex:1 1 0; min-width:0; width:auto; padding:8px 6px;}
+    .date-range #dateReset{flex:none;}
+    .close-day-header{flex-wrap:wrap;}
+    .cd-visit{padding:10px 12px; gap:8px;}
+    .cd-visit .cd-time{width:38px;}
+    .cd-visit input[type="number"]{width:78px;}
+    .cd-zone-select{max-width:120px;}
+    .cd-visit-extra{padding:0 12px 10px 12px;}
+    .cd-split{white-space:normal;}
+    .cd-visit .pill{white-space:normal; line-height:1.2; padding:3px 9px;}
+    .cd-client-name-row > *{max-width:100%;}
+    .cd-status-row{justify-content:flex-start;}
+    .cd-cons-form input[type="text"]{width:100%; flex:1 1 100%;}
+    .master-option{flex-wrap:wrap; gap:2px 12px;}
+    .master-option .mo-meta{white-space:normal;}
+  }
 </style>
 
 </head>
@@ -3882,6 +3929,7 @@
     tab.addEventListener('click', () => {
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
+      try{ tab.scrollIntoView({inline:'center', block:'nearest', behavior:'smooth'}); }catch(e){}
       state.tab = tab.dataset.tab;
       document.getElementById('view-bookings').hidden = state.tab !== 'bookings';
       document.getElementById('view-clients').hidden = state.tab !== 'clients';
