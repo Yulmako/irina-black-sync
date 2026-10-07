@@ -182,9 +182,13 @@
   .grid-tools .refresh-btn[disabled]{opacity:.5; cursor:default;}
   .leader-tiles{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; margin-bottom:22px;}
   @media (max-width:760px){ .leader-tiles{grid-template-columns:1fr;} }
-  .leader-tiles .busy-tile{padding:14px 16px; gap:10px; box-shadow:var(--shadow);}
-  .leader-tiles .bt-label{font-size:12.5px;}
-  .leader-tiles .bt-value{font-size:22px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .leader-tiles .busy-tile{padding:16px 20px 15px; gap:12px; min-height:128px; box-shadow:var(--shadow);}
+  .leader-tiles .bt-label{font-size:13.5px; font-weight:500;}
+  .leader-tiles .bt-bottom{gap:6px;}
+  .leader-tiles .bt-value{font-size:21px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .leader-tiles .bt-sub{display:flex; flex-direction:column; gap:2px;}
+  .leader-tiles .bt-sub b{font-size:15.5px;}
+  .leader-tiles .bt-sub .bt-share{font-size:12.5px; color:var(--muted);}
   .busy-block{padding:20px 18px 6px; display:flex; flex-direction:column; gap:16px;}
   .busy-tiles{display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px;}
   .busy-tile{background:var(--surface-2); border:1px solid var(--border); border-radius:12px; padding:11px 13px; display:flex; flex-direction:column; justify-content:space-between; gap:8px; min-width:0;}
@@ -1806,7 +1810,7 @@
       el.innerHTML = defs.map(([label, key, f, total, ofText]) => {
         const r = leaderOf(key);
         return '<div class="busy-tile peak"><span class="bt-label">'+label+'</span><span class="bt-bottom">' +
-          (r ? '<span class="bt-value" title="'+esc(r.name)+'">'+esc(r.name)+'</span><span class="bt-sub"><b>'+esc(f(r[key]))+'</b> · '+share(r[key], total)+' '+ofText+'</span>'
+          (r ? '<span class="bt-value" title="'+esc(r.name)+'">'+esc(r.name)+'</span><span class="bt-sub"><b>'+esc(f(r[key]))+'</b><span class="bt-share">'+share(r[key], total)+' '+ofText+'</span></span>'
              : '<span class="bt-value">—</span><span class="bt-sub">Нет данных за период</span>') +
           '</span></div>';
       }).join('');
