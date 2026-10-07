@@ -243,6 +243,7 @@
   }
   .modal-form-row input[type="text"]{flex:1 1 160px; min-width:140px;}
   .analytics-controls{display:flex; align-items:center; gap:12px; margin-bottom:18px; flex-wrap:wrap;}
+  .analytics-controls .spacer{flex:1 1 auto;}
   .analytics-controls input[type="month"]{
     padding:9px 12px; border-radius:9px; border:1px solid var(--border);
     background:var(--surface); color:var(--ink); font:inherit; font-size:14px;
@@ -546,8 +547,8 @@
     <button class="tab" data-tab="masters">Мастера <span class="count" id="tabCountMasters"></span></button>
     <button class="tab" data-tab="cons-price">Расходники Прайс <span class="count" id="tabCountConsPrice"></span></button>
     <button class="tab" data-tab="inventory">Инвентаризация</button>
-    <button class="tab" data-tab="analytics">Аналитика</button>
     <button class="tab" data-tab="close-day">Закрытие дня</button>
+    <button class="tab" data-tab="analytics">Аналитика</button>
     <button class="tab" data-tab="pnl">P&amp;L</button>
   </div>
 
@@ -660,6 +661,18 @@
   </div>
 
   <div id="view-analytics" hidden>
+    <div class="panel" id="analyticsLocked">
+      <div class="pnl-lock-box">
+        <div class="pnl-lock-title">Доступ ограничен</div>
+        <p class="pnl-lock-note">Аналитика видна только владельцу салона. Введите пароль (тот же, что для P&amp;L), чтобы продолжить.</p>
+        <div class="pnl-lock-form">
+          <input type="password" id="analyticsPasswordInput" placeholder="Пароль" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false">
+          <button type="button" class="cd-save-btn" id="analyticsUnlockBtn">Войти</button>
+        </div>
+        <div class="pnl-lock-error" id="analyticsLockError" hidden>Неверный пароль</div>
+      </div>
+    </div>
+    <div id="analyticsUnlockedPanel" hidden>
     <div class="analytics-controls">
       <select id="analyticsGranularity" aria-label="Период">
         <option value="today">Сегодня</option>
@@ -673,6 +686,8 @@
         <span class="date-sep">—</span>
         <input type="date" id="analyticsTo" aria-label="Период до">
       </div>
+      <div class="spacer"></div>
+      <button type="button" class="cd-unlock-btn" id="analyticsLockBtn">Заблокировать</button>
     </div>
 
     <div class="stats" id="analyticsStats">
@@ -764,6 +779,7 @@
       </div>
       <div class="empty" id="analyticsGridEmpty" hidden><b>Нет данных за этот период</b>Попробуйте выбрать другой диапазон.</div>
     </div>
+      </div>
   </div>
 
   <div id="view-close-day" hidden>
@@ -3791,6 +3807,33 @@
     document.getElementById('pnlUnlockedPanel').hidden = !unlocked;
     if(unlocked) renderPnl();
   }
+  // Аналитика закрыта тем же паролем, что и P&L: один раз ввели — открыты обе
+  // вкладки, пока не нажмёте «Заблокировать» или не выйдете из панели.
+  function analyticsShow(unlocked){
+    document.getElementById('analyticsLocked').hidden = unlocked;
+    document.getElementById('analyticsUnlockedPanel').hidden = !unlocked;
+    if(unlocked){ analyticsCache.key = null; renderAnalytics(); }
+  }
+  function analyticsTryUnlock(){
+    const input = document.getElementById('analyticsPasswordInput');
+    const err = document.getElementById('analyticsLockError');
+    if(input.value.trim().toLowerCase() === PNL_PASSWORD.toLowerCase()){
+      state.pnlUnlocked = true;
+      err.hidden = true;
+      input.value = '';
+      analyticsShow(true);
+    } else {
+      err.hidden = false;
+      input.value = '';
+      input.focus();
+    }
+  }
+  document.getElementById('analyticsUnlockBtn').addEventListener('click', analyticsTryUnlock);
+  document.getElementById('analyticsPasswordInput').addEventListener('keydown', e => { if(e.key === 'Enter') analyticsTryUnlock(); });
+  document.getElementById('analyticsLockBtn').addEventListener('click', () => {
+    state.pnlUnlocked = false;
+    analyticsShow(false);
+  });
   function pnlTryUnlock(){
     const input = document.getElementById('pnlPasswordInput');
     const err = document.getElementById('pnlLockError');
@@ -3831,7 +3874,11 @@
       // Analytics now reads live prices/consumables/status straight out of
       // Закрытие дня, so re-render on every visit to pick up anything
       // changed there since the cached range was last built.
-      if(state.tab === 'analytics'){ analyticsCache.key = null; renderAnalytics(); }
+      if(state.tab === 'analytics'){
+        analyticsShow(state.pnlUnlocked);
+        document.getElementById('analyticsPasswordInput').value = '';
+        document.getElementById('analyticsLockError').hidden = true;
+      }
       // Same reasoning for P&L: re-render live-computed rows whenever the
       // tab is opened, in case Закрытие дня changed since the last visit.
       if(state.tab === 'pnl'){
