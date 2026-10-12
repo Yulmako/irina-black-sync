@@ -720,7 +720,10 @@
   .cd-cal-toggle{padding:8px 14px; border-radius:9px; border:1px solid var(--border); background:var(--surface); color:var(--ink); font:inherit; font-size:13.5px; font-weight:500; cursor:pointer; display:inline-flex; align-items:center; gap:8px;}
   .cd-cal-toggle[aria-expanded="true"]{background:var(--accent-soft); border-color:var(--accent); color:var(--accent);}
   .cd-cal-badge{min-width:20px; height:20px; padding:0 6px; border-radius:999px; background:var(--bad); color:#fff; font-size:12px; font-weight:700; display:inline-flex; align-items:center; justify-content:center;}
-  .cd-cal{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px; margin-bottom:18px; max-width:380px;}
+  .cd-cal-wrap{position:relative;}
+  .cd-cal-caret{font-size:11px; opacity:.7;}
+  .cd-cal-toggle[aria-expanded="true"] .cd-cal-caret{transform:rotate(180deg);}
+  .cd-cal{position:absolute; top:calc(100% + 8px); left:0; z-index:40; width:340px; max-width:calc(100vw - 32px); background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px; box-shadow:var(--shadow);}
   .cd-cal-head{display:flex; align-items:center; gap:8px; margin-bottom:10px;}
   .cd-cal-title{flex:1; text-align:center; font-weight:600; font-size:14.5px; text-transform:capitalize;}
   .cd-cal-nav{width:32px; height:32px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--ink); font-size:16px; cursor:pointer; line-height:1;}
@@ -746,7 +749,7 @@
   .cd-cal-foot b{color:var(--bad);} .cd-cal-foot .ok{color:var(--good); font-weight:600;}
   .cd-cal-jump{padding:5px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--accent); font:inherit; font-size:12.5px; font-weight:600; cursor:pointer;}
   .cd-cal-jump:hover{border-color:var(--accent);}
-  @media (max-width:600px){ .cd-cal{max-width:none;} .cd-cal-day{height:42px;} }
+  @media (max-width:600px){ .cd-cal{width:calc(100vw - 32px);} .cd-cal-day{height:42px;} }
 </style>
 
 </head>
@@ -1072,12 +1075,14 @@
       <input type="date" id="closeDayDate">
       <span class="day-status" id="closeDayStatus"></span>
       <span class="cd-status-note" id="closeDayPendingNote" hidden></span>
-      <button type="button" class="cd-cal-toggle" id="cdCalToggle" aria-expanded="true">Календарь <span class="cd-cal-badge" id="cdCalBadge" hidden></span></button>
+      <div class="cd-cal-wrap" id="cdCalWrap">
+        <button type="button" class="cd-cal-toggle" id="cdCalToggle" aria-expanded="false" aria-haspopup="true">Календарь <span class="cd-cal-badge" id="cdCalBadge" hidden></span><span class="cd-cal-caret" aria-hidden="true">▾</span></button>
+        <div class="cd-cal" id="cdCal" hidden></div>
+      </div>
       <div class="cd-spacer"></div>
       <button class="cd-save-btn" id="closeDaySave">Закрыть день</button>
       <button class="cd-unlock-btn" id="closeDayUnlock" hidden>Разблокировать день</button>
     </div>
-    <div class="cd-cal" id="cdCal"></div>
     <div class="cd-summary" id="closeDayTotal" hidden>
       <div class="cd-summary-tile"><span class="label">Расходники за день</span><span class="value" id="closeDayConsValue">—</span><span class="cd-tile-hint" id="closeDayConsHint" hidden></span></div>
       <div class="cd-summary-tile"><span class="label">К выплате мастерам</span><span class="value" id="closeDayMasterValue">—</span></div>
@@ -3845,7 +3850,7 @@
 
   // ---------------- Закрытие дня: календарь закрытых / не закрытых дней ----------------
   let cdCalMonth = null;      // 'YYYY-MM' — показанный месяц
-  let cdCalOpen = true;
+  let cdCalOpen = false;
   const MONTHS_FULL = ['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь'];
   function todayStr(){ return dayStr(new Date().toISOString()); }
   // дата -> { total, pending, imported } по всем записям (кроме «не пришёл»/архива)
@@ -3932,7 +3937,14 @@
     const date = pick.dataset.caldate || pick.dataset.caljump;
     document.getElementById('closeDayDate').value = date;
     cdCalMonth = date.slice(0,7);
+    cdCalOpen = false;
     renderCloseDay();
+  });
+  document.addEventListener('click', e => {
+    if(cdCalOpen && !e.composedPath().includes(document.getElementById('cdCalWrap'))){ cdCalOpen = false; renderCloseDayCalendar(); }
+  });
+  document.addEventListener('keydown', e => {
+    if(e.key === 'Escape' && cdCalOpen){ cdCalOpen = false; renderCloseDayCalendar(); document.getElementById('cdCalToggle').focus(); }
   });
 
   function renderCloseDay(){
