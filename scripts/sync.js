@@ -68,7 +68,8 @@ async function fetchMasters() {
   const list = await zapisJson(`${ZAPIS_BASE}/rest/v2/partner-web/reservation/masters-list`);
   const map = {};
   for (const m of list) {
-    map[m.id] = [m.name, m.surname].filter(Boolean).join(' ').trim() || String(m.id);
+    // Только имя, без фамилии — чтобы совпадало со списком мастеров CRM.
+    map[m.id] = String(m.name || '').trim() || String(m.id);
   }
   return map;
 }
@@ -145,26 +146,17 @@ async function upsertBookings(bookings) {
   const BATCH = 200;
   for (let i = 0; i < bookings.length; i += BATCH) {
     const chunk = bookings.slice(i, i + BATCH);
-    const res = await supabase('/rest/v1/bookings?on_conflict=id', {
+    await supabase('/rest/v1/bookings?on_conflict=id', {
       method: 'POST',
-      headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
+      headers: { Prefer: 'resolution=merge-duplicates' },
       body: JSON.stringify(chunk),
     });
-    const text = await res.text();
-    let written;
-    try {
-      written = JSON.parse(text).length;
-    } catch {
-      written = 'unknown (could not parse response)';
-    }
-    console.log(`  batch ${i}-${i + chunk.length}: sent ${chunk.length}, HTTP ${res.status}, rows returned: ${written}`);
   }
 }
 
 async function updateSyncStatus({ rangeStart, rangeEnd, count }) {
-  const res = await supabase('/rest/v1/sync_status?id=eq.1', {
+  await supabase('/rest/v1/sync_status?id=eq.1', {
     method: 'PATCH',
-    headers: { Prefer: 'return=representation' },
     body: JSON.stringify({
       last_synced_at: new Date().toISOString(),
       range_from: fmt(rangeStart),
@@ -172,21 +164,12 @@ async function updateSyncStatus({ rangeStart, rangeEnd, count }) {
       count,
     }),
   });
-  const text = await res.text();
-  console.log(`  sync_status update: HTTP ${res.status}, response: ${text.slice(0, 300)}`);
 }
 
 async function main() {
   const { bookings, rangeStart, rangeEnd } = await fetchAllBookings();
-  console.log(`Fetched ${bookings.length} bookings from zapis.kz. Writing to Supabase...`);
   await upsertBookings(bookings);
   await updateSyncStatus({ rangeStart, rangeEnd, count: bookings.length });
-
-  const verifyRes = await supabase('/rest/v1/bookings?select=id', {
-    headers: { Prefer: 'count=exact', Range: '0-0' },
-  });
-  console.log('Verification — total rows now in table (content-range header):', verifyRes.headers.get('content-range'));
-
   console.log(`Synced ${bookings.length} bookings (${fmt(rangeStart)} — ${fmt(rangeEnd)}) into Supabase.`);
 }
 
