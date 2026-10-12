@@ -95,7 +95,26 @@
   .svc-select{padding:8px 10px; border-radius:9px; border:1px solid var(--border); background:var(--bg); color:var(--ink); font:inherit; font-size:13.5px; min-width:190px; max-width:100%;}
   .svc-select.unset{border-color:var(--warn); background:var(--warn-soft);}
   .svc-suggest{font:inherit; font-size:12px; font-weight:600; color:var(--accent); background:var(--accent-soft); border:none; border-radius:999px; padding:4px 10px; cursor:pointer;}
-  .tab .count.alert{color:var(--bad); font-weight:700;}
+  .tab .count.alert{display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px; padding:0 6px; border-radius:999px; background:var(--bad); color:#fff; font-size:11px; font-weight:700; margin-left:2px; vertical-align:1px;}
+  .svc-alert{display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:0 0 16px; padding:11px 16px; border-radius:12px; background:var(--warn-soft); color:var(--warn); border:1px solid var(--warn); font-size:13.5px; font-weight:600;}
+  .svc-alert-text{flex:1 1 220px; min-width:0;}
+  .svc-alert-btn{font:inherit; font-size:13px; font-weight:700; padding:7px 14px; border-radius:9px; border:none; background:var(--warn); color:var(--surface); cursor:pointer;}
+  .wrap[data-tab="services"] .svc-alert{display:none;}
+  .nav-badge{flex:none; min-width:22px; height:22px; padding:0 7px; border-radius:999px; background:var(--bad); color:#fff; font-size:12px; font-weight:700; display:inline-flex; align-items:center; justify-content:center;}
+  .svc-catalog{display:flex; flex-direction:column;}
+  .svc-zone{padding:14px 16px; border-bottom:1px solid var(--border);}
+  .svc-zone:last-child{border-bottom:none;}
+  .svc-zone-title{font-family:'Fraunces',serif; font-weight:600; font-size:15px; margin-bottom:10px;}
+  .svc-chips{display:flex; flex-wrap:wrap; gap:8px; align-items:center;}
+  .svc-chip{display:inline-flex; align-items:center; gap:2px; padding:3px 4px 3px 12px; border-radius:999px; background:var(--surface-2); border:1px solid var(--border); font-size:13.5px; font-weight:600; color:var(--ink);}
+  .svc-chip button{font:inherit; background:none; border:none; cursor:pointer; color:var(--muted); padding:3px 7px; border-radius:50%; line-height:1; font-size:14px;}
+  .svc-chip button:hover{color:var(--ink); background:var(--accent-soft);}
+  .svc-chip .svc-del:hover{color:var(--bad);}
+  .svc-add{display:inline-flex; gap:6px; align-items:center;}
+  .svc-add input{padding:7px 12px; border-radius:999px; border:1px solid var(--border); background:var(--bg); color:var(--ink); font:inherit; font-size:13.5px; width:170px; max-width:100%;}
+  .svc-add button{white-space:nowrap; flex:none; font:inherit; font-size:12.5px; font-weight:700; padding:7px 13px; border-radius:999px; border:1px solid var(--border); background:var(--surface); color:var(--ink); cursor:pointer;}
+  .svc-add button:hover{background:var(--accent-soft); color:var(--accent);}
+  .svc-text-input{width:100%; margin-top:12px; padding:10px 12px; border-radius:9px; border:1px solid var(--border); background:var(--bg); color:var(--ink); font:inherit; font-size:14px;}
   .nav-bar{display:contents;}
   .nav-toggle{display:none;}
   .tab{white-space:nowrap;}
@@ -600,10 +619,10 @@
   /* ---------- Мобильная версия: компактный интерфейс ---------- */
   @media (max-width:600px){
     .wrap{padding:12px 12px calc(40px + env(safe-area-inset-bottom)); display:flex; flex-direction:column;}
-    .wrap > *{order:3; min-width:0;}
+    .wrap > *{order:4; min-width:0;}
     .wrap > header.top{order:0;}
     .wrap > .tabs{order:1;}
-    .wrap > .stats{order:2;}
+    .wrap > .stats{order:3;}
     /* шапка */
     header.top{flex-direction:column; align-items:stretch; gap:6px; margin-bottom:10px;}
     header.top .eyebrow{font-size:10.5px;}
@@ -613,7 +632,8 @@
     .sync-actions{margin-left:auto;}
     .sync-warn{max-width:none;}
     /* меню: все разделы на виду, без горизонтальной прокрутки */
-    .wrap > .nav-bar{order:1;}
+    .wrap > .nav-bar{order:2;}
+    .wrap > .svc-alert{order:1; margin-bottom:10px; font-size:13px;}
     .nav-bar{display:block; position:sticky; top:0; z-index:40; margin:0 -12px 12px; padding:8px 12px; background:var(--bg); border-bottom:1px solid var(--border);}
     .nav-toggle{display:flex; align-items:center; gap:12px; width:100%; min-height:48px; padding:0 16px; border-radius:12px; border:1px solid var(--border); background:var(--surface); color:var(--ink); font:inherit; font-size:16px; font-weight:700; cursor:pointer; box-shadow:var(--shadow); text-align:left; -webkit-tap-highlight-color:transparent;}
     .nav-toggle:active{background:var(--surface-2);}
@@ -623,6 +643,8 @@
     .nav-bar.open .nav-burger i:nth-child(2){opacity:0;}
     .nav-bar.open .nav-burger i:nth-child(3){transform:translateY(-6px) rotate(-45deg);}
     .nav-current{flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+    .svc-add{width:100%;}
+    .svc-add input{flex:1 1 auto; width:auto;}
     .nav-chev{flex:none; color:var(--muted); transition:transform .2s;}
     .nav-bar.open .nav-chev{transform:rotate(180deg);}
     .tabs{display:none; position:absolute; left:12px; right:12px; top:100%; margin:6px 0 0; padding:6px; flex-direction:column; gap:2px; border:1px solid var(--border); border-radius:14px; background:var(--surface); box-shadow:0 14px 34px rgba(0,0,0,.22); max-height:calc(100vh - 90px); overflow-y:auto;}
@@ -687,8 +709,13 @@
     <div class="stat"><span class="label">Доля онлайн-записи</span><span class="value">—</span></div>
   </div>
 
+  <div class="svc-alert" id="svcAlert" hidden>
+    <span class="svc-alert-text" id="svcAlertText"></span>
+    <button type="button" class="svc-alert-btn" id="svcAlertBtn">Привязать</button>
+  </div>
+
   <div class="nav-bar" id="navBar">
-  <button type="button" class="nav-toggle" id="navToggle" aria-expanded="false" aria-controls="mainTabs"><span class="nav-burger" aria-hidden="true"><i></i><i></i><i></i></span><span class="nav-current" id="navCurrent">Записи</span><span class="nav-chev" aria-hidden="true">▾</span></button>
+  <button type="button" class="nav-toggle" id="navToggle" aria-expanded="false" aria-controls="mainTabs"><span class="nav-burger" aria-hidden="true"><i></i><i></i><i></i></span><span class="nav-current" id="navCurrent">Записи</span><span class="nav-badge" id="navBadge" hidden></span><span class="nav-chev" aria-hidden="true">▾</span></button>
   <div class="tabs" id="mainTabs">
     <button class="tab active" data-tab="bookings">Записи <span class="count" id="tabCountBookings"></span></button>
     <button class="tab" data-tab="clients">Клиенты <span class="count" id="tabCountClients"></span></button>
@@ -755,7 +782,12 @@
   </div>
 
   <div id="view-services" hidden>
-    <div class="panel">
+    <div class="panel" id="svcCatalogPanel">
+      <div class="panel-heading">Список услуг CRM</div>
+      <p class="svc-hint">Категории, по которым считается аналитика. Их можно добавлять, переименовывать и удалять отдельно для каждого зала.</p>
+      <div id="svcCatalog" class="svc-catalog"></div>
+    </div>
+    <div class="panel" style="margin-top:18px;">
       <div class="filters">
         <input type="search" id="searchServices" placeholder="Поиск услуги из zapis.kz…">
         <div class="chip-row" id="svcFilterChips">
@@ -4319,7 +4351,7 @@
       procurement: dayClose.procurement, stockIn: dayClose.stockIn, productSales: dayClose.productSales,
       serviceStatus: dayClose.serviceStatus, writeoffs: dayClose.writeoffs,
       adjustments: dayClose.adjustments, closed: dayClose.closed,
-      visitZone: dayClose.visitZone, serviceOverride: dayClose.serviceOverride, masterOverride: dayClose.masterOverride, serviceMap: dayClose.serviceMap,
+      visitZone: dayClose.visitZone, serviceOverride: dayClose.serviceOverride, masterOverride: dayClose.masterOverride, serviceMap: dayClose.serviceMap, serviceCatalog: cloneCatalog(),
     };
   }
   const KV_GETTERS = {
@@ -4400,6 +4432,7 @@
     dayClose.visitZone = dc.visitZone || {};
     dayClose.serviceOverride = dc.serviceOverride || {};
     dayClose.serviceMap = dc.serviceMap || {};
+    applyServiceCatalog(dc.serviceCatalog);
     dayClose.masterOverride = dc.masterOverride || {};
     state.inventoryEdits = kv.inventory_edits || [];
     const pf = kv.pnl_fixed || {};
@@ -4415,7 +4448,19 @@
   // Привязка хранится в dayClose.serviceMap (ключ — название услуги в
   // нижнем регистре без лишних пробелов) и попадает в KV «day_close».
   const SERVICE_SKIP = 'Не учитывать';
-  const ALL_SERVICE_CATEGORIES = Array.from(new Set([].concat(...Object.values(ZONE_CATEGORIES))));
+  function allServiceCategories(){ return Array.from(new Set([].concat(...Object.values(ZONE_CATEGORIES)))); }
+  const ZONE_CATEGORIES_DEFAULT = JSON.parse(JSON.stringify(ZONE_CATEGORIES));
+  function cloneCatalog(){ return JSON.parse(JSON.stringify(ZONE_CATEGORIES)); }
+  // Список услуг CRM по залам можно править во вкладке «Услуги»; правки
+  // хранятся в KV («day_close.serviceCatalog»). Без правок — список по умолчанию.
+  function applyServiceCatalog(cat){
+    for(const z in ZONE_CATEGORIES_DEFAULT) ZONE_CATEGORIES[z] = ZONE_CATEGORIES_DEFAULT[z].slice();
+    if(cat && typeof cat === 'object'){
+      for(const z in cat){
+        if(Array.isArray(cat[z]) && cat[z].length && (z in ZONE_CATEGORIES)) ZONE_CATEGORIES[z] = cat[z].map(String);
+      }
+    }
+  }
   function normSvc(s){ return String(s||'').trim().toLowerCase().replace(/ё/g,'е').replace(/\s+/g,' '); }
   const SERVICE_KEYWORDS = [
     [/наращ/, 'Наращивание'],
@@ -4434,11 +4479,11 @@
   function suggestServiceCategory(name){
     const n = normSvc(name);
     if(!n) return null;
-    const exact = ALL_SERVICE_CATEGORIES.find(c => normSvc(c) === n);
+    const exact = allServiceCategories().find(c => normSvc(c) === n);
     if(exact) return exact;
     if(/маник|гель-?лак|шеллак/.test(n) && /педик/.test(n)) return 'Комплекс';
     for(const [re, cat] of SERVICE_KEYWORDS) if(re.test(n)) return cat;
-    const partial = ALL_SERVICE_CATEGORIES.find(c => n.includes(normSvc(c)));
+    const partial = allServiceCategories().find(c => n.includes(normSvc(c)));
     return partial || null;
   }
   // Все названия из zapis.kz (кроме импорта из таблиц) + то, что уже привязано.
@@ -4460,12 +4505,19 @@
     }
     return Array.from(map.values()).sort((a,b) => b.count - a.count || a.name.localeCompare(b.name,'ru'));
   }
+  function pluralSvc(n){ return (n%10===1&&n%100!==11) ? 'услуга' : ((n%10>=2&&n%10<=4&&(n%100<10||n%100>=20)) ? 'услуги' : 'услуг'); }
   function renderServices(){
     const all = collectServiceNames();
     const unmapped = all.filter(e => !dayClose.serviceMap[e.key]).length;
     const tabCnt = document.getElementById('tabCountServices');
-    tabCnt.textContent = unmapped ? '('+unmapped+')' : '';
+    tabCnt.textContent = unmapped ? String(unmapped) : '';
     tabCnt.classList.toggle('alert', unmapped > 0);
+    const navBadge = document.getElementById('navBadge');
+    navBadge.textContent = unmapped ? String(unmapped) : ''; navBadge.hidden = !unmapped;
+    const alertEl = document.getElementById('svcAlert');
+    alertEl.hidden = !unmapped;
+    if(unmapped) document.getElementById('svcAlertText').textContent = '⚠ ' + unmapped + ' ' + pluralSvc(unmapped) + ' из zapis.kz не привязано к списку CRM';
+    renderServiceCatalog();
     const q = (state.svcSearch || '').trim().toLowerCase();
     let rows = all;
     if(q) rows = rows.filter(e => e.name.toLowerCase().includes(q));
@@ -4476,7 +4528,7 @@
     const empty = document.getElementById('servicesEmpty');
     if(!rows.length){ body.innerHTML = ''; empty.hidden = false; return; }
     empty.hidden = true;
-    const opts = ALL_SERVICE_CATEGORIES.concat([SERVICE_SKIP]);
+    const opts = allServiceCategories().concat([SERVICE_SKIP]);
     body.innerHTML = rows.map(e => {
       const cur = dayClose.serviceMap[e.key] || '';
       const sug = !cur ? suggestServiceCategory(e.name) : null;
@@ -4525,6 +4577,128 @@
     todo.forEach(([k, c]) => { dayClose.serviceMap[k] = c; });
     analyticsCache.key = null;
     renderServices(); renderAnalytics(); scheduleSave('day_close');
+  });
+
+  // ---------------- Список услуг CRM: добавить / переименовать / удалить ----------------
+  function renderServiceCatalog(){
+    const el = document.getElementById('svcCatalog');
+    if(!el) return;
+    el.innerHTML = Object.keys(ZONE_CATEGORIES).map(zone => (
+      '<div class="svc-zone" data-zone="'+esc(zone)+'">' +
+        '<div class="svc-zone-title">'+esc(zone)+'</div>' +
+        '<div class="svc-chips">' +
+          ZONE_CATEGORIES[zone].map(c => (
+            '<span class="svc-chip"><span>'+esc(c)+'</span>' +
+            '<button type="button" class="svc-edit" data-cat="'+esc(c)+'" title="Переименовать" aria-label="Переименовать «'+esc(c)+'»">✎</button>' +
+            '<button type="button" class="svc-del" data-cat="'+esc(c)+'" title="Удалить" aria-label="Удалить «'+esc(c)+'»">✕</button></span>'
+          )).join('') +
+          '<span class="svc-add"><input type="text" placeholder="Новая услуга" maxlength="60" autocomplete="off"><button type="button" class="svc-add-btn">+ Добавить</button></span>' +
+        '</div>' +
+      '</div>'
+    )).join('');
+  }
+  function showTextDialog(title, value, okText){
+    return new Promise(resolve => {
+      const overlay = document.createElement('div');
+      overlay.className = 'confirm-overlay';
+      overlay.innerHTML = '<div class="confirm-modal"><p><b>'+esc(title)+'</b></p>' +
+        '<input type="text" class="svc-text-input" maxlength="60" value="'+esc(value||'')+'">' +
+        '<div class="confirm-actions"><button type="button" class="am-cancel" data-act="cancel">Отмена</button>' +
+        '<button type="button" class="cd-save-btn" data-act="ok">'+esc(okText||'Сохранить')+'</button></div></div>';
+      document.body.appendChild(overlay);
+      const input = overlay.querySelector('input');
+      function close(v){ overlay.remove(); document.removeEventListener('keydown', onKey); resolve(v); }
+      function done(){ const v = input.value.trim(); if(!v){ input.focus(); return; } close(v); }
+      function onKey(e){ if(e.key === 'Escape') close(null); else if(e.key === 'Enter') done(); }
+      document.addEventListener('keydown', onKey);
+      overlay.addEventListener('click', e => {
+        if(e.target === overlay){ close(null); return; }
+        const b = e.target.closest('[data-act]');
+        if(!b) return;
+        if(b.dataset.act === 'ok') done(); else close(null);
+      });
+      input.focus(); input.select();
+    });
+  }
+  function catalogChanged(){
+    analyticsCache.key = null;
+    renderServices();
+    renderAnalytics();
+    scheduleSave('day_close');
+  }
+  function categoryExistsAnywhere(name){
+    const n = normSvc(name);
+    return allServiceCategories().some(c => normSvc(c) === n);
+  }
+  async function addCatalogCategory(zone, name){
+    name = (name||'').trim();
+    if(!name) return false;
+    const list = ZONE_CATEGORIES[zone];
+    if(list.some(c => normSvc(c) === normSvc(name))){
+      await showInfoDialog('Такая услуга уже есть', ['В зале «'+zone+'» уже есть «'+name+'».']);
+      return false;
+    }
+    list.push(name);
+    catalogChanged();
+    return true;
+  }
+  async function renameCatalogCategory(zone, oldName){
+    const val = await showTextDialog('Переименовать услугу («'+zone+'»)', oldName, 'Сохранить');
+    if(!val || val === oldName) return;
+    const list = ZONE_CATEGORIES[zone];
+    if(list.some(c => c !== oldName && normSvc(c) === normSvc(val))){
+      await showInfoDialog('Такая услуга уже есть', ['В зале «'+zone+'» уже есть «'+val+'».']);
+      return;
+    }
+    list[list.indexOf(oldName)] = val;
+    // если прежнего названия больше нет ни в одном зале — привязки переезжают на новое
+    if(!categoryExistsAnywhere(oldName)){
+      for(const k in dayClose.serviceMap) if(dayClose.serviceMap[k] === oldName) dayClose.serviceMap[k] = val;
+    }
+    catalogChanged();
+  }
+  async function deleteCatalogCategory(zone, name){
+    const list = ZONE_CATEGORIES[zone];
+    if(list.length <= 1){
+      await showInfoDialog('Нельзя удалить', ['В зале должна остаться хотя бы одна услуга.']);
+      return;
+    }
+    // останется ли название в других залах — если нет, привязки к нему сбрасываются
+    const goneEverywhere = !Object.keys(ZONE_CATEGORIES).some(z => z !== zone && ZONE_CATEGORIES[z].some(c => normSvc(c) === normSvc(name)));
+    const affected = goneEverywhere ? Object.keys(dayClose.serviceMap).filter(k => dayClose.serviceMap[k] === name) : [];
+    let msg = 'Удалить услугу «'+name+'» из зала «'+zone+'»?';
+    if(affected.length) msg += ' Услуги из zapis.kz, привязанные к ней (' + affected.length + '), снова станут непривязанными.';
+    msg += ' Данные за январь–август не меняются.';
+    const ok = await showConfirmDialog(msg, { okText: 'Удалить' });
+    if(!ok) return;
+    list.splice(list.indexOf(name), 1);
+    affected.forEach(k => { delete dayClose.serviceMap[k]; });
+    catalogChanged();
+  }
+  document.getElementById('svcCatalog').addEventListener('click', async e => {
+    const zoneEl = e.target.closest('.svc-zone');
+    if(!zoneEl) return;
+    const zone = zoneEl.dataset.zone;
+    const edit = e.target.closest('.svc-edit'), del = e.target.closest('.svc-del'), add = e.target.closest('.svc-add-btn');
+    if(edit) renameCatalogCategory(zone, edit.dataset.cat);
+    else if(del) deleteCatalogCategory(zone, del.dataset.cat);
+    else if(add){
+      const input = zoneEl.querySelector('.svc-add input');
+      const ok = await addCatalogCategory(zone, input.value);
+      if(!ok) input.focus();
+    }
+  });
+  document.getElementById('svcCatalog').addEventListener('keydown', async e => {
+    if(e.key !== 'Enter' || !e.target.matches('.svc-add input')) return;
+    const zone = e.target.closest('.svc-zone').dataset.zone;
+    await addCatalogCategory(zone, e.target.value);
+    const again = document.querySelector('.svc-zone[data-zone="'+zone.replace(/"/g,'\\"')+'"] .svc-add input');
+    if(again) again.focus();
+  });
+  document.getElementById('svcAlertBtn').addEventListener('click', () => {
+    state.svcFilter = 'unmapped';
+    document.querySelectorAll('#svcFilterChips .chip').forEach(c => c.classList.toggle('on', c.dataset.svcf === 'unmapped'));
+    document.querySelector('.tab[data-tab="services"]').click();
   });
 
   function renderEverything(){
