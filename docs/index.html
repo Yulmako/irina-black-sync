@@ -1998,7 +1998,7 @@
       }
       const zone = getVisitZone(b);
       const counted = new Map();
-      for(const s of visitServices(b)){
+      for(const s0 of visitServices(b)) for(const s of expandServiceForStats(s0)){
         const cat = serviceCategory(s, zone);
         if(cat === SERVICE_SKIP) continue;
         counted.set(cat, (counted.get(cat)||0) + 1);
@@ -2027,7 +2027,7 @@
                          { entry_date: date, master: to, item: c.item, qty: c.qty, unit_price: c.unitCost, total: t });
       }
       const counted = new Map();
-      for(const sv of visitServices(b)){
+      for(const sv0 of visitServices(b)) for(const sv of expandServiceForStats(sv0)){
         const cat1 = serviceCategory(sv, (state.masters.find(m => m.name === b.master)||{}).zone);
         const cat2 = serviceCategory(sv, getVisitZone(b));
         if(cat1 === SERVICE_SKIP || cat2 === SERVICE_SKIP) continue;
@@ -4812,6 +4812,16 @@
       }
     }
   }
+  // «Стрижка + укладка», «Маникюр, педикюр» → отдельные услуги. Если для названия
+  // целиком уже есть явная привязка во вкладке «Услуги», оно остаётся одной услугой.
+  function splitServiceNames(name){
+    const parts = String(name == null ? '' : name).split(/\s*[,;]\s*|\s*\+\s*/).map(x => x.trim()).filter(Boolean);
+    return parts.length ? parts : [String(name == null ? '' : name).trim()];
+  }
+  function expandServiceForStats(name){
+    if(dayClose.serviceMap[normSvc(name)]) return [name];
+    return splitServiceNames(name);
+  }
   function normSvc(s){ return String(s||'').trim().toLowerCase().replace(/ё/g,'е').replace(/\s+/g,' '); }
   const SERVICE_KEYWORDS = [
     [/наращ/, 'Наращивание'],
@@ -4842,7 +4852,7 @@
     const map = new Map(); // norm -> { name, count }
     for(const b of state.bookings){
       if(isImportedBooking(b)) continue;
-      for(const sv of (b.services || [])){
+      for(const sv0 of (b.services || [])) for(const sv of (sv0 ? expandServiceForStats(sv0) : [])){
         if(!sv) continue;
         const k = normSvc(sv);
         if(!k) continue;
