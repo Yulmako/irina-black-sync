@@ -88,6 +88,14 @@
 
   .tabs{display:flex; gap:6px; border-bottom:1px solid var(--border); margin-bottom:18px; flex-wrap:wrap;}
   .tab .lbl-short{display:none;}
+  .svc-hint{margin:0; padding:12px 16px; font-size:12.5px; color:var(--muted); line-height:1.5; border-bottom:1px solid var(--border); background:var(--surface-2);}
+  .svc-table td{vertical-align:middle;}
+  .svc-name{font-weight:600; overflow-wrap:anywhere;}
+  .svc-cell{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
+  .svc-select{padding:8px 10px; border-radius:9px; border:1px solid var(--border); background:var(--bg); color:var(--ink); font:inherit; font-size:13.5px; min-width:190px; max-width:100%;}
+  .svc-select.unset{border-color:var(--warn); background:var(--warn-soft);}
+  .svc-suggest{font:inherit; font-size:12px; font-weight:600; color:var(--accent); background:var(--accent-soft); border:none; border-radius:999px; padding:4px 10px; cursor:pointer;}
+  .tab .count.alert{color:var(--bad); font-weight:700;}
   .nav-bar{display:contents;}
   .nav-toggle{display:none;}
   .tab{white-space:nowrap;}
@@ -568,6 +576,14 @@
     .cd-client-name-row > *{max-width:100%;}
     .cd-status-row{justify-content:flex-start;}
     .cd-cons-form input[type="text"]{width:100%; flex:1 1 100%;}
+    .svc-table{min-width:0;}
+    .svc-table thead{display:none;}
+    .svc-table tbody tr{display:block; padding:12px; border-bottom:1px solid var(--border);}
+    .svc-table td{display:block; padding:2px 0; border:none;}
+    .svc-table td.num{text-align:left; color:var(--muted); font-size:12.5px; margin-bottom:6px;}
+    .svc-table td.num::before{content:'Записей: ';}
+    .svc-select{width:100%; min-width:0;}
+    .svc-cell{align-items:stretch;}
     .add-master-row{padding:12px;}
     #addStockRow .am-field, #addStockRow .proc-item-wrap{flex:1 1 100%;}
     #addStockRow .am-field:nth-child(1), #addStockRow .am-field:nth-child(2), #addStockRow .am-field:nth-child(4), #addStockRow .am-field:nth-child(5){flex:1 1 calc(50% - 4px);}
@@ -677,6 +693,7 @@
     <button class="tab active" data-tab="bookings">Записи <span class="count" id="tabCountBookings"></span></button>
     <button class="tab" data-tab="clients">Клиенты <span class="count" id="tabCountClients"></span></button>
     <button class="tab" data-tab="masters">Мастера <span class="count" id="tabCountMasters"></span></button>
+    <button class="tab" data-tab="services">Услуги <span class="count" id="tabCountServices"></span></button>
     <button class="tab" data-tab="cons-price"><span class="lbl-full">Расходники Прайс</span><span class="lbl-short">Прайс</span> <span class="count" id="tabCountConsPrice"></span></button>
     <button class="tab" data-tab="inventory"><span class="lbl-full">Инвентаризация</span><span class="lbl-short">Инвентарь</span></button>
     <button class="tab" data-tab="close-day">Закрытие дня</button>
@@ -734,6 +751,30 @@
         </table>
       </div>
       <div class="empty" id="clientsEmpty" hidden><b>Ничего не найдено</b>Попробуйте изменить поиск.</div>
+    </div>
+  </div>
+
+  <div id="view-services" hidden>
+    <div class="panel">
+      <div class="filters">
+        <input type="search" id="searchServices" placeholder="Поиск услуги из zapis.kz…">
+        <div class="chip-row" id="svcFilterChips">
+          <span class="chip on" data-svcf="">Все</span>
+          <span class="chip" data-svcf="unmapped">Не привязаны</span>
+          <span class="chip" data-svcf="mapped">Привязаны</span>
+        </div>
+        <div class="spacer"></div>
+        <span class="result-count" id="servicesCount"></span>
+        <button type="button" class="refresh-btn" id="svcAutoBtn">Привязать по подсказкам</button>
+      </div>
+      <p class="svc-hint">Названия услуг приходят из zapis.kz в разном виде. Выберите для каждого категорию из CRM — по ней считаются «Популярные услуги» и «Услуг оказано» в Аналитике. Новые услуги из zapis.kz появляются здесь сами.</p>
+      <div class="table-scroll">
+        <table class="svc-table">
+          <thead><tr><th>Услуга в zapis.kz</th><th class="num">Записей</th><th>Категория в CRM</th></tr></thead>
+          <tbody id="servicesBody"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="servicesEmpty" hidden><b>Услуг пока нет</b>Они появятся после синхронизации с zapis.kz.</div>
     </div>
   </div>
 
@@ -1802,12 +1843,17 @@
   // from zapis.kz won't always line up cleanly (typos, case, synonyms) —
   // this is a stand-in until there's a proper service→category mapping.
   function serviceCategory(serviceName, zone){
+    // 1) явная привязка из вкладки «Услуги» (dayClose.serviceMap)
+    const mapped = dayClose.serviceMap[normSvc(serviceName)];
+    if(mapped) return mapped;
     const cats = categoriesForZone(zone);
     const norm = (serviceName||'').trim().toLowerCase();
     const exact = cats.find(c => c.toLowerCase() === norm);
     if(exact) return exact;
-    const partial = cats.find(c => norm.includes(c.toLowerCase()) || c.toLowerCase().includes(norm));
-    return partial || cats[0];
+    const partial = cats.find(c => norm.includes(c.toLowerCase()) || (norm && c.toLowerCase().includes(norm)));
+    if(partial) return partial;
+    const guess = suggestServiceCategory(serviceName);
+    return guess || cats[0];
   }
 
   function buildLiveAnalyticsRange(fromStr, toStr){
@@ -1826,6 +1872,7 @@
       const counted = new Map();
       for(const s of visitServices(b)){
         const cat = serviceCategory(s, zone);
+        if(cat === SERVICE_SKIP) continue;
         counted.set(cat, (counted.get(cat)||0) + 1);
       }
       for(const [cat, count] of counted) serviceCounts.push({ entry_date: date, master: visitMaster(b), category: cat, count });
@@ -1855,6 +1902,7 @@
       for(const sv of visitServices(b)){
         const cat1 = serviceCategory(sv, (state.masters.find(m => m.name === b.master)||{}).zone);
         const cat2 = serviceCategory(sv, getVisitZone(b));
+        if(cat1 === SERVICE_SKIP || cat2 === SERVICE_SKIP) continue;
         counted.set(cat1+'||'+cat2, (counted.get(cat1+'||'+cat2)||0) + 1);
       }
       for(const [k, count] of counted){
@@ -2433,6 +2481,7 @@
     visitZone: {},
     serviceOverride: {},
     masterOverride: {},
+    serviceMap: {},
   };
   // Услуги визита: то, что пришло из zapis.kz, а если там пусто — то, что
   // указали вручную в «Закрытии дня» (dayClose.serviceOverride).
@@ -4179,6 +4228,8 @@
       document.getElementById('view-bookings').hidden = state.tab !== 'bookings';
       document.getElementById('view-clients').hidden = state.tab !== 'clients';
       document.getElementById('view-masters').hidden = state.tab !== 'masters';
+      document.getElementById('view-services').hidden = state.tab !== 'services';
+      if(state.tab === 'services') renderServices();
       document.getElementById('view-cons-price').hidden = state.tab !== 'cons-price';
       document.getElementById('view-inventory').hidden = state.tab !== 'inventory';
       document.getElementById('view-analytics').hidden = state.tab !== 'analytics';
@@ -4268,7 +4319,7 @@
       procurement: dayClose.procurement, stockIn: dayClose.stockIn, productSales: dayClose.productSales,
       serviceStatus: dayClose.serviceStatus, writeoffs: dayClose.writeoffs,
       adjustments: dayClose.adjustments, closed: dayClose.closed,
-      visitZone: dayClose.visitZone, serviceOverride: dayClose.serviceOverride, masterOverride: dayClose.masterOverride,
+      visitZone: dayClose.visitZone, serviceOverride: dayClose.serviceOverride, masterOverride: dayClose.masterOverride, serviceMap: dayClose.serviceMap,
     };
   }
   const KV_GETTERS = {
@@ -4348,6 +4399,7 @@
     dayClose.closed = dc.closed || {};
     dayClose.visitZone = dc.visitZone || {};
     dayClose.serviceOverride = dc.serviceOverride || {};
+    dayClose.serviceMap = dc.serviceMap || {};
     dayClose.masterOverride = dc.masterOverride || {};
     state.inventoryEdits = kv.inventory_edits || [];
     const pf = kv.pnl_fixed || {};
@@ -4359,6 +4411,122 @@
     FROZEN_ANALYTICS_SERVICE_COUNTS = frozen.analyticsServiceCounts || [];
   }
 
+  // ---------------- Услуги zapis.kz → категории CRM ----------------
+  // Привязка хранится в dayClose.serviceMap (ключ — название услуги в
+  // нижнем регистре без лишних пробелов) и попадает в KV «day_close».
+  const SERVICE_SKIP = 'Не учитывать';
+  const ALL_SERVICE_CATEGORIES = Array.from(new Set([].concat(...Object.values(ZONE_CATEGORIES))));
+  function normSvc(s){ return String(s||'').trim().toLowerCase().replace(/ё/g,'е').replace(/\s+/g,' '); }
+  const SERVICE_KEYWORDS = [
+    [/наращ/, 'Наращивание'],
+    [/маник|гель-?лак|шеллак|покрыти/, 'Маникюр'],
+    [/педик/, 'Педикюр'],
+    [/бров/, 'Коррекция бровей'],
+    [/стриж|подравн|кончик|челк/, 'Стрижка'],
+    [/окраш|тониров|колор|мелир|балаяж|блонд|омбре|шатуш|airtouch|аитач|осветл|камуфляж|корн/, 'Окрашивание'],
+    [/уклад|причес|локон|брашинг|выпрямл|завивк|плетен|коса/, 'Укладка'],
+    [/лечен|кератин|восстанов|ламинир|реконструк|питани|пилинг|глазир|ампул/, 'Лечение'],
+    [/макияж|make|визаж/, 'Макияж'],
+    [/ботокс/, 'Ботокс'],
+    [/губ/, 'Губы'],
+    [/комплекс/, 'Комплекс'],
+  ];
+  function suggestServiceCategory(name){
+    const n = normSvc(name);
+    if(!n) return null;
+    const exact = ALL_SERVICE_CATEGORIES.find(c => normSvc(c) === n);
+    if(exact) return exact;
+    if(/маник|гель-?лак|шеллак/.test(n) && /педик/.test(n)) return 'Комплекс';
+    for(const [re, cat] of SERVICE_KEYWORDS) if(re.test(n)) return cat;
+    const partial = ALL_SERVICE_CATEGORIES.find(c => n.includes(normSvc(c)));
+    return partial || null;
+  }
+  // Все названия из zapis.kz (кроме импорта из таблиц) + то, что уже привязано.
+  function collectServiceNames(){
+    const map = new Map(); // norm -> { name, count }
+    for(const b of state.bookings){
+      if(isImportedBooking(b)) continue;
+      for(const sv of (b.services || [])){
+        if(!sv) continue;
+        const k = normSvc(sv);
+        if(!k) continue;
+        const e = map.get(k) || { key: k, name: String(sv).trim(), count: 0 };
+        e.count++;
+        map.set(k, e);
+      }
+    }
+    for(const k in dayClose.serviceMap){
+      if(!map.has(k)) map.set(k, { key: k, name: k, count: 0 });
+    }
+    return Array.from(map.values()).sort((a,b) => b.count - a.count || a.name.localeCompare(b.name,'ru'));
+  }
+  function renderServices(){
+    const all = collectServiceNames();
+    const unmapped = all.filter(e => !dayClose.serviceMap[e.key]).length;
+    const tabCnt = document.getElementById('tabCountServices');
+    tabCnt.textContent = unmapped ? '('+unmapped+')' : '';
+    tabCnt.classList.toggle('alert', unmapped > 0);
+    const q = (state.svcSearch || '').trim().toLowerCase();
+    let rows = all;
+    if(q) rows = rows.filter(e => e.name.toLowerCase().includes(q));
+    if(state.svcFilter === 'unmapped') rows = rows.filter(e => !dayClose.serviceMap[e.key]);
+    else if(state.svcFilter === 'mapped') rows = rows.filter(e => dayClose.serviceMap[e.key]);
+    document.getElementById('servicesCount').textContent = rows.length + ' из ' + all.length + ' · не привязано: ' + unmapped;
+    const body = document.getElementById('servicesBody');
+    const empty = document.getElementById('servicesEmpty');
+    if(!rows.length){ body.innerHTML = ''; empty.hidden = false; return; }
+    empty.hidden = true;
+    const opts = ALL_SERVICE_CATEGORIES.concat([SERVICE_SKIP]);
+    body.innerHTML = rows.map(e => {
+      const cur = dayClose.serviceMap[e.key] || '';
+      const sug = !cur ? suggestServiceCategory(e.name) : null;
+      return '<tr data-key="'+esc(e.key)+'">' +
+        '<td class="svc-name">'+esc(e.name)+'</td>' +
+        '<td class="num">'+e.count+'</td>' +
+        '<td><div class="svc-cell">' +
+          '<select class="svc-select'+(cur ? '' : ' unset')+'" data-key="'+esc(e.key)+'">' +
+            '<option value="">— выберите категорию —</option>' +
+            opts.map(c => '<option value="'+esc(c)+'"'+(c===cur?' selected':'')+'>'+esc(c)+'</option>').join('') +
+          '</select>' +
+          (sug ? '<button type="button" class="svc-suggest" data-key="'+esc(e.key)+'" data-cat="'+esc(sug)+'" title="Принять подсказку">Похоже: '+esc(sug)+' ✓</button>' : '') +
+        '</div></td>' +
+      '</tr>';
+    }).join('');
+  }
+  function setServiceMapping(key, cat){
+    if(cat) dayClose.serviceMap[key] = cat; else delete dayClose.serviceMap[key];
+    analyticsCache.key = null;
+    renderServices();
+    renderAnalytics();
+    scheduleSave('day_close');
+  }
+  document.getElementById('servicesBody').addEventListener('change', e => {
+    const sel = e.target.closest('.svc-select');
+    if(sel) setServiceMapping(sel.dataset.key, sel.value);
+  });
+  document.getElementById('servicesBody').addEventListener('click', e => {
+    const b = e.target.closest('.svc-suggest');
+    if(b) setServiceMapping(b.dataset.key, b.dataset.cat);
+  });
+  document.getElementById('searchServices').addEventListener('input', e => { state.svcSearch = e.target.value; renderServices(); });
+  document.getElementById('svcFilterChips').addEventListener('click', e => {
+    const chip = e.target.closest('.chip');
+    if(!chip) return;
+    document.querySelectorAll('#svcFilterChips .chip').forEach(c => c.classList.remove('on'));
+    chip.classList.add('on');
+    state.svcFilter = chip.dataset.svcf;
+    renderServices();
+  });
+  document.getElementById('svcAutoBtn').addEventListener('click', async () => {
+    const todo = collectServiceNames().filter(e => !dayClose.serviceMap[e.key]).map(e => [e.key, suggestServiceCategory(e.name)]).filter(x => x[1]);
+    if(!todo.length){ await showInfoDialog('Нечего привязывать', ['Для непривязанных услуг нет подсказок — выберите категорию вручную.']); return; }
+    const ok = await showConfirmDialog('Привязать '+todo.length+' услуг по подсказкам? Потом любую можно изменить.');
+    if(!ok) return;
+    todo.forEach(([k, c]) => { dayClose.serviceMap[k] = c; });
+    analyticsCache.key = null;
+    renderServices(); renderAnalytics(); scheduleSave('day_close');
+  });
+
   function renderEverything(){
     suppressSave = true;
     try{ renderEverythingInner(); } finally { suppressSave = false; }
@@ -4367,6 +4535,7 @@
     populateMasters();
     renderAll();
     renderMasters();
+    renderServices();
     renderConsPrices();
     analyticsCache.key = null;
     renderAnalytics();
