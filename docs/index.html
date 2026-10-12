@@ -3028,9 +3028,9 @@
   document.getElementById('newSalePrice').addEventListener('input', updateSaleTotalPreview);
 
   // ---------------- close-day sub-tabs ----------------
-  document.querySelectorAll('.cd-subtab-btn').forEach(btn => {
+  document.querySelectorAll('[data-subtab]').forEach(btn => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.cd-subtab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('[data-subtab]').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       const sub = btn.dataset.subtab;
       document.getElementById('cd-panel-services').hidden = sub !== 'services';
