@@ -683,6 +683,36 @@
     .panel{border-radius:14px;}
     .table-scroll{-webkit-overflow-scrolling:touch; overscroll-behavior-x:contain;}
   }
+
+  /* ---------- Инвентаризация: график движения ---------- */
+  .inv-chart{
+    --s-in:#2a78d6; --s-out:#eb6834; --c-grid:var(--border); --c-ink2:var(--muted);
+    margin:4px 0 16px; padding:14px 14px 10px; border:1px solid var(--border); border-radius:12px; background:var(--surface); position:relative;
+  }
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .inv-chart{ --s-in:#3987e5; --s-out:#d95926; } }
+  :root[data-theme="dark"] .inv-chart{ --s-in:#3987e5; --s-out:#d95926; }
+  .inv-chart-head{display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 18px; margin-bottom:6px;}
+  .inv-chart-title{font-size:14px; font-weight:600; color:var(--ink);}
+  .inv-chart-sub{font-size:12.5px; color:var(--muted);}
+  .inv-chart-legend{display:flex; gap:14px; margin-left:auto; font-size:12.5px; color:var(--ink);}
+  .inv-chart-legend span{display:inline-flex; align-items:center; gap:6px;}
+  .inv-chart-legend i{width:10px; height:10px; border-radius:2px; display:inline-block;}
+  .inv-chart svg{display:block; width:100%; height:auto; overflow:visible;}
+  .inv-chart .grid{stroke:var(--c-grid); stroke-width:1; shape-rendering:crispEdges;}
+  .inv-chart .axis-t{fill:var(--c-ink2); font-size:11px; font-family:inherit;}
+  .inv-chart .bar-in{fill:var(--s-in);} .inv-chart .bar-out{fill:var(--s-out);}
+  .inv-chart .slot{fill:transparent; cursor:default; outline:none;}
+  .inv-chart .slot:hover, .inv-chart .slot:focus{fill:var(--surface-2); opacity:.55;}
+  .inv-chart-tip{
+    position:absolute; z-index:5; pointer-events:none; background:var(--surface); color:var(--ink);
+    border:1px solid var(--border); border-radius:8px; box-shadow:var(--shadow); padding:8px 10px; font-size:12.5px; min-width:130px;
+  }
+  .inv-chart-tip .t-h{color:var(--muted); margin-bottom:4px;}
+  .inv-chart-tip .t-r{display:flex; align-items:center; gap:7px; justify-content:space-between;}
+  .inv-chart-tip .t-r i{width:10px; height:3px; border-radius:2px; display:inline-block; margin-right:2px;}
+  .inv-chart-tip .t-r b{font-size:14px; margin-left:12px;}
+  @media (max-width:600px){ .inv-chart-legend{margin-left:0; flex-basis:100%;} .inv-chart{padding:12px 10px 8px;} }
+  .inv-chart-empty{padding:26px 0; text-align:center; color:var(--muted); font-size:13px;}
 </style>
 
 </head>
@@ -1198,6 +1228,15 @@
         <div class="spacer"></div>
         <span class="result-count" id="invHistoryCount"></span>
         <button type="button" class="refresh-btn" id="downloadInvHistoryReport">Скачать отчёт</button>
+      </div>
+      <div class="inv-chart" id="invChart">
+        <div class="inv-chart-head">
+          <span class="inv-chart-title">Движение за период</span>
+          <span class="inv-chart-sub" id="invChartSub"></span>
+          <div class="inv-chart-legend"><span><i style="background:var(--s-in)"></i>Приход</span><span><i style="background:var(--s-out)"></i>Расход</span></div>
+        </div>
+        <div id="invChartBody"></div>
+        <div class="inv-chart-tip" id="invChartTip" hidden></div>
       </div>
       <div class="table-scroll">
         <table>
@@ -3047,6 +3086,7 @@
       const sub = btn.dataset.invsubtab;
       document.getElementById('inv-panel-items').hidden = sub !== 'items';
       document.getElementById('inv-panel-history').hidden = sub !== 'history';
+      if(sub === 'history') renderInventoryHistory();
     });
   });
 
@@ -3542,8 +3582,139 @@
     if(q) rows = rows.filter(r => r.item.toLowerCase().includes(q));
     return rows;
   }
+
+  // ---------------- Инвентаризация: график движения за период ----------------
+  // Приход = закуп + поступления + корректировка «+»; Расход = расход на визитах
+  // + продажи + списания + корректировка «−». Шт., группировка день/неделя/месяц
+  // по длине периода. Использует те же фильтры, что и таблица истории.
+  const MONTHS_SHORT = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
+  function isoToUtc(d){ const [y,m,dd] = d.split('-').map(Number); return Date.UTC(y, m-1, dd); }
+  function utcToIso(t){ const d = new Date(t); return d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0'); }
+  function fmtShortDate(iso){ return iso.slice(8,10)+'.'+iso.slice(5,7); }
+  function invChartBuckets(rows){
+    const dated = rows.filter(r => r.date && r.type !== 'edit' && r.qty);
+    if(!dated.length) return null;
+    let from = state.invHistoryFrom || dated.reduce((m,r) => r.date < m ? r.date : m, dated[0].date);
+    let to = state.invHistoryTo || dated.reduce((m,r) => r.date > m ? r.date : m, dated[0].date);
+    if(to < from) return null;
+    const days = Math.round((isoToUtc(to) - isoToUtc(from)) / 86400000) + 1;
+    const unit = days <= 31 ? 'day' : (days <= 180 ? 'week' : 'month');
+    function keyOf(iso){
+      if(unit === 'day') return iso;
+      if(unit === 'month') return iso.slice(0,7) + '-01';
+      const t = isoToUtc(iso), dow = (new Date(t).getUTCDay() + 6) % 7; // Monday = 0
+      return utcToIso(t - dow * 86400000);
+    }
+    const map = new Map();
+    // empty buckets across the whole range so gaps read as gaps
+    let t = isoToUtc(from);
+    const end = isoToUtc(to);
+    while(t <= end){ const k = keyOf(utcToIso(t)); if(!map.has(k)) map.set(k, { key:k, inQ:0, outQ:0 }); t += 86400000; }
+    for(const r of dated){
+      if(r.date < from || r.date > to) continue;
+      const b = map.get(keyOf(r.date));
+      if(!b) continue;
+      const q = Math.abs(Number(r.qty) || 0);
+      const isIn = r.type === 'in' || r.type === 'receipt' || (r.type === 'adjustment' && r.qty > 0);
+      if(isIn) b.inQ += q; else b.outQ += q;
+    }
+    const list = [...map.values()].sort((a,b) => a.key.localeCompare(b.key));
+    list.forEach(b => {
+      if(unit === 'day') b.label = fmtShortDate(b.key);
+      else if(unit === 'week'){ const e = utcToIso(isoToUtc(b.key) + 6*86400000); b.label = fmtShortDate(b.key); b.full = fmtShortDate(b.key)+' – '+fmtShortDate(e); }
+      else { b.label = MONTHS_SHORT[Number(b.key.slice(5,7))-1]+' '+b.key.slice(2,4); b.full = MONTHS_SHORT[Number(b.key.slice(5,7))-1]+' '+b.key.slice(0,4); }
+      if(!b.full) b.full = b.key.slice(8,10)+'.'+b.key.slice(5,7)+'.'+b.key.slice(0,4);
+    });
+    return { unit, list };
+  }
+  function niceMax(v){
+    // 4 интервала сетки с «круглым» шагом (1/2/5 × 10^n), чтобы подписи оси были целыми
+    const raw = Math.max(1, v) / 4;
+    const p = Math.pow(10, Math.floor(Math.log10(raw)));
+    for(const m of [1,2,5,10]) if(m*p >= raw) return m*p*4;
+    return 10*p*4;
+  }
+  function renderInvChart(rows){
+    const body = document.getElementById('invChartBody');
+    const sub = document.getElementById('invChartSub');
+    const tip = document.getElementById('invChartTip');
+    if(!body) return;
+    tip.hidden = true;
+    const data = invChartBuckets(rows);
+    if(!data){ sub.textContent = ''; body.innerHTML = '<div class="inv-chart-empty">Нет движения за выбранный период</div>'; return; }
+    const { unit, list } = data;
+    const totIn = list.reduce((s,b) => s+b.inQ, 0), totOut = list.reduce((s,b) => s+b.outQ, 0);
+    const fmt = n => (Math.round(n*100)/100).toLocaleString('ru-RU');
+    const net = totIn - totOut;
+    sub.textContent = 'по ' + (unit === 'day' ? 'дням' : unit === 'week' ? 'неделям' : 'месяцам') + ' · приход ' + fmt(totIn) + ' · расход ' + fmt(totOut) + ' · итого ' + (net > 0 ? '+' : net < 0 ? '−' : '') + fmt(Math.abs(net)) + ' шт.';
+    const W = Math.max(280, body.clientWidth || 600), H = 220;
+    const m = { l:34, r:6, t:8, b:26 };
+    const pw = W - m.l - m.r, ph = H - m.t - m.b;
+    const maxV = niceMax(Math.max(1, ...list.map(b => Math.max(b.inQ, b.outQ))));
+    const y = v => m.t + ph - (v / maxV) * ph;
+    const slot = pw / list.length;
+    const bw = Math.max(2, Math.min(24, (slot * 0.8 - 2) / 2));
+    const tick = v => v >= 1000 ? (v/1000).toLocaleString('ru-RU') + 'K' : String(v);
+    let svg = '<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Приход и расход по периодам">';
+    for(let i = 0; i <= 4; i++){
+      const v = maxV * i / 4, yy = Math.round(y(v)) + .5;
+      svg += '<line class="grid" x1="'+m.l+'" x2="'+(W-m.r)+'" y1="'+yy+'" y2="'+yy+'"/>';
+      svg += '<text class="axis-t" x="'+(m.l-6)+'" y="'+(yy+4)+'" text-anchor="end">'+tick(Math.round(v*100)/100)+'</text>';
+    }
+    function bar(x, v, cls){
+      if(v <= 0) return '';
+      const h = Math.max(2, (v / maxV) * ph), top = m.t + ph - h, r = Math.min(4, bw/2, h);
+      return '<path class="'+cls+'" d="M'+x+' '+(m.t+ph)+' V'+(top+r)+' Q'+x+' '+top+' '+(x+r)+' '+top+' H'+(x+bw-r)+' Q'+(x+bw)+' '+top+' '+(x+bw)+' '+(top+r)+' V'+(m.t+ph)+' Z"/>';
+    }
+    const every = Math.max(1, Math.ceil(list.length / Math.max(2, Math.floor(pw / 46))));
+    list.forEach((b, i) => {
+      const cx = m.l + slot * (i + .5);
+      svg += bar(cx - bw - 1, b.inQ, 'bar-in') + bar(cx + 1, b.outQ, 'bar-out');
+      if(i % every === 0 || i === list.length - 1 && every === 1) svg += '<text class="axis-t" x="'+cx+'" y="'+(H-8)+'" text-anchor="middle">'+b.label+'</text>';
+    });
+    list.forEach((b, i) => {
+      svg += '<rect class="slot" tabindex="0" data-i="'+i+'" x="'+(m.l + slot*i)+'" y="'+m.t+'" width="'+slot+'" height="'+ph+'"/>';
+    });
+    svg += '</svg>';
+    body.innerHTML = svg;
+    const box = document.getElementById('invChart');
+    function showTip(el){
+      const b = list[Number(el.dataset.i)];
+      tip.textContent = '';
+      const h = document.createElement('div'); h.className = 't-h'; h.textContent = b.full; tip.appendChild(h);
+      [['Приход', b.inQ, 'var(--s-in)'], ['Расход', b.outQ, 'var(--s-out)']].forEach(([name, v, col]) => {
+        const r = document.createElement('div'); r.className = 't-r';
+        const l = document.createElement('span'); const k = document.createElement('i'); k.style.background = col;
+        l.appendChild(k); l.appendChild(document.createTextNode(name));
+        const val = document.createElement('b'); val.textContent = fmt(v) + ' шт.';
+        r.appendChild(l); r.appendChild(val); tip.appendChild(r);
+      });
+      tip.hidden = false;
+      const rb = el.getBoundingClientRect(), bb = box.getBoundingClientRect();
+      let left = rb.left - bb.left + rb.width / 2 - tip.offsetWidth / 2;
+      left = Math.max(4, Math.min(left, bb.width - tip.offsetWidth - 4));
+      tip.style.left = left + 'px';
+      tip.style.top = Math.max(4, rb.top - bb.top - tip.offsetHeight - 6) + 'px';
+    }
+    body.querySelectorAll('.slot').forEach(el => {
+      el.addEventListener('pointerenter', () => showTip(el));
+      el.addEventListener('pointerdown', () => showTip(el));
+      el.addEventListener('focus', () => showTip(el));
+      el.addEventListener('pointerleave', () => { tip.hidden = true; });
+      el.addEventListener('blur', () => { tip.hidden = true; });
+    });
+  }
+  let invChartResizeT = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(invChartResizeT);
+    invChartResizeT = setTimeout(() => {
+      const panel = document.getElementById('inv-panel-history');
+      if(panel && !panel.hidden) renderInvChart(filteredInventoryHistory());
+    }, 150);
+  });
   function renderInventoryHistory(){
     const rows = filteredInventoryHistory();
+    renderInvChart(rows);
     const body = document.getElementById('invHistoryBody');
     const empty = document.getElementById('invHistoryEmpty');
     document.getElementById('invHistoryCount').textContent = rows.length + ' записей';
