@@ -1628,6 +1628,17 @@
     dl.innerHTML = zones.map(z => '<option value="'+esc(z)+'">').join('');
   }
 
+  // ---- уведомления на вкладках (и общий «!» на кнопке меню в мобильной версии) ----
+  const navAlerts = {};
+  function setNavAlert(key, n, tip){
+    navAlerts[key] = { n, tip };
+    const total = Object.values(navAlerts).reduce((a, x) => a + (x.n > 0 ? 1 : 0), 0);
+    const tips = Object.values(navAlerts).filter(x => x.n > 0).map(x => x.tip).join(' ');
+    const b = document.getElementById('navBadge');
+    if(!b) return;
+    b.textContent = total ? '!' : ''; b.hidden = !total;
+    if(total){ b.title = tips; b.setAttribute('aria-label', tips); } else { b.removeAttribute('title'); b.removeAttribute('aria-label'); }
+  }
   function renderMasters(){
     const rows = filteredMasters();
     const body = document.getElementById('mastersBody');
@@ -4921,7 +4932,16 @@
     if(!res.ok) throw new Error('bad-password-or-network');
     const rows = await res.json();
     const row = Array.isArray(rows) ? rows[0] : rows;
-    return { bookings: row.bookings || [], syncStatus: row.sync_status || null, kv: row.kv || {} };
+    return { bookings: (row.bookings || []).map(stripMasterSurname), syncStatus: row.sync_status || null, kv: row.kv || {} };
+  }
+  // Из zapis.kz мастер приходит как «Имя Фамилия» — оставляем только имя, чтобы совпадало со списком мастеров CRM.
+  // Загруженные из таблиц записи (имена уже без фамилий) не трогаем.
+  function stripMasterSurname(b){
+    if(!b || isImportedBooking(b)) return b;
+    const name = String(b.master || '').trim();
+    if(!name || name === 'Без имени') return b;
+    const first = name.split(/\s+/)[0];
+    return first && first !== b.master ? Object.assign({}, b, { master: first }) : b;
   }
 
   function applyKv(kv){
@@ -5048,9 +5068,7 @@
     tabCnt.textContent = unmapped ? '!' : '';
     tabCnt.classList.toggle('alert', unmapped > 0);
     if(unmapped){ tabCnt.title = tip; tabCnt.setAttribute('aria-label', tip); } else { tabCnt.removeAttribute('title'); tabCnt.removeAttribute('aria-label'); }
-    const navBadge = document.getElementById('navBadge');
-    navBadge.textContent = unmapped ? '!' : ''; navBadge.hidden = !unmapped;
-    if(unmapped){ navBadge.title = tip; navBadge.setAttribute('aria-label', tip); }
+    setNavAlert('services', unmapped, tip);
     renderServiceCatalog();
     const q = (state.svcSearch || '').trim().toLowerCase();
     let rows = all;
