@@ -97,7 +97,7 @@
   .svc-suggest{font:inherit; font-size:12px; font-weight:600; color:var(--accent); background:var(--accent-soft); border:none; border-radius:999px; padding:4px 10px; cursor:pointer;}
   .tab .count.alert{cursor:help; display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px; padding:0 6px; border-radius:999px; background:var(--bad); color:#fff; font-size:11px; font-weight:700; margin-left:2px; vertical-align:1px;}
   .nav-badge{flex:none; min-width:22px; height:22px; padding:0 7px; border-radius:999px; background:var(--bad); color:#fff; font-size:12px; font-weight:700; display:inline-flex; align-items:center; justify-content:center;}
-  .svc-catalog{display:flex; flex-direction:column;}
+  .svc-catalog{display:block;}
   .svc-zone{padding:14px 16px; border-bottom:1px solid var(--border);}
   .svc-zone:last-child{border-bottom:none;}
   .svc-zone-title{font-family:'Fraunces',serif; font-weight:600; font-size:15px; margin-bottom:10px;}
@@ -106,8 +106,20 @@
   .svc-chip button{font:inherit; background:none; border:none; cursor:pointer; color:var(--muted); padding:3px 7px; border-radius:50%; line-height:1; font-size:14px;}
   .svc-chip button:hover{color:var(--ink); background:var(--accent-soft);}
   .svc-chip .svc-del:hover{color:var(--bad);}
+  .svc-cat-table{min-width:640px;}
+  .svc-cat-table td{vertical-align:top;}
+  .svc-cat-table .svc-name{white-space:nowrap;}
+  .svc-cat-table .svc-actions-col{text-align:right; white-space:nowrap; width:1%;}
+  .svc-chip.zp{padding:2px 3px 2px 10px; font-size:12.5px; font-weight:500; background:var(--accent-soft); border-color:transparent;}
+  .svc-chip.zp i{font-style:normal; color:var(--muted);}
+  .svc-chip.zp.unset{background:var(--warn-soft); color:var(--warn);}
+  .svc-chip.zp .svc-unmap{padding:2px 6px; font-size:12px;}
+  .svc-chip.zp .svc-unmap:hover{color:var(--bad);}
+  .svc-also{font-size:11.5px; color:var(--muted); font-weight:400; margin-top:2px; white-space:normal;}
+  .svc-none{font-size:12.5px; color:var(--muted); font-style:italic;}
+  .svc-add-row td{background:var(--surface-2);}
   .svc-add{display:inline-flex; gap:6px; align-items:center;}
-  .svc-add input{padding:7px 12px; border-radius:999px; border:1px solid var(--border); background:var(--bg); color:var(--ink); font:inherit; font-size:13.5px; width:170px; max-width:100%;}
+  .svc-add input{padding:7px 12px; border-radius:999px; border:1px solid var(--border); background:var(--bg); color:var(--ink); font:inherit; font-size:13.5px; width:260px; max-width:100%;}
   .svc-add button{white-space:nowrap; flex:none; font:inherit; font-size:12.5px; font-weight:700; padding:7px 13px; border-radius:999px; border:1px solid var(--border); background:var(--surface); color:var(--ink); cursor:pointer;}
   .svc-add button:hover{background:var(--accent-soft); color:var(--accent);}
   .svc-text-input{width:100%; margin-top:12px; padding:10px 12px; border-radius:9px; border:1px solid var(--border); background:var(--bg); color:var(--ink); font:inherit; font-size:14px;}
@@ -591,13 +603,18 @@
     .cd-client-name-row > *{max-width:100%;}
     .cd-status-row{justify-content:flex-start;}
     .cd-cons-form input[type="text"]{width:100%; flex:1 1 100%;}
-    .svc-table{min-width:0;}
+    .svc-table{min-width:0; display:block; width:100%;}
+    .svc-table tbody{display:block; width:100%;}
     .svc-table thead{display:none;}
     .svc-table tbody tr{display:block; padding:12px; border-bottom:1px solid var(--border);}
     .svc-table td{display:block; padding:2px 0; border:none;}
     .svc-table td.num{text-align:left; color:var(--muted); font-size:12.5px; margin-bottom:6px;}
     .svc-table td.num::before{content:'Записей: ';}
     .svc-select{width:100%; min-width:0;}
+    .svc-cat-table .svc-name{white-space:normal; font-size:15px;}
+    .svc-cat-table .svc-actions-col{text-align:left; width:auto; padding-top:8px;}
+    .svc-cat-table tr.cat-row{padding:0;}
+    .svc-cat-table tr.svc-add-row{padding:10px 12px;}
     .svc-cell{align-items:stretch;}
     .add-master-row{padding:12px;}
     #addStockRow .am-field, #addStockRow .proc-item-wrap{flex:1 1 100%;}
@@ -779,7 +796,7 @@
     </div>
     <div id="svc-panel-catalog" hidden>
     <div class="panel" id="svcCatalogPanel">
-      <p class="svc-hint">Категории, по которым считается аналитика. Их можно добавлять, переименовывать и удалять отдельно для каждого зала. Привязка услуг из zapis.kz — на соседней вкладке.</p>
+      <p class="svc-hint">Услуги CRM, по которым считается аналитика, и привязанные к ним услуги из zapis.kz. Услугу можно добавить, переименовать или удалить; ✕ у названия из zapis.kz отвязывает его. Привязывать новые названия удобнее на соседней вкладке.</p>
       <div id="svcCatalog" class="svc-catalog"></div>
     </div>
     </div>
@@ -4581,19 +4598,41 @@
   function renderServiceCatalog(){
     const el = document.getElementById('svcCatalog');
     if(!el) return;
-    el.innerHTML = Object.keys(ZONE_CATEGORIES).map(zone => (
-      '<div class="svc-zone" data-zone="'+esc(zone)+'">' +
-        '<div class="svc-zone-title">'+esc(zone)+'</div>' +
-        '<div class="svc-chips">' +
-          ZONE_CATEGORIES[zone].map(c => (
-            '<span class="svc-chip"><span>'+esc(c)+'</span>' +
-            '<button type="button" class="svc-edit" data-cat="'+esc(c)+'" title="Переименовать" aria-label="Переименовать «'+esc(c)+'»">✎</button>' +
-            '<button type="button" class="svc-del" data-cat="'+esc(c)+'" title="Удалить" aria-label="Удалить «'+esc(c)+'»">✕</button></span>'
-          )).join('') +
-          '<span class="svc-add"><input type="text" placeholder="Новая услуга" maxlength="60" autocomplete="off"><button type="button" class="svc-add-btn">+ Добавить</button></span>' +
-        '</div>' +
-      '</div>'
-    )).join('');
+    const all = collectServiceNames();
+    const info = new Map(all.map(e => [e.key, e]));
+    const byCat = new Map(); // категория -> [entry]
+    const unmapped = [];
+    for(const e of all){
+      const c = dayClose.serviceMap[e.key];
+      if(!c){ unmapped.push(e); continue; }
+      if(!byCat.has(c)) byCat.set(c, []);
+      byCat.get(c).push(e);
+    }
+    const zp = e => '<span class="svc-chip zp"><span>'+esc(e.name)+(e.count ? ' <i>· '+e.count+'</i>' : '')+'</span>' +
+      '<button type="button" class="svc-unmap" data-key="'+esc(e.key)+'" title="Отвязать от категории" aria-label="Отвязать «'+esc(e.name)+'»">✕</button></span>';
+    let html = '<div class="table-scroll"><table class="svc-table svc-cat-table"><thead><tr><th>Услуга CRM</th><th>Услуги из zapis.kz</th><th class="svc-actions-col"></th></tr></thead><tbody>';
+    Object.keys(ZONE_CATEGORIES).forEach(zone => {
+      html += '<tr class="cat-row"><td colspan="3">'+esc(zone)+'</td></tr>';
+      ZONE_CATEGORIES[zone].forEach(c => {
+        const list = byCat.get(c) || [];
+        const also = Object.keys(ZONE_CATEGORIES).filter(z => z !== zone && ZONE_CATEGORIES[z].some(x => normSvc(x) === normSvc(c)));
+        html += '<tr data-zone="'+esc(zone)+'" data-cat="'+esc(c)+'">' +
+          '<td class="svc-name">'+esc(c)+(also.length ? '<div class="svc-also">привязки общие с залом: '+esc(also.join(', '))+'</div>' : '')+'</td>' +
+          '<td>'+(list.length ? '<div class="svc-chips">'+list.map(zp).join('')+'</div>' : '<span class="svc-none">пока ничего не привязано</span>')+'</td>' +
+          '<td class="svc-actions-col"><button type="button" class="mini-action-btn svc-edit" data-cat="'+esc(c)+'">Переименовать</button> ' +
+          '<button type="button" class="mini-action-btn svc-del" data-cat="'+esc(c)+'">Удалить</button></td>' +
+        '</tr>';
+      });
+      html += '<tr class="svc-add-row" data-zone="'+esc(zone)+'"><td colspan="3"><span class="svc-add"><input type="text" placeholder="Новая услуга в «'+esc(zone)+'»" maxlength="60" autocomplete="off"><button type="button" class="svc-add-btn">+ Добавить</button></span></td></tr>';
+    });
+    const skipped = byCat.get(SERVICE_SKIP) || [];
+    if(skipped.length || unmapped.length){
+      html += '<tr class="cat-row"><td colspan="3">Без категории</td></tr>';
+      if(skipped.length) html += '<tr><td class="svc-name">'+esc(SERVICE_SKIP)+'<div class="svc-also">не считаются в статистике услуг</div></td><td><div class="svc-chips">'+skipped.map(zp).join('')+'</div></td><td></td></tr>';
+      if(unmapped.length) html += '<tr><td class="svc-name">Не привязаны <span class="count alert" style="margin-left:4px;">!</span></td><td><div class="svc-chips">'+unmapped.map(e => '<span class="svc-chip zp unset"><span>'+esc(e.name)+' <i>· '+e.count+'</i></span></span>').join('')+'</div></td><td></td></tr>';
+    }
+    html += '</tbody></table></div>';
+    el.innerHTML = html;
   }
   function showTextDialog(title, value, okText){
     return new Promise(resolve => {
@@ -4674,24 +4713,27 @@
     catalogChanged();
   }
   document.getElementById('svcCatalog').addEventListener('click', async e => {
-    const zoneEl = e.target.closest('.svc-zone');
-    if(!zoneEl) return;
-    const zone = zoneEl.dataset.zone;
+    const unmap = e.target.closest('.svc-unmap');
+    if(unmap){ delete dayClose.serviceMap[unmap.dataset.key]; catalogChanged(); return; }
+    const row = e.target.closest('tr[data-zone]');
+    if(!row) return;
+    const zone = row.dataset.zone;
     const edit = e.target.closest('.svc-edit'), del = e.target.closest('.svc-del'), add = e.target.closest('.svc-add-btn');
     if(edit) renameCatalogCategory(zone, edit.dataset.cat);
     else if(del) deleteCatalogCategory(zone, del.dataset.cat);
     else if(add){
-      const input = zoneEl.querySelector('.svc-add input');
+      const input = row.querySelector('.svc-add input');
       const ok = await addCatalogCategory(zone, input.value);
       if(!ok) input.focus();
     }
   });
   document.getElementById('svcCatalog').addEventListener('keydown', async e => {
     if(e.key !== 'Enter' || !e.target.matches('.svc-add input')) return;
-    const zone = e.target.closest('.svc-zone').dataset.zone;
+    const zone = e.target.closest('tr[data-zone]').dataset.zone;
     await addCatalogCategory(zone, e.target.value);
-    const again = document.querySelector('.svc-zone[data-zone="'+zone.replace(/"/g,'\\"')+'"] .svc-add input');
-    if(again) again.focus();
+    const rows = Array.from(document.querySelectorAll('#svcCatalog tr.svc-add-row'));
+    const again = rows.find(r => r.dataset.zone === zone);
+    if(again) again.querySelector('input').focus();
   });
   document.querySelectorAll('[data-svcsubtab]').forEach(btn => {
     btn.addEventListener('click', () => {
