@@ -1974,14 +1974,14 @@
     // 1) явная привязка из вкладки «Услуги» (dayClose.serviceMap)
     const mapped = dayClose.serviceMap[normSvc(serviceName)];
     if(mapped) return mapped;
+    // 2) название полностью совпадает с категорией CRM (например, выбрано вручную в «Закрытии дня»)
     const cats = categoriesForZone(zone);
     const norm = (serviceName||'').trim().toLowerCase();
     const exact = cats.find(c => c.toLowerCase() === norm);
     if(exact) return exact;
-    const partial = cats.find(c => norm.includes(c.toLowerCase()) || (norm && c.toLowerCase().includes(norm)));
-    if(partial) return partial;
-    const guess = suggestServiceCategory(serviceName);
-    return guess || cats[0];
+    // Остальное — не привязано: автоматически НЕ угадываем, в статистику не попадает,
+    // пока категорию не выберут во вкладке «Услуги».
+    return null;
   }
 
   function buildLiveAnalyticsRange(fromStr, toStr){
@@ -2000,7 +2000,7 @@
       const counted = new Map();
       for(const s0 of visitServices(b)) for(const s of expandServiceForStats(s0)){
         const cat = serviceCategory(s, zone);
-        if(cat === SERVICE_SKIP) continue;
+        if(!cat || cat === SERVICE_SKIP) continue;
         counted.set(cat, (counted.get(cat)||0) + 1);
       }
       for(const [cat, count] of counted) serviceCounts.push({ entry_date: date, master: visitMaster(b), category: cat, count });
@@ -2030,7 +2030,7 @@
       for(const sv0 of visitServices(b)) for(const sv of expandServiceForStats(sv0)){
         const cat1 = serviceCategory(sv, (state.masters.find(m => m.name === b.master)||{}).zone);
         const cat2 = serviceCategory(sv, getVisitZone(b));
-        if(cat1 === SERVICE_SKIP || cat2 === SERVICE_SKIP) continue;
+        if(!cat1 || !cat2 || cat1 === SERVICE_SKIP || cat2 === SERVICE_SKIP) continue;
         counted.set(cat1+'||'+cat2, (counted.get(cat1+'||'+cat2)||0) + 1);
       }
       for(const [k, count] of counted){
@@ -4852,10 +4852,11 @@
     const map = new Map(); // norm -> { name, count }
     for(const b of state.bookings){
       if(isImportedBooking(b)) continue;
-      for(const sv0 of (b.services || [])) for(const sv of (sv0 ? expandServiceForStats(sv0) : [])){
+      for(const sv0 of visitServices(b)) for(const sv of (sv0 ? expandServiceForStats(sv0) : [])){
         if(!sv) continue;
         const k = normSvc(sv);
         if(!k) continue;
+        if(!dayClose.serviceMap[k] && allServiceCategories().some(c => normSvc(c) === k)) continue; // совпадает с категорией CRM — привязка не нужна
         const e = map.get(k) || { key: k, name: String(sv).trim(), count: 0 };
         e.count++;
         map.set(k, e);
