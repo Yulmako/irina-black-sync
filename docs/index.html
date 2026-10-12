@@ -1330,7 +1330,6 @@
       <div class="inv-chart tl-chart" id="pnlChart">
         <div class="inv-chart-head">
           <span class="inv-chart-title">Динамика по месяцам</span>
-          <span class="inv-chart-sub" id="pnlChartSub"></span>
           <div class="inv-chart-legend" id="pnlChartLegend"></div>
         </div>
         <div id="pnlChartBody"></div>
@@ -4438,6 +4437,9 @@
       const date = dayStr(b.start);
       if(date < from || date > to) continue;
       if(visitStatus(b.id) !== 'completed') continue;
+      // дни из таблиц (замороженная история) считаются по таблицам: живые записи zapis.kz
+      // за те же дни не должны задваивать приход
+      if(FROZEN_DATES.has(date) && !isImportedBooking(b)) continue;
       const price = dayClose.prices[b.id] || 0;
       const consTotal = visitConsumablesTotal(b.id);
       revenue += price;
@@ -4515,12 +4517,8 @@
     const lastIdx = pts.reduce((a, p, i) => p.has ? i : a, -1);
     const legend = document.getElementById('pnlChartLegend');
     legend.innerHTML = PNL_SERIES.map(sr => '<button type="button" class="tl-leg'+(pnlChartHidden.has(sr.key)?' off':'')+'" data-ser="'+sr.key+'" aria-pressed="'+(!pnlChartHidden.has(sr.key))+'"><i style="background:var(--'+sr.cls+')"></i>'+sr.label+'</button>').join('');
-    const sub = document.getElementById('pnlChartSub');
-    if(lastIdx < 0){ sub.textContent = ''; body.innerHTML = '<div class="inv-chart-empty">Пока нет данных за 2026 год</div>'; return; }
+    if(lastIdx < 0){ body.innerHTML = '<div class="inv-chart-empty">Пока нет данных за 2026 год</div>'; return; }
     const shown = PNL_SERIES.filter(sr => !pnlChartHidden.has(sr.key));
-    const L = pts[lastIdx];
-    const [, lm] = L.key.split('-');
-    sub.textContent = 'на ' + monthsShort[Number(lm)-1] + ': приход ' + pnlCompact(L.prihod) + ' · расходы ' + pnlCompact(L.expenses) + ' · чистая ' + pnlCompact(L.net) + ' ₸';
     if(!shown.length){ body.innerHTML = '<div class="inv-chart-empty">Выберите хотя бы один показатель в легенде</div>'; return; }
     const vals = [];
     shown.forEach(sr => pts.forEach((p, i) => { if(i <= lastIdx) vals.push(p[sr.key]); }));
