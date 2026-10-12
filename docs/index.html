@@ -1825,10 +1825,10 @@
   // Service categories per zone — mirrors the grouping in the salon's
   // «Услуги Август» sheet (each zone offers its own set of services).
   const ZONE_CATEGORIES = {
-    'Женский зал': ['Стрижка','Окрашивание','Укладка','Лечение'],
-    'Мужской зал': ['Стрижка','Окрашивание','Укладка'],
-    'Нейл зал': ['Маникюр','Педикюр','Комплекс','Наращивание'],
-    'Зона визажа': ['Макияж','Коррекция бровей','Ботокс','Губы'],
+    'Женский зал': ['Стрижка','Укладка','Лечение','Окрашивание'],
+    'Мужской зал': ['Окрашивание','Стрижка','Укладка','Комплекс','Борода'],
+    'Нейл зал': ['Комплекс','Маникюр','Педикюр','Снятие геля','Наращивание ногтей'],
+    'Зона визажа': ['Эпиляция','Наращивание ресниц','Коррекция бровей','Ламинирование','Макияж','Обучение','Общий массаж','Массаж лица','Массаж спины','Ботокс','Губы','БРВ/плазма'],
   };
   function categoriesForZone(zone){ return ZONE_CATEGORIES[zone] || ['Стрижка','Окрашивание','Укладка','Маникюр']; }
 
@@ -4859,7 +4859,7 @@
       procurement: dayClose.procurement, stockIn: dayClose.stockIn, productSales: dayClose.productSales,
       serviceStatus: dayClose.serviceStatus, writeoffs: dayClose.writeoffs,
       adjustments: dayClose.adjustments, closed: dayClose.closed,
-      visitZone: dayClose.visitZone, serviceOverride: dayClose.serviceOverride, masterOverride: dayClose.masterOverride, serviceMap: dayClose.serviceMap, serviceCatalog: cloneCatalog(),
+      visitZone: dayClose.visitZone, serviceOverride: dayClose.serviceOverride, masterOverride: dayClose.masterOverride, serviceMap: dayClose.serviceMap, serviceCatalog: cloneCatalog(), catalogVersion: dayClose.catalogVersion || CATALOG_PRESET_VERSION,
     };
   }
   const KV_GETTERS = {
@@ -4940,7 +4940,11 @@
     dayClose.visitZone = dc.visitZone || {};
     dayClose.serviceOverride = dc.serviceOverride || {};
     dayClose.serviceMap = dc.serviceMap || {};
-    applyServiceCatalog(dc.serviceCatalog);
+    // Версия заготовки списка услуг: пока в базе нет версии 1, берём список по умолчанию
+    // (заготовка от владельца), а не старый сохранённый; дальше правки сохраняются как обычно.
+    dayClose.catalogVersion = Math.max(Number(dc.catalogVersion) || 0, 0);
+    if(dayClose.catalogVersion < CATALOG_PRESET_VERSION){ applyServiceCatalog(null); dayClose.catalogVersion = CATALOG_PRESET_VERSION; setTimeout(() => scheduleSave('day_close'), 0); }
+    else applyServiceCatalog(dc.serviceCatalog);
     dayClose.masterOverride = dc.masterOverride || {};
     state.inventoryEdits = kv.inventory_edits || [];
     const pf = kv.pnl_fixed || {};
@@ -4957,6 +4961,7 @@
   // нижнем регистре без лишних пробелов) и попадает в KV «day_close».
   const SERVICE_SKIP = 'Не учитывать';
   function allServiceCategories(){ return Array.from(new Set([].concat(...Object.values(ZONE_CATEGORIES)))); }
+  const CATALOG_PRESET_VERSION = 1;
   const ZONE_CATEGORIES_DEFAULT = JSON.parse(JSON.stringify(ZONE_CATEGORIES));
   function cloneCatalog(){ return JSON.parse(JSON.stringify(ZONE_CATEGORIES)); }
   // Список услуг CRM по залам можно править во вкладке «Услуги»; правки
@@ -4981,10 +4986,20 @@
   }
   function normSvc(s){ return String(s||'').trim().toLowerCase().replace(/ё/g,'е').replace(/\s+/g,' '); }
   const SERVICE_KEYWORDS = [
-    [/наращ/, 'Наращивание'],
+    [/наращ.*ресниц|ресниц.*наращ/, 'Наращивание ресниц'],
+    [/снят.*гел|гел.*снят|снят.*покрыт/, 'Снятие геля'],
+    [/наращ/, 'Наращивание ногтей'],
+    [/ламинир.*(бров|ресниц)|(бров|ресниц).*ламинир/, 'Ламинирование'],
+    [/брв|плазм/, 'БРВ/плазма'],
+    [/бров/, 'Коррекция бровей'],
     [/маник|гель-?лак|шеллак|покрыти/, 'Маникюр'],
     [/педик/, 'Педикюр'],
-    [/бров/, 'Коррекция бровей'],
+    [/эпил|депил|шугар|воск/, 'Эпиляция'],
+    [/бород|усы|бритье|бритьё/, 'Борода'],
+    [/массаж.*спин|спин.*массаж/, 'Массаж спины'],
+    [/массаж.*лиц|лиц.*массаж/, 'Массаж лица'],
+    [/массаж/, 'Общий массаж'],
+    [/обучен|курс|мастер-?класс/, 'Обучение'],
     [/стриж|подравн|кончик|челк/, 'Стрижка'],
     [/окраш|тониров|колор|мелир|балаяж|блонд|омбре|шатуш|airtouch|аитач|осветл|камуфляж|корн/, 'Окрашивание'],
     [/уклад|причес|локон|брашинг|выпрямл|завивк|плетен|коса/, 'Укладка'],
