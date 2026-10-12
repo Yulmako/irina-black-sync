@@ -750,6 +750,23 @@
   .cd-cal-jump{padding:5px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--accent); font:inherit; font-size:12.5px; font-weight:600; cursor:pointer;}
   .cd-cal-jump:hover{border-color:var(--accent);}
   @media (max-width:600px){ .cd-cal{width:calc(100vw - 32px);} .cd-cal-day{height:42px;} }
+
+  /* ---------- P&L: таймлайн по месяцам ---------- */
+  .tl-chart{--s-1:#2a78d6; --s-2:#eb6834; --s-3:#1baf7a;}
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .tl-chart{ --s-1:#3987e5; --s-2:#d95926; --s-3:#199e70; } }
+  :root[data-theme="dark"] .tl-chart{ --s-1:#3987e5; --s-2:#d95926; --s-3:#199e70; }
+  .panel > .tl-chart{border:none; border-bottom:1px solid var(--border); border-radius:0; margin:0 0 12px; background:transparent;}
+  .tl-chart .inv-chart-legend{flex-wrap:wrap;}
+  .tl-leg{border:0; background:transparent; font:inherit; font-size:12.5px; color:var(--ink); display:inline-flex; align-items:center; gap:6px; padding:3px 6px; border-radius:6px; cursor:pointer;}
+  .tl-leg:hover{background:var(--surface-2);}
+  .tl-leg i{width:14px; height:3px; border-radius:2px; display:inline-block;}
+  .tl-leg.off{opacity:.45; text-decoration:line-through;}
+  .tl-chart .ln{fill:none; stroke-width:2; stroke-linejoin:round; stroke-linecap:round;}
+  .tl-chart .dot{stroke:var(--surface); stroke-width:2;}
+  .tl-chart .zero{stroke:var(--muted); stroke-width:1; shape-rendering:crispEdges; opacity:.6;}
+  .tl-chart .cross{stroke:var(--muted); stroke-width:1; shape-rendering:crispEdges; pointer-events:none;}
+  .tl-chart .slot{cursor:crosshair;}
+  .tl-chart .slot:hover,.tl-chart .slot:focus{fill-opacity:0;}
 </style>
 
 </head>
@@ -1310,6 +1327,15 @@
         <div class="stat accent"><span class="label">Чистая прибыль за год</span><span class="value">—</span></div>
       </div>
     <div class="panel">
+      <div class="inv-chart tl-chart" id="pnlChart">
+        <div class="inv-chart-head">
+          <span class="inv-chart-title">Динамика по месяцам</span>
+          <span class="inv-chart-sub" id="pnlChartSub"></span>
+          <div class="inv-chart-legend" id="pnlChartLegend"></div>
+        </div>
+        <div id="pnlChartBody"></div>
+        <div class="inv-chart-tip" id="pnlChartTip" hidden></div>
+      </div>
       <div class="filters">
         <span class="result-count" id="pnlNote">2026 год · строки с полями ввода — редактируемые, остальные считаются автоматически из данных CRM</span>
         <div class="spacer"></div>
@@ -4454,8 +4480,141 @@
   }
   function pnlFmt(n){ return Math.round(n || 0).toLocaleString('ru-RU'); }
   const PNL_EDITABLE = ['adminSalary','techSalary','accountantSalary','smmSalary','rent','utilities','internet','security','adsGeneral','ads2gis','adsInstagram','taxes','bankCommission'];
+
+  // ---------------- P&L: таймлайн по основным показателям ----------------
+  const pnlChartHidden = new Set();
+  const PNL_SERIES = [
+    { key:'prihod', label:'Приход', cls:'s-1' },
+    { key:'expenses', label:'Расходы', cls:'s-2' },
+    { key:'net', label:'Чистая прибыль', cls:'s-3' },
+  ];
+  function pnlCompact(v){
+    const a = Math.abs(v), sign = v < 0 ? '−' : '';
+    const f = (x, u) => sign + (Math.round(x * 10) / 10).toLocaleString('ru-RU') + ' ' + u;
+    if(a >= 1e6) return f(a / 1e6, 'млн');
+    if(a >= 1e3) return f(a / 1e3, 'тыс');
+    return sign + Math.round(a);
+  }
+  function pnlAxis(min, max){
+    // «круглый» шаг (1/2/5 × 10^n), ~4 интервала, ноль всегда на сетке
+    const raw = Math.max(1, (max - min)) / 4, p = Math.pow(10, Math.floor(Math.log10(raw)));
+    let step = 10 * p;
+    for(const m of [1,2,5,10]) if(m * p >= raw){ step = m * p; break; }
+    return { lo: Math.floor(min / step) * step, hi: Math.ceil(max / step) * step, step };
+  }
+  function renderPnlChart(months){
+    const body = document.getElementById('pnlChartBody');
+    if(!body) return;
+    const tip = document.getElementById('pnlChartTip');
+    const box = document.getElementById('pnlChart');
+    tip.hidden = true;
+    const pts = months.map(m => ({
+      key: m.key, prihod: m.data.prihod, expenses: m.data.opex + m.data.taxes + m.data.bankCommission, net: m.data.net,
+      has: !!(m.data.prihod || m.data.opex || m.data.taxes || m.data.bankCommission),
+    }));
+    const lastIdx = pts.reduce((a, p, i) => p.has ? i : a, -1);
+    const legend = document.getElementById('pnlChartLegend');
+    legend.innerHTML = PNL_SERIES.map(sr => '<button type="button" class="tl-leg'+(pnlChartHidden.has(sr.key)?' off':'')+'" data-ser="'+sr.key+'" aria-pressed="'+(!pnlChartHidden.has(sr.key))+'"><i style="background:var(--'+sr.cls+')"></i>'+sr.label+'</button>').join('');
+    const sub = document.getElementById('pnlChartSub');
+    if(lastIdx < 0){ sub.textContent = ''; body.innerHTML = '<div class="inv-chart-empty">Пока нет данных за 2026 год</div>'; return; }
+    const shown = PNL_SERIES.filter(sr => !pnlChartHidden.has(sr.key));
+    const L = pts[lastIdx];
+    const [, lm] = L.key.split('-');
+    sub.textContent = 'на ' + monthsShort[Number(lm)-1] + ': приход ' + pnlCompact(L.prihod) + ' · расходы ' + pnlCompact(L.expenses) + ' · чистая ' + pnlCompact(L.net) + ' ₸';
+    if(!shown.length){ body.innerHTML = '<div class="inv-chart-empty">Выберите хотя бы один показатель в легенде</div>'; return; }
+    const vals = [];
+    shown.forEach(sr => pts.forEach((p, i) => { if(i <= lastIdx) vals.push(p[sr.key]); }));
+    const ax = pnlAxis(Math.min(0, ...vals), Math.max(0, ...vals));
+    const W = Math.max(280, body.clientWidth || 640), H = 250;
+    const m = { l: 52, r: 12, t: 10, b: 26 };
+    const pw = W - m.l - m.r, ph = H - m.t - m.b;
+    const n = pts.length, slot = pw / n;
+    const X = i => m.l + slot * (i + .5);
+    const Y = v => m.t + ph - ((v - ax.lo) / (ax.hi - ax.lo)) * ph;
+    let svg = '<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Приход, расходы и чистая прибыль по месяцам">';
+    for(let v = ax.lo; v <= ax.hi + ax.step / 2; v += ax.step){
+      const yy = Math.round(Y(v)) + .5;
+      svg += '<line class="grid" x1="'+m.l+'" x2="'+(W-m.r)+'" y1="'+yy+'" y2="'+yy+'"/>';
+      svg += '<text class="axis-t" x="'+(m.l-6)+'" y="'+(yy+4)+'" text-anchor="end">'+pnlCompact(Math.round(v))+'</text>';
+    }
+    if(ax.lo < 0) svg += '<line class="zero" x1="'+m.l+'" x2="'+(W-m.r)+'" y1="'+(Math.round(Y(0))+.5)+'" y2="'+(Math.round(Y(0))+.5)+'"/>';
+    const every = slot < 30 ? 2 : 1;
+    pts.forEach((p, i) => {
+      if(i % every === 0){
+        const mo = Number(p.key.split('-')[1]);
+        svg += '<text class="axis-t" x="'+X(i)+'" y="'+(H-8)+'" text-anchor="middle">'+monthsShort[mo-1]+'</text>';
+      }
+    });
+    svg += '<line class="cross" id="pnlCross" y1="'+m.t+'" y2="'+(m.t+ph)+'" x1="0" x2="0" hidden/>';
+    shown.forEach(sr => {
+      const d = pts.slice(0, lastIdx + 1).map((p, i) => (i ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(p[sr.key]).toFixed(1)).join(' ');
+      svg += '<path class="ln" stroke="var(--'+sr.cls+')" d="'+d+'"/>';
+    });
+    shown.forEach(sr => {
+      pts.slice(0, lastIdx + 1).forEach((p, i) => {
+        svg += '<circle class="dot" fill="var(--'+sr.cls+')" cx="'+X(i).toFixed(1)+'" cy="'+Y(p[sr.key]).toFixed(1)+'" r="'+(i === lastIdx ? 5 : 4)+'"/>';
+      });
+    });
+    pts.forEach((p, i) => { svg += '<rect class="slot" tabindex="0" data-i="'+i+'" x="'+(m.l + slot*i)+'" y="'+m.t+'" width="'+slot+'" height="'+ph+'"/>'; });
+    svg += '</svg>';
+    body.innerHTML = svg;
+    const cross = body.querySelector('#pnlCross');
+    const fmtT = v => (v < 0 ? '−' : '') + Math.abs(Math.round(v)).toLocaleString('ru-RU') + ' ₸';
+    function show(el){
+      const i = Number(el.dataset.i), p = pts[i];
+      const [y, mo] = p.key.split('-');
+      tip.textContent = '';
+      const h = document.createElement('div'); h.className = 't-h'; h.textContent = monthsShort[Number(mo)-1] + ' ' + y; tip.appendChild(h);
+      if(i > lastIdx || !p.has){
+        const r = document.createElement('div'); r.className = 't-h'; r.textContent = 'нет данных'; tip.appendChild(r);
+      } else {
+        PNL_SERIES.forEach(sr => {
+          const r = document.createElement('div'); r.className = 't-r';
+          const l = document.createElement('span'); const k = document.createElement('i'); k.style.background = 'var(--'+sr.cls+')';
+          l.appendChild(k); l.appendChild(document.createTextNode(sr.label));
+          const v = document.createElement('b'); v.textContent = fmtT(p[sr.key]);
+          r.appendChild(l); r.appendChild(v); tip.appendChild(r);
+        });
+        if(p.prihod){
+          const mg = document.createElement('div'); mg.className = 't-h'; mg.style.marginTop = '4px';
+          mg.textContent = 'рентабельность ' + (Math.round(p.net / p.prihod * 1000) / 10).toLocaleString('ru-RU') + '%'; tip.appendChild(mg);
+        }
+      }
+      tip.hidden = false;
+      cross.setAttribute('x1', X(i)); cross.setAttribute('x2', X(i)); cross.removeAttribute('hidden');
+      const rb = el.getBoundingClientRect(), bb = box.getBoundingClientRect();
+      let left = rb.left - bb.left + rb.width / 2 - tip.offsetWidth / 2;
+      left = Math.max(4, Math.min(left, bb.width - tip.offsetWidth - 4));
+      tip.style.left = left + 'px';
+      tip.style.top = Math.max(4, rb.top - bb.top + 30) + 'px';
+    }
+    function hide(){ tip.hidden = true; cross.setAttribute('hidden', ''); }
+    body.querySelectorAll('.slot').forEach(el => {
+      el.addEventListener('pointerenter', () => show(el));
+      el.addEventListener('pointerdown', () => show(el));
+      el.addEventListener('focus', () => show(el));
+      el.addEventListener('pointerleave', hide);
+      el.addEventListener('blur', hide);
+    });
+  }
+  document.getElementById('pnlChartLegend').addEventListener('click', e => {
+    const b = e.target.closest('[data-ser]');
+    if(!b) return;
+    const k = b.dataset.ser;
+    if(pnlChartHidden.has(k)) pnlChartHidden.delete(k); else pnlChartHidden.add(k);
+    renderPnl();
+  });
+  let pnlChartResizeT = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(pnlChartResizeT);
+    pnlChartResizeT = setTimeout(() => {
+      const panel = document.getElementById('pnlUnlockedPanel');
+      if(panel && !panel.hidden) renderPnl();
+    }, 150);
+  });
   function renderPnl(){
     const months = PNL_MONTHS.map(m => ({ key: m, data: buildPnlMonth(m) }));
+    renderPnlChart(months);
 
     // ---- год целиком: сумма по всем 12 месяцам ----
     const yearPrihod = months.reduce((s,m) => s + m.data.prihod, 0);
