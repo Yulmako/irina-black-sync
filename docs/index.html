@@ -95,11 +95,7 @@
   .svc-select{padding:8px 10px; border-radius:9px; border:1px solid var(--border); background:var(--bg); color:var(--ink); font:inherit; font-size:13.5px; min-width:190px; max-width:100%;}
   .svc-select.unset{border-color:var(--warn); background:var(--warn-soft);}
   .svc-suggest{font:inherit; font-size:12px; font-weight:600; color:var(--accent); background:var(--accent-soft); border:none; border-radius:999px; padding:4px 10px; cursor:pointer;}
-  .tab .count.alert{display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px; padding:0 6px; border-radius:999px; background:var(--bad); color:#fff; font-size:11px; font-weight:700; margin-left:2px; vertical-align:1px;}
-  .svc-alert{display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:0 0 16px; padding:11px 16px; border-radius:12px; background:var(--warn-soft); color:var(--warn); border:1px solid var(--warn); font-size:13.5px; font-weight:600;}
-  .svc-alert-text{flex:1 1 220px; min-width:0;}
-  .svc-alert-btn{font:inherit; font-size:13px; font-weight:700; padding:7px 14px; border-radius:9px; border:none; background:var(--warn); color:var(--surface); cursor:pointer;}
-  .wrap[data-tab="services"] .svc-alert{display:none;}
+  .tab .count.alert{cursor:help; display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px; padding:0 6px; border-radius:999px; background:var(--bad); color:#fff; font-size:11px; font-weight:700; margin-left:2px; vertical-align:1px;}
   .nav-badge{flex:none; min-width:22px; height:22px; padding:0 7px; border-radius:999px; background:var(--bad); color:#fff; font-size:12px; font-weight:700; display:inline-flex; align-items:center; justify-content:center;}
   .svc-catalog{display:flex; flex-direction:column;}
   .svc-zone{padding:14px 16px; border-bottom:1px solid var(--border);}
@@ -633,7 +629,6 @@
     .sync-warn{max-width:none;}
     /* меню: все разделы на виду, без горизонтальной прокрутки */
     .wrap > .nav-bar{order:2;}
-    .wrap > .svc-alert{order:1; margin-bottom:10px; font-size:13px;}
     .nav-bar{display:block; position:sticky; top:0; z-index:40; margin:0 -12px 12px; padding:8px 12px; background:var(--bg); border-bottom:1px solid var(--border);}
     .nav-toggle{display:flex; align-items:center; gap:12px; width:100%; min-height:48px; padding:0 16px; border-radius:12px; border:1px solid var(--border); background:var(--surface); color:var(--ink); font:inherit; font-size:16px; font-weight:700; cursor:pointer; box-shadow:var(--shadow); text-align:left; -webkit-tap-highlight-color:transparent;}
     .nav-toggle:active{background:var(--surface-2);}
@@ -643,8 +638,8 @@
     .nav-bar.open .nav-burger i:nth-child(2){opacity:0;}
     .nav-bar.open .nav-burger i:nth-child(3){transform:translateY(-6px) rotate(-45deg);}
     .nav-current{flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-    .svc-add{width:100%;}
-    .svc-add input{flex:1 1 auto; width:auto;}
+    .svc-add{display:flex; width:100%;}
+    .svc-add input{flex:1 1 0; width:auto; min-width:0;}
     .nav-chev{flex:none; color:var(--muted); transition:transform .2s;}
     .nav-bar.open .nav-chev{transform:rotate(180deg);}
     .tabs{display:none; position:absolute; left:12px; right:12px; top:100%; margin:6px 0 0; padding:6px; flex-direction:column; gap:2px; border:1px solid var(--border); border-radius:14px; background:var(--surface); box-shadow:0 14px 34px rgba(0,0,0,.22); max-height:calc(100vh - 90px); overflow-y:auto;}
@@ -663,6 +658,7 @@
     /* подвкладки «Закрытия дня» */
     .cd-subtabs{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; overflow:visible; border-bottom:none;}
     .cd-subtab-btn{margin:0; padding:9px 4px; font-size:12.5px; text-align:center; background:var(--surface); border:1px solid var(--border); border-radius:10px; white-space:normal;}
+    .cd-subtabs.two{grid-template-columns:repeat(2,minmax(0,1fr));}
     .cd-subtab-btn.active{background:var(--accent-soft); color:var(--accent); border-color:var(--accent);}
     /* iOS не должен приближать страницу при вводе: шрифт полей не меньше 16px */
     input, select, textarea{font-size:16px !important;}
@@ -707,11 +703,6 @@
     <div class="stat"><span class="label">Уникальных клиентов</span><span class="value">—</span></div>
     <div class="stat accent"><span class="label">Предстоящие записи</span><span class="value">—</span></div>
     <div class="stat"><span class="label">Доля онлайн-записи</span><span class="value">—</span></div>
-  </div>
-
-  <div class="svc-alert" id="svcAlert" hidden>
-    <span class="svc-alert-text" id="svcAlertText"></span>
-    <button type="button" class="svc-alert-btn" id="svcAlertBtn">Привязать</button>
   </div>
 
   <div class="nav-bar" id="navBar">
@@ -782,12 +773,18 @@
   </div>
 
   <div id="view-services" hidden>
+    <div class="cd-subtabs two">
+      <button class="cd-subtab-btn active" data-svcsubtab="map">Привязка услуг zapis.kz</button>
+      <button class="cd-subtab-btn" data-svcsubtab="catalog">Список услуг CRM</button>
+    </div>
+    <div id="svc-panel-catalog" hidden>
     <div class="panel" id="svcCatalogPanel">
-      <div class="panel-heading">Список услуг CRM</div>
-      <p class="svc-hint">Категории, по которым считается аналитика. Их можно добавлять, переименовывать и удалять отдельно для каждого зала.</p>
+      <p class="svc-hint">Категории, по которым считается аналитика. Их можно добавлять, переименовывать и удалять отдельно для каждого зала. Привязка услуг из zapis.kz — на соседней вкладке.</p>
       <div id="svcCatalog" class="svc-catalog"></div>
     </div>
-    <div class="panel" style="margin-top:18px;">
+    </div>
+    <div id="svc-panel-map">
+    <div class="panel">
       <div class="filters">
         <input type="search" id="searchServices" placeholder="Поиск услуги из zapis.kz…">
         <div class="chip-row" id="svcFilterChips">
@@ -807,6 +804,7 @@
         </table>
       </div>
       <div class="empty" id="servicesEmpty" hidden><b>Услуг пока нет</b>Они появятся после синхронизации с zapis.kz.</div>
+    </div>
     </div>
   </div>
 
@@ -4510,13 +4508,13 @@
     const all = collectServiceNames();
     const unmapped = all.filter(e => !dayClose.serviceMap[e.key]).length;
     const tabCnt = document.getElementById('tabCountServices');
-    tabCnt.textContent = unmapped ? String(unmapped) : '';
+    const tip = unmapped + ' ' + pluralSvc(unmapped) + ' из zapis.kz не привязано к списку CRM. Откройте вкладку «Услуги» и выберите для них категорию.';
+    tabCnt.textContent = unmapped ? '!' : '';
     tabCnt.classList.toggle('alert', unmapped > 0);
+    if(unmapped){ tabCnt.title = tip; tabCnt.setAttribute('aria-label', tip); } else { tabCnt.removeAttribute('title'); tabCnt.removeAttribute('aria-label'); }
     const navBadge = document.getElementById('navBadge');
-    navBadge.textContent = unmapped ? String(unmapped) : ''; navBadge.hidden = !unmapped;
-    const alertEl = document.getElementById('svcAlert');
-    alertEl.hidden = !unmapped;
-    if(unmapped) document.getElementById('svcAlertText').textContent = '⚠ ' + unmapped + ' ' + pluralSvc(unmapped) + ' из zapis.kz не привязано к списку CRM';
+    navBadge.textContent = unmapped ? '!' : ''; navBadge.hidden = !unmapped;
+    if(unmapped){ navBadge.title = tip; navBadge.setAttribute('aria-label', tip); }
     renderServiceCatalog();
     const q = (state.svcSearch || '').trim().toLowerCase();
     let rows = all;
@@ -4695,10 +4693,14 @@
     const again = document.querySelector('.svc-zone[data-zone="'+zone.replace(/"/g,'\\"')+'"] .svc-add input');
     if(again) again.focus();
   });
-  document.getElementById('svcAlertBtn').addEventListener('click', () => {
-    state.svcFilter = 'unmapped';
-    document.querySelectorAll('#svcFilterChips .chip').forEach(c => c.classList.toggle('on', c.dataset.svcf === 'unmapped'));
-    document.querySelector('.tab[data-tab="services"]').click();
+  document.querySelectorAll('[data-svcsubtab]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('[data-svcsubtab]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const sub = btn.dataset.svcsubtab;
+      document.getElementById('svc-panel-map').hidden = sub !== 'map';
+      document.getElementById('svc-panel-catalog').hidden = sub !== 'catalog';
+    });
   });
 
   function renderEverything(){
