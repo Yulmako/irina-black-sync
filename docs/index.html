@@ -702,7 +702,9 @@
   .inv-chart .axis-t{fill:var(--c-ink2); font-size:11px; font-family:inherit;}
   .inv-chart .bar-in{fill:var(--s-in);} .inv-chart .bar-out{fill:var(--s-out);}
   .inv-chart .slot{fill:transparent; cursor:default; outline:none;}
-  .inv-chart .slot:hover, .inv-chart .slot:focus{fill:var(--surface-2); opacity:.55;}
+  .inv-chart .slot{cursor:pointer;}
+  .inv-chart .slot.sel{fill:var(--accent); fill-opacity:.12;}
+  .inv-chart .slot:hover, .inv-chart .slot:focus{fill:var(--accent); fill-opacity:.08;}
   .inv-chart-tip{
     position:absolute; z-index:5; pointer-events:none; background:var(--surface); color:var(--ink);
     border:1px solid var(--border); border-radius:8px; box-shadow:var(--shadow); padding:8px 10px; font-size:12.5px; min-width:130px;
@@ -1233,6 +1235,7 @@
         <div class="inv-chart-head">
           <span class="inv-chart-title">Движение за период</span>
           <span class="inv-chart-sub" id="invChartSub"></span>
+          <button type="button" class="chip on" id="invChartClear" hidden title="Показать всю историю за период"></button>
           <div class="inv-chart-legend"><span><i style="background:var(--s-in)"></i>Приход</span><span><i style="background:var(--s-out)"></i>Расход</span></div>
         </div>
         <div id="invChartBody"></div>
@@ -1309,7 +1312,7 @@
   const state = { bookings: [], tab: 'bookings', bookingSortKey: 'date', bookingSortDir: 'asc',
     search: '', status: '', master: '', dateFrom: '', dateTo: '',
     clientSearch: '', clientSort: 'visits', masterSearch: '', consSearch: '', invSearch: '',
-    invHistorySearch: '', invHistoryType: '', invHistoryFrom: '', invHistoryTo: '',
+    invHistorySearch: '', invHistoryType: '', invHistoryFrom: '', invHistoryTo: '', invChartBucket: null,
     analyticsExpanded: new Set(), gridGranularity: 'auto', gridExport: null, inventoryEdits: [], invStockFilter: '', invCategoryFilter: '', invHistoryCategory: '',
     pnlUnlocked: false, invEditingItem: null, masterEditing: null };
 
@@ -3572,7 +3575,7 @@
   }
   // Shared by the on-screen table and the «движение позиций» export below —
   // same search text, type/category chip and date range as whatever's on screen.
-  function filteredInventoryHistory(){
+  function filteredInventoryHistory(ignoreBucket){
     const q = state.invHistorySearch ? state.invHistorySearch.trim().toLowerCase() : '';
     let rows = getInventoryHistory();
     if(state.invHistoryType) rows = rows.filter(r => r.type === state.invHistoryType);
@@ -3580,6 +3583,7 @@
     if(state.invHistoryFrom) rows = rows.filter(r => r.date && r.date >= state.invHistoryFrom);
     if(state.invHistoryTo) rows = rows.filter(r => r.date && r.date <= state.invHistoryTo);
     if(q) rows = rows.filter(r => r.item.toLowerCase().includes(q));
+    if(!ignoreBucket && state.invChartBucket) rows = rows.filter(r => r.date && r.date >= state.invChartBucket.from && r.date <= state.invChartBucket.to);
     return rows;
   }
 
@@ -3623,6 +3627,9 @@
       if(unit === 'day') b.label = fmtShortDate(b.key);
       else if(unit === 'week'){ const e = utcToIso(isoToUtc(b.key) + 6*86400000); b.label = fmtShortDate(b.key); b.full = fmtShortDate(b.key)+' – '+fmtShortDate(e); }
       else { b.label = MONTHS_SHORT[Number(b.key.slice(5,7))-1]+' '+b.key.slice(2,4); b.full = MONTHS_SHORT[Number(b.key.slice(5,7))-1]+' '+b.key.slice(0,4); }
+      b.from = b.key;
+      b.to = unit === 'day' ? b.key : unit === 'week' ? utcToIso(isoToUtc(b.key) + 6*86400000)
+        : utcToIso(Date.UTC(Number(b.key.slice(0,4)), Number(b.key.slice(5,7)), 0));
       if(!b.full) b.full = b.key.slice(8,10)+'.'+b.key.slice(5,7)+'.'+b.key.slice(0,4);
     });
     return { unit, list };
@@ -3643,6 +3650,16 @@
     const data = invChartBuckets(rows);
     if(!data){ sub.textContent = ''; body.innerHTML = '<div class="inv-chart-empty">Нет движения за выбранный период</div>'; return; }
     const { unit, list } = data;
+    if(state.invChartBucket && !list.some(b => b.from === state.invChartBucket.from && b.to === state.invChartBucket.to)){
+      state.invChartBucket = null; // период/фильтры изменились — выбранного столбца больше нет
+      renderInventoryHistory(); return;
+    }
+    const sel = state.invChartBucket;
+    const clearBtn = document.getElementById('invChartClear');
+    if(sel){
+      const sb = list.find(b => b.from === sel.from && b.to === sel.to);
+      clearBtn.textContent = 'Показано: ' + sb.full + ' ✕'; clearBtn.hidden = false;
+    } else clearBtn.hidden = true;
     const totIn = list.reduce((s,b) => s+b.inQ, 0), totOut = list.reduce((s,b) => s+b.outQ, 0);
     const fmt = n => (Math.round(n*100)/100).toLocaleString('ru-RU');
     const net = totIn - totOut;
@@ -3669,11 +3686,12 @@
     const every = Math.max(1, Math.ceil(list.length / Math.max(2, Math.floor(pw / 46))));
     list.forEach((b, i) => {
       const cx = m.l + slot * (i + .5);
-      svg += bar(cx - bw - 1, b.inQ, 'bar-in') + bar(cx + 1, b.outQ, 'bar-out');
+      const dim = sel && !(b.from === sel.from && b.to === sel.to);
+      svg += '<g'+(dim ? ' opacity=".3"' : '')+'>' + bar(cx - bw - 1, b.inQ, 'bar-in') + bar(cx + 1, b.outQ, 'bar-out') + '</g>';
       if(i % every === 0 || i === list.length - 1 && every === 1) svg += '<text class="axis-t" x="'+cx+'" y="'+(H-8)+'" text-anchor="middle">'+b.label+'</text>';
     });
     list.forEach((b, i) => {
-      svg += '<rect class="slot" tabindex="0" data-i="'+i+'" x="'+(m.l + slot*i)+'" y="'+m.t+'" width="'+slot+'" height="'+ph+'"/>';
+      svg += '<rect class="slot'+(sel && b.from === sel.from && b.to === sel.to ? ' sel' : '')+'" tabindex="0" role="button" aria-label="Показать записи: '+b.full+'" data-i="'+i+'" x="'+(m.l + slot*i)+'" y="'+m.t+'" width="'+slot+'" height="'+ph+'"/>';
     });
     svg += '</svg>';
     body.innerHTML = svg;
@@ -3697,6 +3715,12 @@
       tip.style.top = Math.max(4, rb.top - bb.top - tip.offsetHeight - 6) + 'px';
     }
     body.querySelectorAll('.slot').forEach(el => {
+      el.addEventListener('click', () => {
+        const b = list[Number(el.dataset.i)];
+        state.invChartBucket = (sel && sel.from === b.from && sel.to === b.to) ? null : { from:b.from, to:b.to };
+        renderInventoryHistory();
+      });
+      el.addEventListener('keydown', e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); el.dispatchEvent(new Event('click')); } });
       el.addEventListener('pointerenter', () => showTip(el));
       el.addEventListener('pointerdown', () => showTip(el));
       el.addEventListener('focus', () => showTip(el));
@@ -3704,17 +3728,18 @@
       el.addEventListener('blur', () => { tip.hidden = true; });
     });
   }
+  document.getElementById('invChartClear').addEventListener('click', () => { state.invChartBucket = null; renderInventoryHistory(); });
   let invChartResizeT = null;
   window.addEventListener('resize', () => {
     clearTimeout(invChartResizeT);
     invChartResizeT = setTimeout(() => {
       const panel = document.getElementById('inv-panel-history');
-      if(panel && !panel.hidden) renderInvChart(filteredInventoryHistory());
+      if(panel && !panel.hidden) renderInvChart(filteredInventoryHistory(true));
     }, 150);
   });
   function renderInventoryHistory(){
     const rows = filteredInventoryHistory();
-    renderInvChart(rows);
+    renderInvChart(filteredInventoryHistory(true));
     const body = document.getElementById('invHistoryBody');
     const empty = document.getElementById('invHistoryEmpty');
     document.getElementById('invHistoryCount').textContent = rows.length + ' записей';
