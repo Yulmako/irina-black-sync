@@ -715,6 +715,38 @@
   .inv-chart-tip .t-r b{font-size:14px; margin-left:12px;}
   @media (max-width:600px){ .inv-chart-legend{margin-left:0; flex-basis:100%;} .inv-chart{padding:12px 10px 8px;} }
   .inv-chart-empty{padding:26px 0; text-align:center; color:var(--muted); font-size:13px;}
+
+  /* ---------- Закрытие дня: календарь ---------- */
+  .cd-cal-toggle{padding:8px 14px; border-radius:9px; border:1px solid var(--border); background:var(--surface); color:var(--ink); font:inherit; font-size:13.5px; font-weight:500; cursor:pointer; display:inline-flex; align-items:center; gap:8px;}
+  .cd-cal-toggle[aria-expanded="true"]{background:var(--accent-soft); border-color:var(--accent); color:var(--accent);}
+  .cd-cal-badge{min-width:20px; height:20px; padding:0 6px; border-radius:999px; background:var(--bad); color:#fff; font-size:12px; font-weight:700; display:inline-flex; align-items:center; justify-content:center;}
+  .cd-cal{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px; margin-bottom:18px; max-width:380px;}
+  .cd-cal-head{display:flex; align-items:center; gap:8px; margin-bottom:10px;}
+  .cd-cal-title{flex:1; text-align:center; font-weight:600; font-size:14.5px; text-transform:capitalize;}
+  .cd-cal-nav{width:32px; height:32px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--ink); font-size:16px; cursor:pointer; line-height:1;}
+  .cd-cal-nav:hover{border-color:var(--accent); color:var(--accent);}
+  .cd-cal-grid{display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:4px;}
+  .cd-cal-dow{font-size:11px; color:var(--muted); text-align:center; padding-bottom:2px; text-transform:uppercase; letter-spacing:.04em;}
+  .cd-cal-day{height:40px; border:1px solid transparent; border-radius:8px; background:transparent; color:var(--muted); font:inherit; font-size:13px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:0; padding:0; cursor:pointer; line-height:1.15;}
+  .cd-cal-day small{font-size:10px; font-weight:700; line-height:1;}
+  .cd-cal-day.blank{visibility:hidden; cursor:default;}
+  .cd-cal-day.closed{background:var(--good-soft); color:var(--good);}
+  .cd-cal-day.unclosed{background:var(--bad-soft); color:var(--bad); font-weight:600;}
+  .cd-cal-day.today-open{background:var(--warn-soft); color:var(--warn); font-weight:600;}
+  .cd-cal-day.upcoming{background:var(--info-soft); color:var(--info);}
+  .cd-cal-day.archive{background:var(--surface-2); color:var(--muted);}
+  .cd-cal-day.idle{color:var(--muted); opacity:.6;}
+  .cd-cal-day.today{box-shadow:inset 0 0 0 1px var(--ink);}
+  .cd-cal-day.sel{border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-soft); color:var(--ink);}
+  .cd-cal-day:hover{border-color:var(--accent);}
+  .cd-cal-legend{display:flex; flex-wrap:wrap; gap:6px 12px; margin-top:12px; font-size:11.5px; color:var(--muted);}
+  .cd-cal-legend span{display:inline-flex; align-items:center; gap:5px;}
+  .cd-cal-legend i{width:10px; height:10px; border-radius:3px; display:inline-block;}
+  .cd-cal-foot{margin-top:10px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:12.5px;}
+  .cd-cal-foot b{color:var(--bad);} .cd-cal-foot .ok{color:var(--good); font-weight:600;}
+  .cd-cal-jump{padding:5px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--accent); font:inherit; font-size:12.5px; font-weight:600; cursor:pointer;}
+  .cd-cal-jump:hover{border-color:var(--accent);}
+  @media (max-width:600px){ .cd-cal{max-width:none;} .cd-cal-day{height:42px;} }
 </style>
 
 </head>
@@ -1040,10 +1072,12 @@
       <input type="date" id="closeDayDate">
       <span class="day-status" id="closeDayStatus"></span>
       <span class="cd-status-note" id="closeDayPendingNote" hidden></span>
+      <button type="button" class="cd-cal-toggle" id="cdCalToggle" aria-expanded="true">Календарь <span class="cd-cal-badge" id="cdCalBadge" hidden></span></button>
       <div class="cd-spacer"></div>
       <button class="cd-save-btn" id="closeDaySave">Закрыть день</button>
       <button class="cd-unlock-btn" id="closeDayUnlock" hidden>Разблокировать день</button>
     </div>
+    <div class="cd-cal" id="cdCal"></div>
     <div class="cd-summary" id="closeDayTotal" hidden>
       <div class="cd-summary-tile"><span class="label">Расходники за день</span><span class="value" id="closeDayConsValue">—</span><span class="cd-tile-hint" id="closeDayConsHint" hidden></span></div>
       <div class="cd-summary-tile"><span class="label">К выплате мастерам</span><span class="value" id="closeDayMasterValue">—</span></div>
@@ -3808,8 +3842,102 @@
     renderInventoryHistory();
   });
 
+
+  // ---------------- Закрытие дня: календарь закрытых / не закрытых дней ----------------
+  let cdCalMonth = null;      // 'YYYY-MM' — показанный месяц
+  let cdCalOpen = true;
+  const MONTHS_FULL = ['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь'];
+  function todayStr(){ return dayStr(new Date().toISOString()); }
+  // дата -> { total, pending, imported } по всем записям (кроме «не пришёл»/архива)
+  function closeDayCalendarStats(){
+    const stats = new Map();
+    for(const b of state.bookings){
+      const date = dayStr(b.start);
+      let st = stats.get(date);
+      if(!st) stats.set(date, st = { total:0, pending:0, archive:true });
+      if(b.status === 'NOT_SERVED') continue;
+      st.total++;
+      if(visitStatus(b.id) === 'pending') st.pending++;
+      if(!isImportedBooking(b) && !FROZEN_DATES.has(date)) st.archive = false;
+    }
+    return stats;
+  }
+  function renderCloseDayCalendar(){
+    const box = document.getElementById('cdCal');
+    const toggle = document.getElementById('cdCalToggle');
+    if(!box) return;
+    const sel = document.getElementById('closeDayDate').value;
+    const today = todayStr();
+    const stats = closeDayCalendarStats();
+    // дни, которые надо закрыть: прошли или сегодня, есть записи, не архив, не закрыты
+    const unclosed = [];
+    stats.forEach((st, date) => {
+      if(st.total && !st.archive && date <= today && !dayClose.closed[date]) unclosed.push(date);
+    });
+    unclosed.sort();
+    const badge = document.getElementById('cdCalBadge');
+    badge.hidden = !unclosed.length; badge.textContent = unclosed.length;
+    toggle.setAttribute('aria-expanded', cdCalOpen ? 'true' : 'false');
+    box.hidden = !cdCalOpen;
+    if(!cdCalOpen) return;
+    if(!cdCalMonth) cdCalMonth = (sel || today).slice(0,7);
+    const [Y, M] = cdCalMonth.split('-').map(Number);
+    const first = new Date(Y, M-1, 1), daysInMonth = new Date(Y, M, 0).getDate();
+    const lead = (first.getDay() + 6) % 7;
+    let h = '<div class="cd-cal-head"><button type="button" class="cd-cal-nav" data-calnav="-1" aria-label="Предыдущий месяц">‹</button>' +
+      '<div class="cd-cal-title">'+MONTHS_FULL[M-1]+' '+Y+'</div>' +
+      '<button type="button" class="cd-cal-nav" data-calnav="1" aria-label="Следующий месяц">›</button></div><div class="cd-cal-grid">';
+    WEEKDAYS_SHORT.forEach(w => { h += '<div class="cd-cal-dow">'+w+'</div>'; });
+    for(let i = 0; i < lead; i++) h += '<span class="cd-cal-day blank"></span>';
+    for(let d = 1; d <= daysInMonth; d++){
+      const date = Y+'-'+String(M).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+      const st = stats.get(date);
+      let cls = 'idle', mark = '', tip = 'нет записей';
+      if(st && st.total){
+        if(st.archive){ cls = 'archive'; tip = 'архив (импорт), ' + st.total + ' зап.'; }
+        else if(dayClose.closed[date]){ cls = 'closed'; mark = '✓'; tip = 'день закрыт, ' + st.total + ' зап.'; }
+        else if(date > today){ cls = 'upcoming'; mark = '•'; tip = 'предстоящие записи: ' + st.total; }
+        else if(date === today){ cls = 'today-open'; mark = '!'; tip = 'сегодня, не закрыт, ' + st.total + ' зап.' + (st.pending ? ', не подтверждено ' + st.pending : ''); }
+        else { cls = 'unclosed'; mark = '!'; tip = 'НЕ ЗАКРЫТ, ' + st.total + ' зап.' + (st.pending ? ', не подтверждено ' + st.pending : ''); }
+      }
+      if(date === today) cls += ' today';
+      if(date === sel) cls += ' sel';
+      h += '<button type="button" class="cd-cal-day '+cls+'" data-caldate="'+date+'" title="'+d+' '+MONTHS_SHORT[M-1]+' — '+esc(tip)+'" aria-label="'+d+' '+MONTHS_FULL[M-1]+': '+esc(tip)+'">' + d + (mark ? '<small>'+mark+'</small>' : '') + '</button>';
+    }
+    h += '</div><div class="cd-cal-legend">' +
+      '<span><i style="background:var(--good-soft)"></i>закрыт ✓</span>' +
+      '<span><i style="background:var(--bad-soft)"></i>не закрыт !</span>' +
+      '<span><i style="background:var(--warn-soft)"></i>сегодня</span>' +
+      '<span><i style="background:var(--info-soft)"></i>впереди •</span>' +
+      '<span><i style="background:var(--surface-2)"></i>архив</span></div>';
+    if(unclosed.length){
+      const old = unclosed[0];
+      h += '<div class="cd-cal-foot"><span>Не закрыто дней: <b>'+unclosed.length+'</b> (с '+old.slice(8,10)+'.'+old.slice(5,7)+')</span><button type="button" class="cd-cal-jump" data-caljump="'+old+'">Открыть '+old.slice(8,10)+'.'+old.slice(5,7)+'</button></div>';
+    } else {
+      h += '<div class="cd-cal-foot"><span class="ok">Все прошедшие дни закрыты ✓</span></div>';
+    }
+    box.innerHTML = h;
+  }
+  document.getElementById('cdCalToggle').addEventListener('click', () => { cdCalOpen = !cdCalOpen; renderCloseDayCalendar(); });
+  document.getElementById('cdCal').addEventListener('click', e => {
+    const nav = e.target.closest('[data-calnav]');
+    if(nav){
+      const [Y, M] = cdCalMonth.split('-').map(Number);
+      const d = new Date(Y, M-1 + Number(nav.dataset.calnav), 1);
+      cdCalMonth = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+      renderCloseDayCalendar(); return;
+    }
+    const pick = e.target.closest('[data-caldate],[data-caljump]');
+    if(!pick) return;
+    const date = pick.dataset.caldate || pick.dataset.caljump;
+    document.getElementById('closeDayDate').value = date;
+    cdCalMonth = date.slice(0,7);
+    renderCloseDay();
+  });
+
   function renderCloseDay(){
     renderCloseDayServices();
+    renderCloseDayCalendar();
     renderConsLog();
     renderProcurement();
     renderProductSales();
@@ -4229,7 +4357,7 @@
     dayClose.closed[date] = false;
     renderCloseDay();
   });
-  document.getElementById('closeDayDate').addEventListener('change', renderCloseDay);
+  document.getElementById('closeDayDate').addEventListener('change', () => { const v = document.getElementById('closeDayDate').value; if(v) cdCalMonth = v.slice(0,7); renderCloseDay(); });
   (function(){
     const d = new Date();
     document.getElementById('closeDayDate').value = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
