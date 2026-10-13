@@ -720,7 +720,13 @@
   .cd-cal-toggle{padding:8px 14px; border-radius:9px; border:1px solid var(--border); background:var(--surface); color:var(--ink); font:inherit; font-size:13.5px; font-weight:500; cursor:pointer; display:inline-flex; align-items:center; gap:8px;}
   .cd-cal-toggle[aria-expanded="true"]{background:var(--accent-soft); border-color:var(--accent); color:var(--accent);}
   .cd-cal-badge{min-width:20px; height:20px; padding:0 6px; border-radius:999px; background:var(--bad); color:#fff; font-size:12px; font-weight:700; display:inline-flex; align-items:center; justify-content:center;}
-  .cd-cal-wrap{position:relative;}
+  .cd-cal-wrap{position:static;}
+  .cd-date-ctl{position:relative; display:inline-flex; align-items:center; gap:6px;}
+  .cd-day-step{width:36px; height:38px; border-radius:9px; border:1px solid var(--border); background:var(--surface); color:var(--ink); font-size:18px; line-height:1; cursor:pointer;}
+  .cd-day-step:hover{border-color:var(--accent); color:var(--accent);}
+  .cd-cal-toggle{min-height:38px;}
+  .cd-cal-label{font-weight:600; font-variant-numeric:tabular-nums; white-space:nowrap;}
+  .cd-cal-foot .cd-cal-today{margin-left:auto;}
   .cd-cal-caret{font-size:11px; opacity:.7;}
   .cd-cal-toggle[aria-expanded="true"] .cd-cal-caret{transform:rotate(180deg);}
   .cd-cal{position:absolute; top:calc(100% + 8px); left:0; z-index:40; width:340px; max-width:calc(100vw - 32px); background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px; box-shadow:var(--shadow);}
@@ -1089,13 +1095,17 @@
 
   <div id="view-close-day" hidden>
     <div class="close-day-header">
-      <input type="date" id="closeDayDate">
-      <span class="day-status" id="closeDayStatus"></span>
-      <span class="cd-status-note" id="closeDayPendingNote" hidden></span>
-      <div class="cd-cal-wrap" id="cdCalWrap">
-        <button type="button" class="cd-cal-toggle" id="cdCalToggle" aria-expanded="false" aria-haspopup="true">Календарь <span class="cd-cal-badge" id="cdCalBadge" hidden></span><span class="cd-cal-caret" aria-hidden="true">▾</span></button>
+      <input type="hidden" id="closeDayDate">
+      <div class="cd-date-ctl">
+        <button type="button" class="cd-day-step" id="cdDayPrev" aria-label="Предыдущий день" title="Предыдущий день">‹</button>
+        <div class="cd-cal-wrap" id="cdCalWrap">
+          <button type="button" class="cd-cal-toggle" id="cdCalToggle" aria-expanded="false" aria-haspopup="true" title="Выбрать день в календаре"><span class="cd-cal-label" id="cdCalLabel">—</span> <span class="cd-cal-badge" id="cdCalBadge" hidden></span><span class="cd-cal-caret" aria-hidden="true">▾</span></button>
+        </div>
+        <button type="button" class="cd-day-step" id="cdDayNext" aria-label="Следующий день" title="Следующий день">›</button>
         <div class="cd-cal" id="cdCal" hidden></div>
       </div>
+      <span class="day-status" id="closeDayStatus"></span>
+      <span class="cd-status-note" id="closeDayPendingNote" hidden></span>
       <div class="cd-spacer"></div>
       <button class="cd-save-btn" id="closeDaySave">Закрыть день</button>
       <button class="cd-unlock-btn" id="closeDayUnlock" hidden>Разблокировать день</button>
@@ -3908,6 +3918,11 @@
     const toggle = document.getElementById('cdCalToggle');
     if(!box) return;
     const sel = document.getElementById('closeDayDate').value;
+    const lbl = document.getElementById('cdCalLabel');
+    if(sel){
+      const [sy, sm, sd] = sel.split('-').map(Number);
+      lbl.textContent = WEEKDAYS_SHORT[(new Date(sy, sm-1, sd).getDay() + 6) % 7] + ', ' + sd + ' ' + MONTHS_SHORT[sm-1] + ' ' + sy;
+    } else lbl.textContent = 'Выберите день';
     const today = todayStr();
     const stats = closeDayCalendarStats();
     // дни, которые надо закрыть: прошли или сегодня, есть записи, не архив, не закрыты
@@ -3953,9 +3968,9 @@
       '<span><i style="background:var(--surface-2)"></i>архив</span></div>';
     if(unclosed.length){
       const old = unclosed[0];
-      h += '<div class="cd-cal-foot"><span>Не закрыто дней: <b>'+unclosed.length+'</b> (с '+old.slice(8,10)+'.'+old.slice(5,7)+')</span><button type="button" class="cd-cal-jump" data-caljump="'+old+'">Открыть '+old.slice(8,10)+'.'+old.slice(5,7)+'</button></div>';
+      h += '<div class="cd-cal-foot"><span>Не закрыто дней: <b>'+unclosed.length+'</b> (с '+old.slice(8,10)+'.'+old.slice(5,7)+')</span><button type="button" class="cd-cal-jump" data-caljump="'+old+'">Открыть '+old.slice(8,10)+'.'+old.slice(5,7)+'</button><button type="button" class="cd-cal-jump cd-cal-today" data-caldate="'+today+'">Сегодня</button></div>';
     } else {
-      h += '<div class="cd-cal-foot"><span class="ok">Все прошедшие дни закрыты ✓</span></div>';
+      h += '<div class="cd-cal-foot"><span class="ok">Все прошедшие дни закрыты ✓</span><button type="button" class="cd-cal-jump cd-cal-today" data-caldate="'+today+'">Сегодня</button></div>';
     }
     box.innerHTML = h;
   }
@@ -3976,8 +3991,19 @@
     cdCalOpen = false;
     renderCloseDay();
   });
+  function shiftCloseDay(delta){
+    const cur = document.getElementById('closeDayDate').value || todayStr();
+    const [y, m, d] = cur.split('-').map(Number);
+    const n = new Date(y, m-1, d + delta);
+    const v = n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-'+String(n.getDate()).padStart(2,'0');
+    document.getElementById('closeDayDate').value = v;
+    cdCalMonth = v.slice(0,7);
+    renderCloseDay();
+  }
+  document.getElementById('cdDayPrev').addEventListener('click', () => shiftCloseDay(-1));
+  document.getElementById('cdDayNext').addEventListener('click', () => shiftCloseDay(1));
   document.addEventListener('click', e => {
-    if(cdCalOpen && !e.composedPath().includes(document.getElementById('cdCalWrap'))){ cdCalOpen = false; renderCloseDayCalendar(); }
+    if(cdCalOpen && !e.composedPath().includes(document.querySelector('.cd-date-ctl'))){ cdCalOpen = false; renderCloseDayCalendar(); }
   });
   document.addEventListener('keydown', e => {
     if(e.key === 'Escape' && cdCalOpen){ cdCalOpen = false; renderCloseDayCalendar(); document.getElementById('cdCalToggle').focus(); }
