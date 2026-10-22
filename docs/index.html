@@ -2498,7 +2498,7 @@
     const colL = i => xlsxColName(i);
     const serial = iso => Math.round((Date.UTC(+iso.slice(0,4), +iso.slice(5,7)-1, +iso.slice(8,10)) - Date.UTC(1899, 11, 30)) / 86400000);
     const isDay = ex.gran === 'day';
-    const periodLabels = ex.head.slice(C0, C0 + nB);
+    const periodLabels = ex.head.slice(3, 3 + nB);   // в head: Зал, Мастер, Показатель — служебные, периоды идут с 4-й позиции
     // стили (индексы cellXfs)
     const S = { def:0, title:1, hdrL:2, hdrR:3, hdrDate:4, blueL:5, blueB:6, blueTopL:7, blueTopB:8, bluePct:9, blueDate:10, blueR:11, blueTop:12,
       hidden:13, label:14, money:15, moneyTot:16, bold:17, boldMoney:18, boldMoneyTot:19, cnt:20 };
