@@ -236,6 +236,25 @@
   .staff-table td.st-cell.on{background:var(--good-soft);}
   .staff-table td.st-cell.auto{color:var(--good); font-size:11px;}
   .staff-table td.st-cell.auto[title]{background:color-mix(in srgb, var(--good-soft) 70%, var(--surface)); }
+  .cd-subtabs.four{flex-wrap:wrap;}
+  .cd-staff-body{padding:4px 16px 16px; display:grid; gap:16px;}
+  .cd-staff-title{display:block; font-size:11.5px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin-bottom:8px;}
+  .cd-staff-chips{display:flex; flex-wrap:wrap; gap:8px;}
+  .cd-staff-chip{display:inline-flex; align-items:center; gap:8px; padding:8px 14px; border-radius:999px; border:1px solid var(--border); background:var(--surface); color:var(--ink); font:inherit; font-size:13.5px; cursor:pointer;}
+  .cd-staff-chip small{color:var(--muted); font-size:11.5px;}
+  .cd-staff-chip .mark{width:16px; height:16px; border-radius:50%; border:1.5px solid var(--border); display:inline-flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; line-height:1;}
+  .cd-staff-chip.on{background:var(--good-soft); border-color:var(--good); color:var(--good);}
+  .cd-staff-chip.on small{color:inherit; opacity:.8;}
+  .cd-staff-chip.on .mark{background:var(--good); border-color:var(--good); color:#fff;}
+  .cd-staff-chip.auto{cursor:default; background:color-mix(in srgb, var(--good-soft) 70%, var(--surface)); border-color:transparent;}
+  .cd-staff-chip:not(.auto):hover{border-color:var(--accent);}
+  .cd-staff-chip:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+  .cd-staff-none{color:var(--muted); font-size:13px;}
+  .cd-act-summary{display:flex; flex-wrap:wrap; gap:6px; padding:0 16px 10px;}
+  .cd-act-summary:empty{display:none;}
+  .cd-act-pill{font-size:12px; font-weight:600; padding:3px 10px; border-radius:999px; background:var(--accent-soft); color:var(--accent);}
+  .cd-act-del{background:none; border:none; color:var(--muted); cursor:pointer; font-size:16px; padding:2px 8px; border-radius:6px;}
+  .cd-act-del:hover{color:var(--bad); background:var(--bad-soft);}
   .st-edit{border:none; background:transparent; color:var(--muted); cursor:pointer; font-size:14px; padding:2px 5px; border-radius:6px;}
   .st-edit:hover{background:var(--accent-soft); color:var(--accent);}
   .st-toggle{width:100%; height:34px; border:none; background:transparent; color:var(--good); font:inherit; font-weight:700; cursor:pointer; padding:0;}
@@ -741,7 +760,7 @@
     /* подвкладки «Закрытия дня» */
     .cd-subtabs{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; overflow:visible; border-bottom:none;}
     .cd-subtab-btn{margin:0; padding:9px 4px; font-size:12.5px; text-align:center; background:var(--surface); border:1px solid var(--border); border-radius:10px; white-space:normal;}
-    .cd-subtabs.two{grid-template-columns:repeat(2,minmax(0,1fr));}
+    .cd-subtabs.two, .cd-subtabs.four{grid-template-columns:repeat(2,minmax(0,1fr));}
     .cd-subtab-btn.active{background:var(--accent-soft); color:var(--accent); border-color:var(--accent);}
     /* iOS не должен приближать страницу при вводе: шрифт полей не меньше 16px */
     input, select, textarea{font-size:16px !important;}
@@ -1229,10 +1248,11 @@
       <div class="cd-summary-tile total"><span class="label">Итого за день</span><span class="value" id="closeDayTotalValue">—</span></div>
     </div>
 
-    <div class="cd-subtabs">
+    <div class="cd-subtabs four">
       <button class="cd-subtab-btn active" data-subtab="services">Услуги</button>
       <button class="cd-subtab-btn" data-subtab="consumables">Расходники</button>
       <button class="cd-subtab-btn" data-subtab="procurement">Закуп</button>
+      <button class="cd-subtab-btn" data-subtab="staff">Персонал на смене</button>
     </div>
 
     <div id="cd-panel-services">
@@ -1327,6 +1347,51 @@
           </table>
         </div>
         <div class="empty" id="procurementEmpty" hidden><b>Закупа за этот день нет</b>Добавьте первую позицию кнопкой выше.</div>
+      </div>
+    </div>
+
+    <div id="cd-panel-staff" hidden>
+      <div class="panel">
+        <div class="filters">
+          <span class="result-count" id="cdStaffNote">Кто работал в этот день. Отметки те же, что в графике вкладки «Персонал».</span>
+          <div class="spacer"></div>
+          <button type="button" class="refresh-btn" id="cdStaffAddToggle">Добавить сотрудника</button>
+        </div>
+        <div class="add-master-row" id="cdStaffAddRow" hidden>
+          <input type="text" id="cdStaffName" placeholder="Имя сотрудника" autocomplete="off">
+          <select id="cdStaffRole"></select>
+          <button type="button" class="cd-save-btn" id="cdStaffAddSave">Добавить</button>
+          <button type="button" class="am-cancel" id="cdStaffAddCancel">Отмена</button>
+          <p class="add-master-hint">Ставку за смену укажет владелец во вкладке «Персонал».</p>
+        </div>
+        <div class="cd-staff-body">
+          <div class="cd-staff-group"><span class="cd-staff-title">Мастера · из записей zapis.kz</span><div class="cd-staff-chips" id="cdStaffMasters"></div></div>
+          <div class="cd-staff-group"><span class="cd-staff-title">Персонал · нажмите, чтобы отметить смену</span><div class="cd-staff-chips" id="cdStaffMembers"></div></div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:14px;">
+        <div class="filters">
+          <span class="result-count">Активность администратора за день: обзвон клиентов, сообщения, отчёты и другое.</span>
+          <div class="spacer"></div>
+          <button type="button" class="refresh-btn" id="cdActAddToggle">Добавить запись</button>
+        </div>
+        <div class="add-master-row" id="cdActAddRow" hidden>
+          <select id="cdActType" style="width:190px;"></select>
+          <input type="text" id="cdActText" placeholder="Что сделано (например, напомнил о записи на завтра)" autocomplete="off" style="flex:1; min-width:220px;">
+          <input type="number" id="cdActQty" placeholder="Кол-во" min="0" step="1" style="width:92px;">
+          <select id="cdActWho" style="width:170px;"></select>
+          <button type="button" class="cd-save-btn" id="cdActSave">Добавить</button>
+          <button type="button" class="am-cancel" id="cdActCancel">Отмена</button>
+        </div>
+        <div class="cd-act-summary" id="cdActSummary"></div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Время</th><th>Вид активности</th><th>Описание</th><th class="num">Кол-во</th><th>Кто</th><th></th></tr></thead>
+            <tbody id="cdActBody"></tbody>
+          </table>
+        </div>
+        <div class="empty" id="cdActEmpty" hidden><b>Активности за этот день нет</b>Добавьте первую запись кнопкой выше.</div>
       </div>
     </div>
   </div>
@@ -2959,7 +3024,7 @@
     writeoffs: {},
     adjustments: {},
     masterAdj: {},
-    staff: { members: [], shifts: {} },
+    staff: { members: [], shifts: {}, activity: {} },
     closed: {},
     openForms: new Set(),
     visitZone: {},
@@ -3566,6 +3631,7 @@
       document.getElementById('cd-panel-services').hidden = sub !== 'services';
       document.getElementById('cd-panel-consumables').hidden = sub !== 'consumables';
       document.getElementById('cd-panel-procurement').hidden = sub !== 'procurement';
+      document.getElementById('cd-panel-staff').hidden = sub !== 'staff';
     });
   });
 
@@ -4568,6 +4634,7 @@
     renderConsLog();
     renderProcurement();
     renderProductSales();
+    renderDayStaff();
     scheduleSave('day_close');
   }
 
@@ -5247,6 +5314,114 @@
       state.pnlUnlocked = true; input.value = ''; err.hidden = true; renderStaff();
     } else { err.hidden = false; input.value = ''; input.focus(); }
   }
+
+  // ---------------------------------------------------------------------
+  // Закрытие дня → «Персонал на смене»: смены сотрудников за выбранный день (те же данные,
+  // что в графике вкладки «Персонал») и список активности администратора за день.
+  //   dayClose.staff.activity: { 'YYYY-MM-DD': [{ id, time, type, text, qty, who }] }
+  // ---------------------------------------------------------------------
+  const ACT_TYPES = ['Обзвон клиентов', 'Сообщения клиентам', 'Подтверждение записей', 'Работа с кассой / отчёт', 'Приём товара / закуп', 'Другое'];
+  function renderDayStaff(){
+    const dateEl = document.getElementById('closeDayDate');
+    const date = dateEl && dateEl.value;
+    if(!date || !document.getElementById('cd-panel-staff')) return;
+    const roleSel = document.getElementById('cdStaffRole');
+    if(!roleSel.options.length) roleSel.innerHTML = STAFF_ROLES.map(r => '<option value="'+esc(r.role)+'">'+esc(r.role)+'</option>').join('');
+    const typeSel = document.getElementById('cdActType');
+    if(!typeSel.options.length) typeSel.innerHTML = ACT_TYPES.map(t => '<option value="'+esc(t)+'">'+esc(t)+'</option>').join('');
+
+    const onIds = dayClose.staff.shifts[date] || [];
+    // мастера: у кого в этот день есть записи
+    const worked = masterWorkDays(date.slice(0, 7));
+    const mNames = Array.from(worked.keys()).filter(n => worked.get(n).has(date)).sort((a, b) => a.localeCompare(b, 'ru'));
+    document.getElementById('cdStaffMasters').innerHTML = mNames.length
+      ? mNames.map(n => '<span class="cd-staff-chip on auto" title="Мастер подтягивается из записей"><span class="mark">✓</span>'+esc(n)+' <small>записей: '+worked.get(n).get(date)+'</small></span>').join('')
+      : '<span class="cd-staff-none">В этот день записей у мастеров нет.</span>';
+    // персонал
+    const members = dayClose.staff.members.filter(m => m.active !== false || onIds.indexOf(m.id) >= 0)
+      .sort((a, b) => STAFF_ROLES.findIndex(r => r.role === a.role) - STAFF_ROLES.findIndex(r => r.role === b.role) || a.name.localeCompare(b.name, 'ru'));
+    document.getElementById('cdStaffMembers').innerHTML = members.length
+      ? members.map(m => { const on = onIds.indexOf(m.id) >= 0;
+          return '<button type="button" class="cd-staff-chip'+(on ? ' on' : '')+'" data-id="'+m.id+'" aria-pressed="'+on+'"><span class="mark">'+(on ? '✓' : '')+'</span>'+esc(m.name)+' <small>'+esc(m.role)+'</small></button>'; }).join('')
+      : '<span class="cd-staff-none">Сотрудников пока нет. Нажмите «Добавить сотрудника».</span>';
+    document.getElementById('cdStaffNote').textContent = 'Смена ' + date.split('-').reverse().join('.') + ': мастеров ' + mNames.length + ', персонала ' + members.filter(m => onIds.indexOf(m.id) >= 0).length + '. Отметки те же, что в графике вкладки «Персонал».';
+
+    // кто делал: сотрудники на смене, иначе все активные
+    const whoPool = members.filter(m => onIds.indexOf(m.id) >= 0);
+    const pool = whoPool.length ? whoPool : dayClose.staff.members.filter(m => m.active !== false);
+    const whoSel = document.getElementById('cdActWho'), prevWho = whoSel.value;
+    whoSel.innerHTML = '<option value="">Кто — не указан</option>' + pool.map(m => '<option value="'+esc(m.name)+'">'+esc(m.name)+'</option>').join('');
+    if(prevWho && pool.some(m => m.name === prevWho)) whoSel.value = prevWho;
+    else {
+      const adm = pool.filter(m => m.role === 'Администратор');
+      if(adm.length === 1) whoSel.value = adm[0].name;
+    }
+
+    // активность
+    const acts = (dayClose.staff.activity[date] || []).slice().sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+    document.getElementById('cdActBody').innerHTML = acts.map(a =>
+      '<tr><td>'+esc(a.time || '')+'</td><td><b>'+esc(a.type)+'</b></td><td>'+esc(a.text || '')+'</td><td class="num">'+(a.qty ? a.qty : '')+'</td><td>'+esc(a.who || '')+'</td>' +
+      '<td><button type="button" class="cd-act-del" data-id="'+a.id+'" title="Удалить запись" aria-label="Удалить запись">×</button></td></tr>').join('');
+    document.getElementById('cdActEmpty').hidden = acts.length > 0;
+    const sums = {};
+    acts.forEach(a => { if(a.qty) sums[a.type] = (sums[a.type] || 0) + Number(a.qty); });
+    document.getElementById('cdActSummary').innerHTML = Object.keys(sums).map(t => '<span class="cd-act-pill">'+esc(t)+': '+sums[t]+'</span>').join('');
+  }
+  document.getElementById('cdStaffMembers').addEventListener('click', e => {
+    const b = e.target.closest('.cd-staff-chip'); if(!b) return;
+    const date = document.getElementById('closeDayDate').value; if(!date) return;
+    const arr = dayClose.staff.shifts[date] || (dayClose.staff.shifts[date] = []);
+    const i = arr.indexOf(b.dataset.id);
+    if(i >= 0) arr.splice(i, 1); else arr.push(b.dataset.id);
+    if(!arr.length) delete dayClose.staff.shifts[date];
+    renderDayStaff(); scheduleSave('day_close');
+  });
+  document.getElementById('cdStaffAddToggle').addEventListener('click', () => {
+    const row = document.getElementById('cdStaffAddRow'); row.hidden = !row.hidden;
+    if(!row.hidden) document.getElementById('cdStaffName').focus();
+  });
+  document.getElementById('cdStaffAddCancel').addEventListener('click', () => { document.getElementById('cdStaffAddRow').hidden = true; });
+  document.getElementById('cdStaffAddSave').addEventListener('click', () => {
+    const nameEl = document.getElementById('cdStaffName'), name = nameEl.value.trim();
+    if(!name){ nameEl.focus(); return; }
+    const date = document.getElementById('closeDayDate').value;
+    const id = 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+    dayClose.staff.members.push({ id, name, role: document.getElementById('cdStaffRole').value, rate: 0, active: true });
+    if(date){ (dayClose.staff.shifts[date] || (dayClose.staff.shifts[date] = [])).push(id); }   // добавили в этот день — значит, он на смене
+    nameEl.value = ''; document.getElementById('cdStaffAddRow').hidden = true;
+    renderDayStaff(); scheduleSave('day_close');
+  });
+  document.getElementById('cdActAddToggle').addEventListener('click', () => {
+    const row = document.getElementById('cdActAddRow'); row.hidden = !row.hidden;
+    if(!row.hidden) document.getElementById('cdActText').focus();
+  });
+  document.getElementById('cdActCancel').addEventListener('click', () => { document.getElementById('cdActAddRow').hidden = true; });
+  function cdActSave(){
+    const date = document.getElementById('closeDayDate').value; if(!date) return;
+    const text = document.getElementById('cdActText').value.trim();
+    const qty = Math.max(0, Math.round(Number(document.getElementById('cdActQty').value) || 0));
+    const type = document.getElementById('cdActType').value;
+    if(!text && !qty){ document.getElementById('cdActText').focus(); return; }
+    const now = new Date();
+    const list = dayClose.staff.activity[date] || (dayClose.staff.activity[date] = []);
+    list.push({ id: 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), time: String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0'),
+      type, text, qty, who: document.getElementById('cdActWho').value });
+    document.getElementById('cdActText').value = ''; document.getElementById('cdActQty').value = '';
+    renderDayStaff(); scheduleSave('day_close');
+    document.getElementById('cdActText').focus();
+  }
+  document.getElementById('cdActSave').addEventListener('click', cdActSave);
+  document.getElementById('cdActText').addEventListener('keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); cdActSave(); } });
+  document.getElementById('cdActBody').addEventListener('click', async e => {
+    const b = e.target.closest('.cd-act-del'); if(!b) return;
+    const date = document.getElementById('closeDayDate').value;
+    const ok = await showConfirmDialog('Удалить эту запись об активности?', { okText: 'Удалить' });
+    if(!ok) return;
+    dayClose.staff.activity[date] = (dayClose.staff.activity[date] || []).filter(a => a.id !== b.dataset.id);
+    if(!dayClose.staff.activity[date].length) delete dayClose.staff.activity[date];
+    renderDayStaff(); scheduleSave('day_close');
+  });
+
   document.getElementById('staffUnlock').addEventListener('click', staffTryUnlock);
   document.getElementById('staffPassword').addEventListener('keydown', e => { if(e.key === 'Enter') staffTryUnlock(); });
 
@@ -5803,7 +5978,7 @@
     dayClose.writeoffs = dc.writeoffs || {};
     dayClose.adjustments = dc.adjustments || {};
     dayClose.masterAdj = dc.masterAdj || {};
-    dayClose.staff = { members: (dc.staff && dc.staff.members) || [], shifts: (dc.staff && dc.staff.shifts) || {} };
+    dayClose.staff = { members: (dc.staff && dc.staff.members) || [], shifts: (dc.staff && dc.staff.shifts) || {}, activity: (dc.staff && dc.staff.activity) || {} };
     dayClose.closed = dc.closed || {};
     dayClose.visitZone = dc.visitZone || {};
     dayClose.serviceOverride = dc.serviceOverride || {};
