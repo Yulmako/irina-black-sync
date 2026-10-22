@@ -2386,6 +2386,7 @@
 
     let gridHtml = '';
     const exportRows = [];
+    const exportMasters = [];
     let lastZone2 = null;
     const colTotals = buckets.map(() => 0);
     let grandTotal = 0;
@@ -2414,9 +2415,12 @@
         if(hasData){
         put('Выручка', revV); put('Расходники', consV); put('Прибыль', profV); put('ЗП мастера', salV); put('ЧП салона', netV);
         const cm = catByMaster.get(r.name);
+        const exCats = [];
         if(cm) for(const cat of Array.from(cm.keys()).sort((x,y)=>x.localeCompare(y,'ru'))){
-          const bm = cm.get(cat); put('Услуг: '+cat, buckets.map(b => (bm && bm.get(b)) || 0));
+          const bm = cm.get(cat); const arr = buckets.map(b => (bm && bm.get(b)) || 0);
+          put('Услуг: '+cat, arr); exCats.push({ cat, vals: arr });
         }
+        exportMasters.push({ zone: zoneName, name: r.name, rate: r.commission_rate, rev: revV, cons: consV, cats: exCats });
         }
       }
 
@@ -2458,6 +2462,8 @@
         return bucketLabel(b, gridGran);
       }), 'Итого'],
       rows: exportRows,
+      masters: exportMasters,
+      bucketKeys: buckets.slice(),
     };
   }
   // Скачивание детализации в Excel (.xlsx). Файл собирается прямо в браузере,
@@ -2481,39 +2487,173 @@
   }
   function xlsxColName(i){ let n = i + 1, s = ''; while(n > 0){ const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; }
   function xmlEsc(t){ return String(t).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  // Оформление как на листе «Сентябрь» исходной таблицы: колонки Зал / Мастер / показатель / дни / Итого,
+  // у каждого мастера голубая шапка со ставкой и строки «Общая сумма, Расходники, Прибыль, ЗП мастера,
+  // ЧП салона» + количество услуг по категориям. Прибыль, ЗП и ЧП — формулы, как в таблице.
   function buildGridXlsx(ex){
     const enc = new TextEncoder();
-    const rowsAll = [ex.head, ...ex.rows];
-    let sheetRows = '';
-    rowsAll.forEach((row, ri) => {
-      let cells = '';
-      row.forEach((v, ci) => {
-        const ref = xlsxColName(ci) + (ri + 1);
-        if(ri === 0) cells += '<c r="'+ref+'" s="1" t="inlineStr"><is><t>'+xmlEsc(v)+'</t></is></c>';
-        else if(typeof v === 'number') cells += '<c r="'+ref+'" s="2"><v>'+v+'</v></c>';
-        else cells += '<c r="'+ref+'" t="inlineStr"><is><t>'+xmlEsc(v)+'</t></is></c>';
-      });
-      sheetRows += '<row r="'+(ri + 1)+'">'+cells+'</row>';
-    });
-    const lastCol = xlsxColName(ex.head.length - 1), lastRow = rowsAll.length;
-    let cols = '<col min="1" max="1" width="16" customWidth="1"/><col min="2" max="2" width="24" customWidth="1"/><col min="3" max="3" width="30" customWidth="1"/>';
-    if(ex.head.length > 3) cols += '<col min="4" max="'+ex.head.length+'" width="14" customWidth="1"/>';
+    const nB = ex.head.length - 4;            // число периодов (head: Зал, Мастер, Показатель, ...периоды, Итого)
+    const C0 = 3;                             // индекс первой колонки периодов (D)
+    const lastC = C0 + nB;                    // колонка «Итого»
+    const colL = i => xlsxColName(i);
+    const serial = iso => Math.round((Date.UTC(+iso.slice(0,4), +iso.slice(5,7)-1, +iso.slice(8,10)) - Date.UTC(1899, 11, 30)) / 86400000);
+    const isDay = ex.gran === 'day';
+    const periodLabels = ex.head.slice(C0, C0 + nB);
+    // стили (индексы cellXfs)
+    const S = { def:0, title:1, hdrL:2, hdrR:3, hdrDate:4, blueL:5, blueB:6, blueTopL:7, blueTopB:8, bluePct:9, blueDate:10, blueR:11, blueTop:12,
+      hidden:13, label:14, money:15, moneyTot:16, bold:17, boldMoney:18, boldMoneyTot:19, cnt:20 };
+    const rows = [];  // [{ r, h, cells:[xml] }]
+    let rn = 0;
+    const addRow = (h) => { rn++; const row = { r: rn, h, cells: [] }; rows.push(row); return row; };
+    const esc2 = v => xmlEsc(v);
+    const cStr = (row, ci, v, s) => row.cells.push('<c r="'+colL(ci)+row.r+'" s="'+s+'" t="inlineStr"><is><t xml:space="preserve">'+esc2(v)+'</t></is></c>');
+    const cNum = (row, ci, v, s) => row.cells.push('<c r="'+colL(ci)+row.r+'" s="'+s+'"><v>'+v+'</v></c>');
+    const cFor = (row, ci, f, v, s) => row.cells.push('<c r="'+colL(ci)+row.r+'" s="'+s+'"><f>'+esc2(f)+'</f><v>'+v+'</v></c>');
+    const cEmpty = (row, ci, s) => row.cells.push('<c r="'+colL(ci)+row.r+'" s="'+s+'"/>');
+    const rangeSum = (r) => 'SUM('+colL(C0)+r+':'+colL(C0 + nB - 1)+r+')';
+    const periodCells = (row, sHdrText, sHdrDate) => {
+      for(let i = 0; i < nB; i++){
+        if(isDay && ex.bucketKeys[i]) cNum(row, C0 + i, serial(ex.bucketKeys[i]), sHdrDate);
+        else cStr(row, C0 + i, periodLabels[i], sHdrText);
+      }
+    };
+
+    // строка 1 — заголовок файла
+    const gname = { day:'по дням', week:'по неделям', month:'по месяцам', year:'по годам' }[ex.gran] || ex.gran;
+    const r1 = addRow(40.5);
+    cStr(r1, 0, 'Детализация по мастерам · ' + ex.from.split('-').reverse().join('.') + ' — ' + ex.to.split('-').reverse().join('.') + ' · ' + gname, S.title);
+    // строка 2 — розовая шапка
+    const r2 = addRow(21);
+    cStr(r2, 0, 'Зал', S.hdrR); cStr(r2, 1, 'Мастер', S.hdrL); cEmpty(r2, 2, S.hdrR);
+    periodCells(r2, S.hdrR, S.hdrDate);
+    cStr(r2, lastC, 'Итого', S.hdrR);
+
+    const metricRows = { rev: [], cons: [], profit: [], sal: [], net: [] };   // номера строк для итогового блока
+    let lastZone = null;
+    for(const m of ex.masters){
+      if(m.zone !== lastZone){
+        lastZone = m.zone;
+        const z = addRow();
+        cStr(z, 0, m.zone, S.blueTopL); cEmpty(z, 1, S.blueTop); cStr(z, 2, m.zone, S.blueTopB);
+        for(let c = C0; c <= lastC; c++) cEmpty(z, c, S.blueTop);
+      }
+      // шапка мастера
+      const h = addRow();
+      const hr = h.r;
+      cStr(h, 0, m.zone, S.blueL); cStr(h, 1, m.name, S.blueL); cNum(h, 2, m.rate, S.bluePct);
+      periodCells(h, S.blueR, S.blueDate);
+      cEmpty(h, lastC, S.blueL);
+      const rRev = hr + 1, rCons = hr + 2, rProf = hr + 3, rSal = hr + 4, rNet = hr + 5;
+      const lab = (row, text) => { cStr(row, 0, m.zone, S.blueL); cStr(row, 1, m.name, S.hidden); cStr(row, 2, text, S.label); };
+      const profV = m.rev.map((v, i) => v - m.cons[i]);
+      const salV = profV.map(v => Math.round(v * m.rate));
+      const netV = profV.map((v, i) => v - salV[i]);
+      const sum = a => a.reduce((x, y) => x + y, 0);
+      // Общая сумма
+      let row = addRow(); lab(row, 'Общая сумма');
+      m.rev.forEach((v, i) => { if(v) cNum(row, C0 + i, v, S.money); });
+      cFor(row, lastC, rangeSum(row.r), sum(m.rev), S.moneyTot);
+      // Расходники
+      row = addRow(); lab(row, 'Расходники');
+      m.cons.forEach((v, i) => { if(v) cNum(row, C0 + i, v, S.money); });
+      cFor(row, lastC, rangeSum(row.r), sum(m.cons), S.moneyTot);
+      // Прибыль = Общая сумма − Расходники
+      row = addRow(); lab(row, 'Прибыль');
+      profV.forEach((v, i) => cFor(row, C0 + i, colL(C0 + i) + rRev + '-' + colL(C0 + i) + rCons, v, S.money));
+      cFor(row, lastC, rangeSum(row.r), sum(profV), S.moneyTot);
+      // ЗП мастера = Прибыль × ставка
+      row = addRow(); lab(row, 'ЗП мастера');
+      salV.forEach((v, i) => cFor(row, C0 + i, 'ROUND(' + colL(C0 + i) + rProf + '*$C$' + hr + ',0)', v, S.money));
+      cFor(row, lastC, rangeSum(row.r), sum(salV), S.moneyTot);
+      // ЧП салона = Прибыль − ЗП мастера
+      row = addRow(); lab(row, 'ЧП салона');
+      netV.forEach((v, i) => cFor(row, C0 + i, colL(C0 + i) + rProf + '-' + colL(C0 + i) + rSal, v, S.money));
+      cFor(row, lastC, rangeSum(row.r), sum(netV), S.moneyTot);
+      metricRows.rev.push(rRev); metricRows.cons.push(rCons); metricRows.profit.push(rProf); metricRows.sal.push(rSal); metricRows.net.push(rNet);
+      // услуги по категориям
+      for(const c of m.cats){
+        row = addRow(); lab(row, c.cat);
+        c.vals.forEach((v, i) => { if(v) cNum(row, C0 + i, v, S.cnt); });
+        cFor(row, lastC, rangeSum(row.r), sum(c.vals), S.cnt);
+      }
+    }
+    // итоговый блок по салону
+    if(ex.masters.length){
+      rn++; rows.push({ r: rn, cells: [] });                    // пустая строка
+      const t = addRow(21);
+      cStr(t, 0, 'Итого', S.hdrR); cStr(t, 1, 'по салону', S.hdrL); cEmpty(t, 2, S.hdrR);
+      periodCells(t, S.hdrR, S.hdrDate);
+      cStr(t, lastC, 'Итого', S.hdrR);
+      const agg = (key, f) => {
+        const vals = ex.masters.map(m => { const profV = m.rev.map((v, i) => v - m.cons[i]); const salV = profV.map(v => Math.round(v * m.rate)); return f(m, profV, salV); });
+        return Array.from({ length: nB }, (_, i) => vals.reduce((x, v) => x + v[i], 0));
+      };
+      const totals = [
+        ['Общая сумма', 'rev', agg('rev', m => m.rev)],
+        ['Расходники', 'cons', agg('cons', m => m.cons)],
+        ['Прибыль', 'profit', agg('profit', (m, p) => p)],
+        ['ЗП мастеров', 'sal', agg('sal', (m, p, s) => s)],
+        ['ЧП салона', 'net', agg('net', (m, p, s) => p.map((v, i) => v - s[i]))],
+      ];
+      for(const [label, key, vals] of totals){
+        const row = addRow();
+        cStr(row, 0, 'Итого', S.blueL); cStr(row, 1, 'по салону', S.hidden); cStr(row, 2, label, S.bold);
+        vals.forEach((v, i) => {
+          const f = metricRows[key].map(r => colL(C0 + i) + r).join('+');
+          cFor(row, C0 + i, f, v, S.boldMoney);
+        });
+        cFor(row, lastC, rangeSum(row.r), vals.reduce((x, y) => x + y, 0), S.boldMoneyTot);
+      }
+    }
+
+    const lastRow = rn;
+    const sheetRows = rows.map(r => '<row r="'+r.r+'"'+(r.h ? ' ht="'+r.h+'" customHeight="1"' : '')+'>'+r.cells.join('')+'</row>').join('');
+    const dayW = isDay ? 13 : 15;
+    const cols = '<col min="1" max="1" width="14" customWidth="1"/><col min="2" max="2" width="18" customWidth="1"/><col min="3" max="3" width="20" customWidth="1"/>' +
+      '<col min="4" max="'+(C0 + nB)+'" width="'+dayW+'" customWidth="1"/><col min="'+(lastC + 1)+'" max="'+(lastC + 1)+'" width="15" customWidth="1"/>';
     const sheet = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
-      '<sheetViews><sheetView workbookViewId="0"><pane xSplit="3" ySplit="1" topLeftCell="D2" activePane="bottomRight" state="frozen"/></sheetView></sheetViews>' +
-      '<cols>'+cols+'</cols><sheetData>'+sheetRows+'</sheetData><autoFilter ref="A1:'+lastCol+lastRow+'"/></worksheet>';
+      '<sheetViews><sheetView workbookViewId="0" showGridLines="1"><pane xSplit="3" ySplit="2" topLeftCell="D3" activePane="bottomRight" state="frozen"/></sheetView></sheetViews>' +
+      '<sheetFormatPr defaultRowHeight="13"/>' +
+      '<cols>'+cols+'</cols><sheetData>'+sheetRows+'</sheetData>' +
+      '<pageMargins left="0.5" right="0.5" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup orientation="landscape"/></worksheet>';
+    const money = '[$₸]#,##0.00;-[$₸]#,##0.00;';
+    const moneyTot = '[$₸]#,##0.00';
     const styles = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
-      '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>' +
-      '<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF4ECE9"/><bgColor indexed="64"/></patternFill></fill></fills>' +
-      '<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left/><right/><top/><bottom style="thin"><color rgb="FFCCBBBB"/></bottom><diagonal/></border></borders>' +
+      '<numFmts count="3"><numFmt numFmtId="164" formatCode="'+xmlEsc(money)+'"/><numFmt numFmtId="165" formatCode="d/m"/><numFmt numFmtId="166" formatCode="'+xmlEsc(moneyTot)+'"/></numFmts>' +
+      '<fonts count="4"><font><sz val="10"/><name val="Arial"/></font><font><b/><sz val="10"/><name val="Arial"/></font><font><sz val="10"/><color rgb="FFFFFFFF"/><name val="Arial"/></font><font><b/><sz val="14"/><name val="Arial"/></font></fonts>' +
+      '<fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>' +
+      '<fill><patternFill patternType="solid"><fgColor rgb="FFE9C1DC"/><bgColor indexed="64"/></patternFill></fill>' +
+      '<fill><patternFill patternType="solid"><fgColor rgb="FFC9DAF8"/><bgColor indexed="64"/></patternFill></fill></fills>' +
+      '<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left/><right/><top style="thin"><color auto="1"/></top><bottom/><diagonal/></border></borders>' +
       '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
-      '<cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
-      '<xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>' +
-      '<xf numFmtId="3" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs>' +
+      '<cellXfs count="21">' +
+      '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +                                                                                                  // 0 def
+      '<xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="center"/></xf>' +                                   // 1 title
+      '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="left"/></xf>' +                    // 2 hdrL
+      '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="right"/></xf>' +                   // 3 hdrR
+      '<xf numFmtId="165" fontId="1" fillId="2" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="right"/></xf>' + // 4 hdrDate
+      '<xf numFmtId="0" fontId="0" fillId="3" borderId="0" xfId="0" applyFill="1" applyAlignment="1"><alignment horizontal="left"/></xf>' +                                  // 5 blueL
+      '<xf numFmtId="0" fontId="1" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="left"/></xf>' +                    // 6 blueB
+      '<xf numFmtId="0" fontId="0" fillId="3" borderId="1" xfId="0" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left"/></xf>' +                  // 7 blueTopL
+      '<xf numFmtId="0" fontId="1" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left"/></xf>' +    // 8 blueTopB
+      '<xf numFmtId="9" fontId="0" fillId="3" borderId="0" xfId="0" applyNumberFormat="1" applyFill="1" applyAlignment="1"><alignment horizontal="left"/></xf>' +             // 9 bluePct
+      '<xf numFmtId="165" fontId="0" fillId="3" borderId="0" xfId="0" applyNumberFormat="1" applyFill="1" applyAlignment="1"><alignment horizontal="right"/></xf>' +        // 10 blueDate
+      '<xf numFmtId="0" fontId="0" fillId="3" borderId="0" xfId="0" applyFill="1" applyAlignment="1"><alignment horizontal="right"/></xf>' +                                 // 11 blueR
+      '<xf numFmtId="0" fontId="0" fillId="3" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>' +                                                                       // 12 blueTop
+      '<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="left"/></xf>' +                                  // 13 hidden (белый текст)
+      '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="left"/></xf>' +                                                // 14 label
+      '<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>' +                                                                              // 15 money
+      '<xf numFmtId="166" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>' +                                                                              // 16 moneyTot
+      '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="left"/></xf>' +                                  // 17 bold
+      '<xf numFmtId="164" fontId="1" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/>' +                                                                // 18 boldMoney
+      '<xf numFmtId="166" fontId="1" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/>' +                                                                // 19 boldMoneyTot
+      '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +                                                                                                      // 20 cnt
+      '</cellXfs>' +
       '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
     const files = [
       ['[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>'],
       ['_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'],
-      ['xl/workbook.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Детализация" sheetId="1" r:id="rId1"/></sheets></workbook>'],
+      ['xl/workbook.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Детализация" sheetId="1" r:id="rId1"/></sheets><calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>'],
       ['xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>'],
       ['xl/styles.xml', styles],
       ['xl/worksheets/sheet1.xml', sheet],
