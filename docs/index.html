@@ -2493,7 +2493,7 @@
   function buildGridXlsx(ex){
     const enc = new TextEncoder();
     const nB = ex.head.length - 4;            // число периодов (head: Зал, Мастер, Показатель, ...периоды, Итого)
-    const C0 = 3;                             // индекс первой колонки периодов (D)
+    const C0 = 2;                             // индекс первой колонки периодов (C); колонка «Зал» не выгружается
     const lastC = C0 + nB;                    // колонка «Итого»
     const colL = i => xlsxColName(i);
     const serial = iso => Math.round((Date.UTC(+iso.slice(0,4), +iso.slice(5,7)-1, +iso.slice(8,10)) - Date.UTC(1899, 11, 30)) / 86400000);
@@ -2524,7 +2524,7 @@
     cStr(r1, 0, 'Детализация по мастерам · ' + ex.from.split('-').reverse().join('.') + ' — ' + ex.to.split('-').reverse().join('.') + ' · ' + gname, S.title);
     // строка 2 — розовая шапка
     const r2 = addRow(21);
-    cStr(r2, 0, 'Зал', S.hdrR); cStr(r2, 1, 'Мастер', S.hdrL); cEmpty(r2, 2, S.hdrR);
+    cStr(r2, 0, 'Мастер', S.hdrL); cEmpty(r2, 1, S.hdrR);
     periodCells(r2, S.hdrR, S.hdrDate);
     cStr(r2, lastC, 'Итого', S.hdrR);
 
@@ -2534,17 +2534,17 @@
       if(m.zone !== lastZone){
         lastZone = m.zone;
         const z = addRow();
-        cStr(z, 0, m.zone, S.blueTopL); cEmpty(z, 1, S.blueTop); cStr(z, 2, m.zone, S.blueTopB);
+        cEmpty(z, 0, S.blueTop); cStr(z, 1, m.zone, S.blueTopB);
         for(let c = C0; c <= lastC; c++) cEmpty(z, c, S.blueTop);
       }
       // шапка мастера
       const h = addRow();
       const hr = h.r;
-      cStr(h, 0, m.zone, S.blueL); cStr(h, 1, m.name, S.blueL); cNum(h, 2, m.rate, S.bluePct);
+      cStr(h, 0, m.name, S.blueL); cNum(h, 1, m.rate, S.bluePct);
       periodCells(h, S.blueR, S.blueDate);
       cEmpty(h, lastC, S.blueL);
       const rRev = hr + 1, rCons = hr + 2, rProf = hr + 3, rSal = hr + 4, rNet = hr + 5;
-      const lab = (row, text) => { cStr(row, 0, m.zone, S.blueL); cStr(row, 1, m.name, S.hidden); cStr(row, 2, text, S.label); };
+      const lab = (row, text) => { cStr(row, 0, m.name, S.hidden); cStr(row, 1, text, S.label); };
       const profV = m.rev.map((v, i) => v - m.cons[i]);
       const salV = profV.map(v => Math.round(v * m.rate));
       const netV = profV.map((v, i) => v - salV[i]);
@@ -2563,7 +2563,7 @@
       cFor(row, lastC, rangeSum(row.r), sum(profV), S.moneyTot);
       // ЗП мастера = Прибыль × ставка
       row = addRow(); lab(row, 'ЗП мастера');
-      salV.forEach((v, i) => cFor(row, C0 + i, 'ROUND(' + colL(C0 + i) + rProf + '*$C$' + hr + ',0)', v, S.money));
+      salV.forEach((v, i) => cFor(row, C0 + i, 'ROUND(' + colL(C0 + i) + rProf + '*$B$' + hr + ',0)', v, S.money));
       cFor(row, lastC, rangeSum(row.r), sum(salV), S.moneyTot);
       // ЧП салона = Прибыль − ЗП мастера
       row = addRow(); lab(row, 'ЧП салона');
@@ -2581,7 +2581,7 @@
     if(ex.masters.length){
       rn++; rows.push({ r: rn, cells: [] });                    // пустая строка
       const t = addRow(21);
-      cStr(t, 0, 'Итого', S.hdrR); cStr(t, 1, 'по салону', S.hdrL); cEmpty(t, 2, S.hdrR);
+      cStr(t, 0, 'Итого по салону', S.hdrL); cEmpty(t, 1, S.hdrR);
       periodCells(t, S.hdrR, S.hdrDate);
       cStr(t, lastC, 'Итого', S.hdrR);
       const agg = (key, f) => {
@@ -2597,7 +2597,7 @@
       ];
       for(const [label, key, vals] of totals){
         const row = addRow();
-        cStr(row, 0, 'Итого', S.blueL); cStr(row, 1, 'по салону', S.hidden); cStr(row, 2, label, S.bold);
+        cStr(row, 0, 'Итого по салону', S.hidden); cStr(row, 1, label, S.bold);
         vals.forEach((v, i) => {
           const f = metricRows[key].map(r => colL(C0 + i) + r).join('+');
           cFor(row, C0 + i, f, v, S.boldMoney);
@@ -2609,10 +2609,10 @@
     const lastRow = rn;
     const sheetRows = rows.map(r => '<row r="'+r.r+'"'+(r.h ? ' ht="'+r.h+'" customHeight="1"' : '')+'>'+r.cells.join('')+'</row>').join('');
     const dayW = isDay ? 13 : 15;
-    const cols = '<col min="1" max="1" width="14" customWidth="1"/><col min="2" max="2" width="18" customWidth="1"/><col min="3" max="3" width="20" customWidth="1"/>' +
-      '<col min="4" max="'+(C0 + nB)+'" width="'+dayW+'" customWidth="1"/><col min="'+(lastC + 1)+'" max="'+(lastC + 1)+'" width="15" customWidth="1"/>';
+    const cols = '<col min="1" max="1" width="18" customWidth="1"/><col min="2" max="2" width="20" customWidth="1"/>' +
+      '<col min="3" max="'+(C0 + nB)+'" width="'+dayW+'" customWidth="1"/><col min="'+(lastC + 1)+'" max="'+(lastC + 1)+'" width="15" customWidth="1"/>';
     const sheet = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
-      '<sheetViews><sheetView workbookViewId="0" showGridLines="1"><pane xSplit="3" ySplit="2" topLeftCell="D3" activePane="bottomRight" state="frozen"/></sheetView></sheetViews>' +
+      '<sheetViews><sheetView workbookViewId="0" showGridLines="1"><pane xSplit="2" ySplit="2" topLeftCell="C3" activePane="bottomRight" state="frozen"/></sheetView></sheetViews>' +
       '<sheetFormatPr defaultRowHeight="13"/>' +
       '<cols>'+cols+'</cols><sheetData>'+sheetRows+'</sheetData>' +
       '<pageMargins left="0.5" right="0.5" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup orientation="landscape"/></worksheet>';
