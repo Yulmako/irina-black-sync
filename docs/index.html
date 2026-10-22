@@ -216,6 +216,19 @@
   .grid-panel #analyticsGridHead th:first-child{z-index:5;}
   .grid-panel #analyticsGridBody tr.zone-row td:first-child{position:static; box-shadow:none;}
   .zone-sticky{position:sticky; left:14px; display:inline-block;}
+  .flow-check{display:inline-flex; align-items:center; gap:6px; font-size:13px; color:var(--muted); cursor:pointer;}
+  .flow-table{min-width:640px;}
+  .flow-table th:first-child, .flow-table td:first-child{position:sticky; left:0; background:var(--surface); z-index:1; box-shadow:1px 0 0 var(--border); white-space:nowrap; min-width:200px; text-align:left;}
+  .flow-table thead th:first-child{background:var(--surface-2); z-index:5;}
+  .flow-table thead tr:nth-child(2) th{top:37px;}
+  .flow-table thead th.grp{text-align:center; border-left:1px solid var(--border);}
+  .flow-table td.grp-l, .flow-table thead tr:nth-child(2) th.grp-l{border-left:1px solid var(--border);}
+  .flow-table tr.cat-row td:first-child, .flow-table tr.cat-subtotal td:first-child, .flow-table tr.total-row td:first-child{background:var(--surface-2);}
+  .flow-table td.zero{color:var(--muted); opacity:.45;}
+  .flow-table tbody tr.flow-sub td{font-weight:600; background:var(--surface-2); border-top:1px solid var(--border);}
+  @media (max-width:600px){ .flow-table th:first-child, .flow-table td:first-child{min-width:120px; max-width:130px; white-space:normal; font-size:12.5px;} .flow-table td, .flow-table th{padding-left:8px; padding-right:8px;} .flow-table thead tr:nth-child(2) th{top:34px;} }
+  .flow-table tr.cat-row td{position:static;}
+  .flow-table tr.cat-row td:first-child{position:sticky;}
   .grid-head{display:flex; align-items:center; justify-content:space-between; gap:8px 16px; flex-wrap:wrap; padding-right:18px;}
   .grid-head .panel-heading{padding-bottom:4px;}
   .grid-tools{margin:12px 0 0; gap:10px;}
@@ -1228,6 +1241,8 @@
     <div class="cd-subtabs">
       <button class="cd-subtab-btn active" data-invsubtab="items">Наименования и наличие</button>
       <button class="cd-subtab-btn" data-invsubtab="history">История изменений</button>
+      <button class="cd-subtab-btn" data-invsubtab="flow-in">Закуп по периодам</button>
+      <button class="cd-subtab-btn" data-invsubtab="flow-out">Расход по периодам</button>
     </div>
 
     <div id="inv-panel-items">
@@ -1327,6 +1342,36 @@
       <div class="empty" id="invHistoryEmpty" hidden><b>История пуста</b>Закуп и списание расходников появятся здесь по мере закрытия дней.</div>
     </div>
     </div>
+
+    <div id="inv-panel-flow" hidden>
+    <div class="panel grid-panel">
+      <div class="filters">
+        <input type="search" id="flowSearch" placeholder="Поиск по названию…">
+        <div class="date-range">
+          <input type="date" id="flowFrom" aria-label="Период от">
+          <span class="date-sep">—</span>
+          <input type="date" id="flowTo" aria-label="Период до">
+        </div>
+        <select id="flowGran" aria-label="Разбивка по периодам">
+          <option value="week" selected>По неделям</option>
+          <option value="day">По дням</option>
+          <option value="month">По месяцам</option>
+          <option value="all">Весь период</option>
+        </select>
+        <label class="flow-check"><input type="checkbox" id="flowShowAll"> Показать позиции без движения</label>
+        <div class="spacer"></div>
+        <span class="result-count" id="flowCount"></span>
+        <button type="button" class="refresh-btn" id="downloadFlow">Скачать (Excel)</button>
+      </div>
+      <div class="table-scroll">
+        <table class="flow-table">
+          <thead id="flowHead"></thead>
+          <tbody id="flowBody"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="flowEmpty" hidden><b>За этот период движения нет</b>Выберите другой период или добавьте данные во вкладке «Закрытие дня».</div>
+    </div>
+    </div>
   </div>
 
   <div id="view-pnl" hidden>
@@ -1399,7 +1444,8 @@
     clientSearch: '', clientSort: 'visits', masterSearch: '', consSearch: '', invSearch: '',
     invHistorySearch: '', invHistoryType: '', invHistoryFrom: '', invHistoryTo: '', invChartBucket: null,
     analyticsExpanded: new Set(), gridGranularity: 'auto', gridExport: null, inventoryEdits: [], invStockFilter: '', invCategoryFilter: '', invHistoryCategory: '',
-    pnlUnlocked: false, invEditingItem: null, masterEditing: null };
+    pnlUnlocked: false, invEditingItem: null, masterEditing: null,
+    flowKind: 'in', flowFrom: '', flowTo: '', flowGran: 'week', flowSearch: '', flowShowAll: false };
 
   // P&L — ручные (не рассчитываемые из данных CRM) строки, по месяцам.
   // Стартовые значения на 2026-01..2026-08 взяты из таблицы IRINA BLACK
@@ -3243,7 +3289,9 @@
       const sub = btn.dataset.invsubtab;
       document.getElementById('inv-panel-items').hidden = sub !== 'items';
       document.getElementById('inv-panel-history').hidden = sub !== 'history';
+      document.getElementById('inv-panel-flow').hidden = sub.indexOf('flow') !== 0;
       if(sub === 'history') renderInventoryHistory();
+      if(sub.indexOf('flow') === 0){ state.flowKind = sub === 'flow-out' ? 'out' : 'in'; renderFlow(); }
     });
   });
 
@@ -3391,6 +3439,7 @@
     scheduleSave('inventory_edits');
   }
     renderInventoryHistory();
+    renderFlow();
   }
   // ---------------- Инвентаризация: поступление позиции ----------------
   // Пополнение остатка напрямую, без закупа: подарок, найденное при
@@ -3740,6 +3789,153 @@
     if(!ignoreBucket && state.invChartBucket) rows = rows.filter(r => r.date && r.date >= state.invChartBucket.from && r.date <= state.invChartBucket.to);
     return rows;
   }
+
+  // ---------------- Инвентаризация: Закуп / Расход по периодам (как лист «Закуп» в таблице) ----------------
+  // Строки — позиции, сгруппированные по категориям; колонки — периоды (неделя/день/месяц),
+  // в каждом: Кол-во, Цена (средняя за ед.), Сумма; в конце — «Итого» за выбранный период.
+  const FLOW_LABELS = {
+    in:  { title: 'ЗАКУП', cats: { 'Расходники': 'Закуп расходников', 'Продукция': 'Закуп продукции (продажа)', 'Nail зал': 'Nail зал', 'Салон': 'Закуп салона' } },
+    out: { title: 'РАСХОД', cats: { 'Расходники': 'Расходники', 'Продукция': 'Продукция', 'Nail зал': 'Nail зал', 'Салон': 'Салон' } },
+  };
+  const FLOW_NO_CAT = 'Без категории';
+  function flowEntries(kind){
+    return getInventoryHistory().filter(r => r.type === kind && r.date && r.qty);
+  }
+  function flowDefaultRange(){
+    let last = '';
+    for(const k of ['in', 'out']) for(const r of flowEntries(k)) if(r.date > last) last = r.date;
+    const d = last || todayStr();
+    const y = Number(d.slice(0,4)), m = Number(d.slice(5,7));
+    return { from: d.slice(0,8) + '01', to: d.slice(0,8) + String(new Date(y, m, 0).getDate()).padStart(2,'0') };
+  }
+  function flowBuckets(from, to, gran){
+    if(!from || !to || to < from) return [];
+    const lbl = (a, b) => a === b ? fmtShortDate(a) : fmtShortDate(a) + '–' + fmtShortDate(b);
+    const days = Math.round((isoToUtc(to) - isoToUtc(from)) / 86400000) + 1;
+    if(gran === 'day' && days > 62) gran = 'week';
+    if(gran === 'all') return [{ from, to, label: lbl(from, to) }];
+    const out = [];
+    let cur = isoToUtc(from);
+    const end = isoToUtc(to);
+    while(cur <= end){
+      let stop;
+      const d = new Date(cur);
+      if(gran === 'day') stop = cur;
+      else if(gran === 'month') stop = Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0);
+      else stop = cur + (7 - ((d.getUTCDay() + 6) % 7) - 1) * 86400000; // до воскресенья
+      if(stop > end) stop = end;
+      const a = utcToIso(cur), b = utcToIso(stop);
+      out.push({ from: a, to: b, label: gran === 'month' ? MONTHS_SHORT[d.getUTCMonth()] + ' ' + d.getUTCFullYear() : lbl(a, b) });
+      cur = stop + 86400000;
+    }
+    return out;
+  }
+  function flowFmtNum(n){ return (Math.round(n * 100) / 100).toLocaleString('ru-RU'); }
+  function flowFmtMoney(n){ return Math.round(n).toLocaleString('ru-RU'); }
+  // Данные таблицы: { buckets, groups:[{cat,label,items:[{item,cells:[{qty,sum}],qty,sum}], subSums:[..], subTotal}], grand }
+  function buildFlowData(){
+    const kind = state.flowKind;
+    if(!state.flowFrom || !state.flowTo){ const r = flowDefaultRange(); state.flowFrom = state.flowFrom || r.from; state.flowTo = state.flowTo || r.to; }
+    const buckets = flowBuckets(state.flowFrom, state.flowTo, state.flowGran);
+    const q = state.flowSearch.trim().toLowerCase();
+    const all = flowEntries(kind);
+    const byItem = new Map();
+    const ensure = (item, cat) => {
+      if(!byItem.has(item)) byItem.set(item, { item, cat: cat || FLOW_NO_CAT, cells: buckets.map(() => ({ qty: 0, sum: 0 })), qty: 0, sum: 0 });
+      return byItem.get(item);
+    };
+    for(const r of all){
+      if(r.date < state.flowFrom || r.date > state.flowTo) continue;
+      const bi = buckets.findIndex(b => r.date >= b.from && r.date <= b.to);
+      if(bi < 0) continue;
+      const row = ensure(r.item, r.category);
+      row.cells[bi].qty += r.qty; row.cells[bi].sum += r.sum; row.qty += r.qty; row.sum += r.sum;
+    }
+    if(state.flowShowAll) for(const r of all) ensure(r.item, r.category);
+    const catOrder = PROCUREMENT_CATEGORIES.concat([FLOW_NO_CAT]);
+    const groups = [];
+    for(const cat of catOrder){
+      let items = Array.from(byItem.values()).filter(x => x.cat === cat || (cat === FLOW_NO_CAT && !catOrder.includes(x.cat)));
+      if(q) items = items.filter(x => x.item.toLowerCase().includes(q));
+      if(!items.length) continue;
+      items.sort((a, b) => a.item.localeCompare(b.item, 'ru'));
+      const subSums = buckets.map((_, i) => items.reduce((s, x) => s + x.cells[i].sum, 0));
+      groups.push({ cat, label: FLOW_LABELS[kind].cats[cat] || cat, items, subSums, subTotal: items.reduce((s, x) => s + x.sum, 0) });
+    }
+    const grandSums = buckets.map((_, i) => groups.reduce((s, g) => s + g.subSums[i], 0));
+    return { kind, buckets, groups, grandSums, grandTotal: groups.reduce((s, g) => s + g.subTotal, 0), itemCount: groups.reduce((s, g) => s + g.items.length, 0) };
+  }
+  function renderFlow(){
+    const panel = document.getElementById('inv-panel-flow');
+    if(!panel || panel.hidden) return;
+    const data = buildFlowData();
+    document.getElementById('flowFrom').value = state.flowFrom;
+    document.getElementById('flowTo').value = state.flowTo;
+    const head = document.getElementById('flowHead'), body = document.getElementById('flowBody');
+    const empty = document.getElementById('flowEmpty');
+    const withTotal = data.buckets.length > 1;
+    const cols = data.buckets.length * 3 + (withTotal ? 3 : 0);
+    const T = FLOW_LABELS[data.kind].title;
+    let h1 = '<tr><th rowspan="2">Наименование</th>', h2 = '<tr>';
+    data.buckets.forEach(b => { h1 += '<th class="grp" colspan="3">'+esc(b.label)+'</th>'; h2 += '<th class="num grp-l">Кол-во</th><th class="num">Цена</th><th class="num">Сумма</th>'; });
+    if(withTotal){ h1 += '<th class="grp" colspan="3">Итого</th>'; h2 += '<th class="num grp-l">Кол-во</th><th class="num">Цена</th><th class="num">Сумма</th>'; }
+    head.innerHTML = h1 + '</tr>' + h2 + '</tr>';
+    document.getElementById('flowCount').textContent = data.itemCount ? 'Позиций: ' + data.itemCount + ' · ' + T.toLowerCase().replace(/^./, c => c.toUpperCase()) + ' за период: ' + flowFmtMoney(data.grandTotal) + ' ₸' : '';
+    if(!data.buckets.length || (!data.itemCount) || (!data.grandTotal && !state.flowShowAll && !data.groups.some(g => g.items.some(x => x.qty)))){
+      body.innerHTML = ''; empty.hidden = false; return;
+    }
+    empty.hidden = true;
+    const cell = (qty, sum, first) => {
+      const z = !qty && !sum;
+      return '<td class="num'+(first ? ' grp-l' : '')+(z ? ' zero' : '')+'">'+(z ? '' : flowFmtNum(qty))+'</td>' +
+        '<td class="num'+(z ? ' zero' : '')+'">'+(z || !qty ? '' : flowFmtMoney(sum / qty))+'</td>' +
+        '<td class="num'+(z ? ' zero' : '')+'">'+(z ? '' : flowFmtMoney(sum))+'</td>';
+    };
+    let html = '';
+    for(const g of data.groups){
+      html += '<tr class="cat-row"><td colspan="'+(cols + 1)+'"><span class="zone-sticky">'+esc(g.label)+'</span></td></tr>';
+      for(const x of g.items){
+        html += '<tr><td>'+esc(x.item)+'</td>' + x.cells.map((c, i) => cell(c.qty, c.sum, true)).join('') + (withTotal ? cell(x.qty, x.sum, true) : '') + '</tr>';
+      }
+      html += '<tr class="flow-sub"><td>ИТОГО: '+esc(g.label.toUpperCase())+'</td>' + g.subSums.map(v => '<td class="num grp-l"></td><td class="num"></td><td class="num">'+(v ? flowFmtMoney(v) : '')+'</td>').join('') + (withTotal ? '<td class="num grp-l"></td><td class="num"></td><td class="num">'+(g.subTotal ? flowFmtMoney(g.subTotal) : '')+'</td>' : '') + '</tr>';
+    }
+    html += '<tr class="total-row"><td>ИТОГО '+T+'</td>' + data.grandSums.map(v => '<td class="num grp-l"></td><td class="num"></td><td class="num">'+(v ? flowFmtMoney(v) : '')+'</td>').join('') + (withTotal ? '<td class="num grp-l"></td><td class="num"></td><td class="num">'+flowFmtMoney(data.grandTotal)+'</td>' : '') + '</tr>';
+    body.innerHTML = html;
+  }
+  function buildFlowReportRows(){
+    const d = buildFlowData();
+    const withTotal = d.buckets.length > 1;
+    const head = ['Наименование', 'Категория'];
+    d.buckets.forEach(b => head.push(b.label + ' · Кол-во', b.label + ' · Цена, ₸', b.label + ' · Сумма, ₸'));
+    if(withTotal) head.push('Итого · Кол-во', 'Итого · Цена, ₸', 'Итого · Сумма, ₸');
+    const rows = [head];
+    const trio = (qty, sum) => [qty ? Math.round(qty * 100) / 100 : '', qty ? Math.round(sum / qty) : '', sum ? Math.round(sum) : ''];
+    for(const g of d.groups){
+      for(const x of g.items){
+        const r = [x.item, g.label];
+        x.cells.forEach(c => r.push(...trio(c.qty, c.sum)));
+        if(withTotal) r.push(...trio(x.qty, x.sum));
+        rows.push(r);
+      }
+      const sub = ['ИТОГО: ' + g.label, ''];
+      g.subSums.forEach(v => sub.push('', '', v ? Math.round(v) : ''));
+      if(withTotal) sub.push('', '', g.subTotal ? Math.round(g.subTotal) : '');
+      rows.push(sub);
+    }
+    const tot = ['ИТОГО ' + FLOW_LABELS[d.kind].title, ''];
+    d.grandSums.forEach(v => tot.push('', '', v ? Math.round(v) : ''));
+    if(withTotal) tot.push('', '', Math.round(d.grandTotal));
+    rows.push(tot);
+    return rows;
+  }
+  document.getElementById('flowSearch').addEventListener('input', e => { state.flowSearch = e.target.value; renderFlow(); });
+  document.getElementById('flowFrom').addEventListener('change', e => { if(e.target.value){ state.flowFrom = e.target.value; if(state.flowTo < state.flowFrom) state.flowTo = state.flowFrom; renderFlow(); } });
+  document.getElementById('flowTo').addEventListener('change', e => { if(e.target.value){ state.flowTo = e.target.value; if(state.flowTo < state.flowFrom) state.flowFrom = state.flowTo; renderFlow(); } });
+  document.getElementById('flowGran').addEventListener('change', e => { state.flowGran = e.target.value; renderFlow(); });
+  document.getElementById('flowShowAll').addEventListener('change', e => { state.flowShowAll = e.target.checked; renderFlow(); });
+  document.getElementById('downloadFlow').addEventListener('click', () => {
+    downloadXlsxReport((state.flowKind === 'out' ? 'rashod' : 'zakup') + '-po-periodam-' + state.flowFrom + '_' + state.flowTo + '.xlsx', state.flowKind === 'out' ? 'Расход' : 'Закуп', buildFlowReportRows());
+  });
 
   // ---------------- Инвентаризация: график движения за период ----------------
   // Приход = закуп + поступления + корректировка «+»; Расход = расход на визитах
