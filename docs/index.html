@@ -367,6 +367,7 @@
     font-variant-numeric:tabular-nums; text-align:right;
   }
   #addProductSaleRow .am-rate-wrap input, #addProcurementRow .am-rate-wrap input, #addStockRow .am-rate-wrap input{width:124px;}
+  #addProductSaleRow #newSaleSellerPct{width:110px;}
   .proc-item-wrap{position:relative; flex:1 1 220px; min-width:160px;}
   .proc-item-wrap input{width:100%;}
   .add-master-row .proc-item-wrap input[type="text"]{width:100%;}
@@ -1177,7 +1178,7 @@
 
       <div class="panel" style="margin-top:16px;">
         <div class="filters">
-          <span class="result-count" id="productSaleNote">Продажа продукции клиентам — сумма целиком идёт в прибыль салона, мастеру не начисляется.</span>
+          <span class="result-count" id="productSaleNote">Продажа продукции клиентам — сумма идёт в прибыль салона. Если указан сотрудник, его процент вычитается из прибыли салона и начисляется ему.</span>
           <div class="spacer"></div>
           <button type="button" class="refresh-btn" id="addProductSaleToggle">Добавить продажу продукции</button>
         </div>
@@ -1190,12 +1191,18 @@
             <span>₸</span>
           </div>
           <span class="cd-cons-total-preview" id="newSaleTotalPreview">= 0 ₸</span>
+          <input type="text" id="newSaleSeller" placeholder="Сотрудник (необязательно)" list="saleSellerOptions" autocomplete="off" style="width:190px;">
+          <div class="am-rate-wrap">
+            <input type="number" id="newSaleSellerPct" placeholder="% сотруднику" min="0" max="100" step="1">
+            <span>%</span>
+          </div>
+          <datalist id="saleSellerOptions"></datalist>
           <button type="button" class="cd-save-btn" id="addProductSaleSave">Добавить</button>
           <button type="button" class="am-cancel" id="addProductSaleCancel">Отмена</button>
         </div>
         <div class="table-scroll">
           <table>
-            <thead><tr><th>Наименование</th><th class="num">Кол-во</th><th class="num">Цена за ед.</th><th class="num">Сумма</th><th></th></tr></thead>
+            <thead><tr><th>Наименование</th><th class="num">Кол-во</th><th class="num">Цена за ед.</th><th class="num">Сумма</th><th>Сотрудник · процент</th><th></th></tr></thead>
             <tbody id="productSaleBody"></tbody>
           </table>
         </div>
@@ -3111,7 +3118,8 @@
         grandCons += consTotal; grandMaster += split.master; grandSalon += split.salon; groupMasterPay += split.master;
       });
       const adj = masterAdjTotals(adjDate, master);
-      groupMasterPay += adj.tip - adj.fine;
+      const groupSaleComm = saleCommissionFor(adjDate, master);
+      groupMasterPay += adj.tip - adj.fine + groupSaleComm;
       grandMaster += adj.tip - adj.fine; grandSalon += adj.fine; grandFine += adj.fine; grandTip += adj.tip;
       const payEl = group.querySelector('[data-role="masterpay"]');
       if(payEl) payEl.textContent = Math.round(groupMasterPay).toLocaleString('ru-RU') + ' ₸';
@@ -3124,8 +3132,10 @@
     const date = document.getElementById('closeDayDate').value;
     const sales = (date && dayClose.productSales[date]) || [];
     const salesTotal = sales.reduce((s,r) => s + r.qty * r.unitPrice, 0);
+    const salesComm = sales.reduce((s,r) => s + saleCommission(r), 0);   // процент сотрудникам за продажу
     grand += salesTotal;
-    grandSalon += salesTotal;
+    grandSalon += salesTotal - salesComm;
+    grandMaster += salesComm;
     grandCons += salesTotal;
     document.getElementById('closeDayTotalValue').textContent = Math.round(grand).toLocaleString('ru-RU') + ' ₸';
     const consEl = document.getElementById('closeDayConsValue');
@@ -3147,6 +3157,7 @@
       const parts = [];
       if(grandTip) parts.push('чаевые +' + Math.round(grandTip).toLocaleString('ru-RU') + ' ₸');
       if(grandFine) parts.push('вычеты −' + Math.round(grandFine).toLocaleString('ru-RU') + ' ₸');
+      if(salesComm) parts.push('процент с продажи продукции +' + Math.round(salesComm).toLocaleString('ru-RU') + ' ₸');
       masterHint.hidden = !parts.length;
       masterHint.textContent = parts.length ? 'Включая ' + parts.join(', ') : '';
     }
@@ -3196,7 +3207,7 @@
       const sum = s.qty * s.unitPrice;
       salesTotal += sum;
       return '<tr>' +
-        '<td>—</td>' +
+        '<td>'+(s.seller ? esc(s.seller) : '—')+'</td>' +
         '<td>Продажа продукции</td>' +
         '<td>'+esc(s.item)+'</td>' +
         '<td class="num">'+s.qty+'</td>' +
@@ -3338,27 +3349,41 @@
   // ---------------- close-day: Продажа продукции (retail sale to a client) ----------------
   // Independent of any visit/master — the whole sale amount goes to salon
   // profit, and the stock leaves inventory the same as service usage.
+  // Процент сотруднику за продажу: считается от суммы продажи и вычитается из прибыли салона.
+  function saleCommission(s){
+    const pct = Number(s.sellerPct) || 0;
+    return s.seller && pct > 0 ? Math.round(s.qty * s.unitPrice * pct / 100) : 0;
+  }
+  const sameName = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+  function saleCommissionFor(date, name){
+    return (dayClose.productSales[date] || []).filter(x => sameName(x.seller, name)).reduce((t, x) => t + saleCommission(x), 0);
+  }
   function renderProductSales(){
     const date = document.getElementById('closeDayDate').value;
     if(!date) return;
     const rows = dayClose.productSales[date] || [];
+    const sellers = new Set(state.masters.map(m => m.name));
+    for(const d in dayClose.productSales) for(const x of dayClose.productSales[d]) if(x.seller) sellers.add(x.seller);
+    document.getElementById('saleSellerOptions').innerHTML = Array.from(sellers).sort((a, b) => a.localeCompare(b, 'ru')).map(n => '<option value="'+esc(n)+'">').join('');
     const body = document.getElementById('productSaleBody');
     const empty = document.getElementById('productSaleEmpty');
     if(!rows.length){ body.innerHTML = ''; empty.hidden = false; return; }
     empty.hidden = true;
-    let total = 0;
+    let total = 0, totalComm = 0;
     body.innerHTML = rows.map((s, idx) => {
       const sum = s.qty * s.unitPrice;
-      total += sum;
+      const comm = saleCommission(s);
+      total += sum; totalComm += comm;
       return '<tr>' +
         '<td>'+esc(s.item)+'</td>' +
         '<td class="num">'+s.qty+'</td>' +
         '<td class="num">'+Math.round(s.unitPrice).toLocaleString('ru-RU')+' ₸</td>' +
         '<td class="num">'+Math.round(sum).toLocaleString('ru-RU')+' ₸</td>' +
+        '<td>'+(s.seller ? esc(s.seller)+' · '+(Number(s.sellerPct) || 0)+'% = <b>'+comm.toLocaleString('ru-RU')+' ₸</b>' : '<span class="cd-status-note">—</span>')+'</td>' +
         '<td class="cp-actions"><button type="button" class="mini-action-btn sale-remove" data-idx="'+idx+'">Удалить</button></td>' +
         '</tr>';
     }).join('') +
-      '<tr class="total-row"><td>Итого</td><td></td><td></td><td class="num">'+Math.round(total).toLocaleString('ru-RU')+' ₸</td><td></td></tr>';
+      '<tr class="total-row"><td>Итого</td><td></td><td></td><td class="num">'+Math.round(total).toLocaleString('ru-RU')+' ₸</td><td>'+(totalComm ? 'Сотрудникам: '+totalComm.toLocaleString('ru-RU')+' ₸' : '')+'</td><td></td></tr>';
   }
   function addProductSale(){
     const date = document.getElementById('closeDayDate').value;
@@ -3369,10 +3394,17 @@
     const item = itemEl.value.trim();
     const qty = Number(qtyEl.value) || 1;
     const unitPrice = Number(priceEl.value) || 0;
+    const sellerEl = document.getElementById('newSaleSeller'), pctEl = document.getElementById('newSaleSellerPct');
+    const seller = sellerEl.value.trim();
+    const sellerPct = Math.min(100, Math.max(0, Number(pctEl.value) || 0));
     if(!item || unitPrice <= 0){ itemEl.focus(); return; }
+    if(seller && !sellerPct){ pctEl.focus(); return; }       // сотрудник указан — нужен процент
+    if(!seller && sellerPct){ sellerEl.focus(); return; }    // процент указан — нужен сотрудник
     if(!dayClose.productSales[date]) dayClose.productSales[date] = [];
-    dayClose.productSales[date].push({ item, qty, unitPrice });
-    itemEl.value = ''; qtyEl.value = '1'; priceEl.value = '';
+    const sale = { item, qty, unitPrice };
+    if(seller){ sale.seller = seller; sale.sellerPct = sellerPct; }
+    dayClose.productSales[date].push(sale);
+    itemEl.value = ''; qtyEl.value = '1'; priceEl.value = ''; sellerEl.value = ''; pctEl.value = '';
     document.getElementById('addProductSaleRow').hidden = true;
     updateSaleTotalPreview();
     renderCloseDay();
@@ -3401,6 +3433,7 @@
   });
   document.getElementById('addProductSaleSave').addEventListener('click', addProductSale);
   document.getElementById('newSalePrice').addEventListener('keydown', e => { if(e.key === 'Enter') addProductSale(); });
+  document.getElementById('newSaleSellerPct').addEventListener('keydown', e => { if(e.key === 'Enter') addProductSale(); });
   document.getElementById('newSaleItem').addEventListener('input', e => {
     const known = getConsumablePrice(e.target.value);
     const priceEl = document.getElementById('newSalePrice');
@@ -4477,7 +4510,7 @@
   function buildMastersReportRows(date){
     const visits = state.bookings.filter(b => dayStr(b.start) === date);
     const byMaster = new Map();
-    const entry = vm => { if(!byMaster.has(vm)) byMaster.set(vm, { count:0, revenue:0, consumables:0, masterPay:0, salonNet:0, fine:0, tip:0, reasons:[] }); return byMaster.get(vm); };
+    const entry = vm => { if(!byMaster.has(vm)) byMaster.set(vm, { count:0, revenue:0, consumables:0, masterPay:0, salonNet:0, fine:0, tip:0, prodComm:0, reasons:[] }); return byMaster.get(vm); };
     for(const v of visits){
       if(v.status === 'NOT_SERVED' || visitStatus(v.id) !== 'completed') continue;
       const price = dayClose.prices[v.id] || 0;
@@ -4487,18 +4520,25 @@
       const m = entry(vm);
       m.count += 1; m.revenue += price; m.consumables += consTotal; m.masterPay += split.master; m.salonNet += split.salon;
     }
+    for(const sl of (dayClose.productSales[date] || [])){
+      const comm = saleCommission(sl);
+      if(!comm) continue;
+      const known = Array.from(byMaster.keys()).concat(state.masters.map(x => x.name)).find(n => sameName(n, sl.seller));
+      const m = entry(known || sl.seller.trim());
+      m.prodComm += comm; m.masterPay += comm; m.salonNet -= comm;
+    }
     for(const a of (dayClose.masterAdj[date] || [])){
       const m = entry(a.master);
       if(a.kind === 'fine'){ m.fine += a.amount; m.masterPay -= a.amount; m.salonNet += a.amount; m.reasons.push((a.note || 'без пояснения') + ' (' + Math.round(a.amount).toLocaleString('ru-RU') + ' ₸)'); }
       else { m.tip += a.amount; m.masterPay += a.amount; }
     }
-    const rows = [['Мастер','Ставка, %','Услуг завершено','Выручка, ₸','Расходники, ₸','Вычеты, ₸','За что вычет','Чаевые, ₸','ЗП мастера, ₸','ЧП салона, ₸']];
-    const totals = { count:0, revenue:0, consumables:0, masterPay:0, salonNet:0, fine:0, tip:0 };
+    const rows = [['Мастер','Ставка, %','Услуг завершено','Выручка, ₸','Расходники, ₸','Вычеты, ₸','За что вычет','Чаевые, ₸','% с продажи продукции, ₸','ЗП мастера, ₸','ЧП салона, ₸']];
+    const totals = { count:0, revenue:0, consumables:0, masterPay:0, salonNet:0, fine:0, tip:0, prodComm:0 };
     Array.from(byMaster.entries()).sort((a,b) => a[0].localeCompare(b[0],'ru')).forEach(([master, m]) => {
-      rows.push([master, Math.round(masterRate(master)*100), m.count, Math.round(m.revenue), Math.round(m.consumables), Math.round(m.fine), m.reasons.join('; '), Math.round(m.tip), Math.round(m.masterPay), Math.round(m.salonNet)]);
+      rows.push([master, Math.round(masterRate(master)*100), m.count, Math.round(m.revenue), Math.round(m.consumables), Math.round(m.fine), m.reasons.join('; '), Math.round(m.tip), Math.round(m.prodComm), Math.round(m.masterPay), Math.round(m.salonNet)]);
       for(const k of Object.keys(totals)) totals[k] += m[k];
     });
-    rows.push(['Итого', '', totals.count, Math.round(totals.revenue), Math.round(totals.consumables), Math.round(totals.fine), '', Math.round(totals.tip), Math.round(totals.masterPay), Math.round(totals.salonNet)]);
+    rows.push(['Итого', '', totals.count, Math.round(totals.revenue), Math.round(totals.consumables), Math.round(totals.fine), '', Math.round(totals.tip), Math.round(totals.prodComm), Math.round(totals.masterPay), Math.round(totals.salonNet)]);
     return rows;
   }
   function buildConsReportRows(date){
@@ -4518,7 +4558,7 @@
     for(const s of (dayClose.productSales[date] || [])){
       const sum = s.qty * s.unitPrice;
       salesTotal += sum;
-      rows.push(['—', 'Продажа продукции', s.item, s.qty, Math.round(s.unitPrice), Math.round(sum)]);
+      rows.push([s.seller || '—', 'Продажа продукции', s.item, s.qty, Math.round(s.unitPrice), Math.round(sum)]);
     }
     total += salesTotal;
     rows.push(['Итого','','','','', Math.round(total)]);
