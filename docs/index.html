@@ -2878,7 +2878,7 @@
           ? '<div class="cd-cons-form cd-adj-form" data-master="'+esc(master)+'" data-kind="'+kind+'">' +
               '<b class="cd-adj-form-title '+kind+'">'+ADJ_KINDS[kind].label+'</b>' +
               '<input type="number" class="cd-adj-amount" placeholder="Сумма, ₸" min="0" step="500">' +
-              '<input type="text" class="cd-adj-note" list="adjReasonOptions" placeholder="'+(kind === 'fine' ? 'За что вычет (например, опоздание)' : 'Комментарий (необязательно)')+'" maxlength="80">' +
+              '<input type="text" class="cd-adj-note"'+(kind === 'fine' ? ' list="adjReasonOptions"' : '')+' placeholder="'+(kind === 'fine' ? 'За что вычет (например, опоздание)' : 'Комментарий (необязательно)')+'" maxlength="80">' +
               '<button type="button" class="mini-action-btn cd-adj-save">Добавить</button>' +
               '<button type="button" class="mini-action-btn cd-adj-cancel" data-kind="'+kind+'" data-master="'+esc(master)+'">Отмена</button>' +
             '</div>'
