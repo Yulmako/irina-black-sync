@@ -428,6 +428,9 @@
   .cd-master-head .cd-subtotal{font-size:13.5px; color:var(--muted); font-variant-numeric:tabular-nums;}
   .cd-visit{display:flex; align-items:center; gap:12px; padding:10px 16px; border-bottom:1px solid var(--border);}
   .cd-visit:last-child{border-bottom:none;}
+  .cd-visit.is-new, .cd-visit-extra.is-new{background:var(--accent-soft); background:color-mix(in srgb, var(--accent-soft) 50%, transparent);}
+  .badge-new-lg{display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700; letter-spacing:.02em; color:var(--accent); background:var(--accent-soft); border:1px solid var(--accent); padding:1px 8px; border-radius:999px; white-space:nowrap;}
+  .cd-new-count{font-size:11.5px; font-weight:700; color:var(--accent); background:var(--accent-soft); padding:2px 9px; border-radius:999px; margin-left:8px;}
   .cd-visit .cd-time{font-variant-numeric:tabular-nums; color:var(--muted); font-size:13px; width:44px; flex:none;}
   .cd-visit .cd-client{flex:1 1 auto; min-width:0;}
   .cd-client-name-row{display:flex; align-items:center; gap:7px; flex-wrap:wrap;}
@@ -2995,7 +2998,7 @@
     let html = '';
     for(const [master, list] of byMaster){
       html += '<div class="cd-master-group" data-master="'+esc(master)+'">' +
-        '<div class="cd-master-head"><span class="cd-master-name-group"><b>'+esc(master)+'</b><span class="rate-pill">'+Math.round(masterRate(master)*100)+'%</span></span><span class="cd-subtotal" data-role="subtotal">—</span></div>';
+        '<div class="cd-master-head"><span class="cd-master-name-group"><b>'+esc(master)+'</b><span class="rate-pill">'+Math.round(masterRate(master)*100)+'%</span>'+(newClientKeys(list).size ? '<span class="cd-new-count" title="Новых клиентов у мастера за день">★ новых: '+newClientKeys(list).size+'</span>' : '')+'</span><span class="cd-subtotal" data-role="subtotal">—</span></div>';
       for(const v of list){
         const notServed = v.status === 'NOT_SERVED';
         const vStatus = visitStatus(v.id);
@@ -3023,10 +3026,11 @@
           : (canEditSvc
               ? '<button type="button" class="cd-set-service-btn" data-booking="'+v.id+'">+ Указать услугу</button>'
               : '<span class="cd-status-note">Услуга не указана</span>');
-        html += '<div class="cd-visit'+(notServed?' not-served':'')+'" data-booking="'+v.id+'">' +
+        const isNewVisit = !notServed && !!v.new_client && !isImportedBooking(v) && vStatus !== 'cancelled';
+        html += '<div class="cd-visit'+(notServed?' not-served':'')+(isNewVisit?' is-new':'')+'" data-booking="'+v.id+'">' +
           '<span class="cd-time">'+timeStr(v.start)+'</span>' +
           '<span class="cd-client">' +
-            '<span class="cd-client-name-row"><b>'+esc(v.client_name||'Без имени')+'</b>'+(v.new_client && !isImportedBooking(v) ? '<span class="badge-new" title="Новый клиент в zapis.kz">Новый</span>' : '')+'<span class="cd-dot">·</span>'+masterSelectHtml+zoneSelectHtml+statusPillHtml+'</span>' +
+            '<span class="cd-client-name-row"><b>'+esc(v.client_name||'Без имени')+'</b>'+(isNewVisit ? '<span class="badge-new-lg" title="Новый клиент по данным zapis.kz">★ Новый клиент</span>' : '')+'<span class="cd-dot">·</span>'+masterSelectHtml+zoneSelectHtml+statusPillHtml+'</span>' +
             '<span class="cd-client-services">'+servicesHtml+'</span>' +
           '</span>' +
           '<span class="cd-price-wrap"><input type="number" min="0" step="500" value="'+price+'" '+(locked?'disabled':'')+'><span class="cd-currency">₸</span></span>' +
@@ -3063,7 +3067,7 @@
               '<button type="button" class="mini-action-btn cd-status-complete" data-booking="'+v.id+'">Завершить</button>' +
               '<button type="button" class="mini-action-btn cd-status-cancel" data-booking="'+v.id+'">Отменить</button>'
             : changeMasterBtn + '<button type="button" class="mini-action-btn cd-status-revert" data-booking="'+v.id+'">↺ Изменить</button>';
-          html += '<div class="cd-visit-extra">' +
+          html += '<div class="cd-visit-extra'+(isNewVisit?' is-new':'')+'">' +
             '<div class="cd-visit-extra-top">' +
               '<div class="cd-consumables">' + chips +
                 (vStatus === 'pending' && dayEditable ? '<button type="button" class="cd-add-consumable-btn" data-booking="'+v.id+'" '+(formOpen?'hidden':'')+'>+ Расходник</button>' + formHtml : '') +
