@@ -510,7 +510,7 @@
   .cd-split{font-size:12px; color:var(--muted); white-space:nowrap;}
   .cd-split b{color:var(--ink); font-weight:600;}
 
-  .cd-summary{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:22px;}
+  .cd-summary{display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:14px; margin-bottom:22px;}
   .cd-summary-tile{
     background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:16px 18px;
     box-shadow:var(--shadow); display:flex; flex-direction:column; gap:6px;
@@ -832,7 +832,7 @@
 
   <div class="stats" id="stats">
     <div class="stat"><span class="label">Всего записей</span><span class="value">—</span></div>
-    <div class="stat"><span class="label">Уникальных клиентов</span><span class="value">—</span></div>
+    <div class="stat"><span class="label">Новых клиентов за месяц</span><span class="value">—</span></div>
     <div class="stat accent"><span class="label">Предстоящие записи</span><span class="value">—</span></div>
     <div class="stat"><span class="label">Доля онлайн-записи</span><span class="value">—</span></div>
   </div>
@@ -1139,6 +1139,7 @@
       <div class="cd-summary-tile"><span class="label">Расходники за день</span><span class="value" id="closeDayConsValue">—</span><span class="cd-tile-hint" id="closeDayConsHint" hidden></span></div>
       <div class="cd-summary-tile"><span class="label">К выплате мастерам</span><span class="value" id="closeDayMasterValue">—</span><span class="cd-tile-hint" id="closeDayMasterHint" hidden></span></div>
       <div class="cd-summary-tile accent"><span class="label">Прибыль салона</span><span class="value" id="closeDaySalonValue">—</span></div>
+      <div class="cd-summary-tile"><span class="label">Новых клиентов</span><span class="value" id="closeDayNewValue">—</span><span class="cd-tile-hint" id="closeDayNewHint" hidden></span></div>
       <div class="cd-summary-tile total"><span class="label">Итого за день</span><span class="value" id="closeDayTotalValue">—</span></div>
     </div>
 
@@ -1556,18 +1557,35 @@
     });
   }
 
+  // Ключи (клиент) записей с отметкой «новый» из zapis.kz; не считаем неявки, отменённые услуги и архив из таблиц.
+  function newClientKeys(list){
+    const keys = new Set();
+    for(const b of list){
+      if(!b.new_client || b.status === 'NOT_SERVED' || isImportedBooking(b)) continue;
+      if(typeof visitStatus === 'function' && visitStatus(b.id) === 'cancelled') continue;
+      const k = b.client_id || b.client_phone || b.client_name;
+      if(k) keys.add(String(k));
+    }
+    return keys;
+  }
   function renderStats(){
     const now = new Date();
     const bookings = state.bookings;
     const total = bookings.length;
     const clientIds = new Set(bookings.map(b => b.client_id || b.client_phone).filter(Boolean));
+    // Новые клиенты за текущий месяц (по сегодня): отметка «новый» приходит из zapis.kz в каждой записи.
+    const monthKey = now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
+    const monthNew = newClientKeys(bookings.filter(b => dayStr(b.start).slice(0,7) === monthKey && dayStr(b.start) <= dayStr(now.toISOString())));
     const upcoming = bookings.filter(b => b.status === 'AWAITING' && new Date(b.start) >= now).length;
     const online = bookings.filter(b => b.online).length;
     const onlineShare = total ? Math.round(online/total*100) : 0;
 
     const tiles = document.querySelectorAll('.stat .value');
     tiles[0].textContent = total.toLocaleString('ru-RU');
-    tiles[1].textContent = clientIds.size.toLocaleString('ru-RU');
+    tiles[1].textContent = monthNew.size.toLocaleString('ru-RU');
+    const newLabel = document.querySelectorAll('.stat .label')[1];
+    newLabel.textContent = 'Новых клиентов · ' + MONTHS_FULL[now.getMonth()];
+    newLabel.title = 'Клиенты с отметкой «новый» в zapis.kz, пришедшие с 1 числа по сегодня (без неявок и отмен). Данных из таблиц (до 26.08.2026) отметки нет.';
     tiles[2].textContent = upcoming.toLocaleString('ru-RU');
     tiles[3].textContent = onlineShare + '%';
 
@@ -2957,6 +2975,15 @@
       return;
     }
     empty.hidden = true; totalWrap.hidden = false;
+    {
+      const nvEl = document.getElementById('closeDayNewValue'), nvHint = document.getElementById('closeDayNewHint');
+      if(visits.every(isImportedBooking)){
+        nvEl.textContent = '—'; nvHint.hidden = false; nvHint.textContent = 'Архив из таблиц — отметки нет';
+      } else {
+        const n = newClientKeys(visits).size;
+        nvEl.textContent = n.toLocaleString('ru-RU'); nvHint.hidden = true;
+      }
+    }
 
     const byMaster = new Map();
     for(const v of visits){
@@ -2999,7 +3026,7 @@
         html += '<div class="cd-visit'+(notServed?' not-served':'')+'" data-booking="'+v.id+'">' +
           '<span class="cd-time">'+timeStr(v.start)+'</span>' +
           '<span class="cd-client">' +
-            '<span class="cd-client-name-row"><b>'+esc(v.client_name||'Без имени')+'</b><span class="cd-dot">·</span>'+masterSelectHtml+zoneSelectHtml+statusPillHtml+'</span>' +
+            '<span class="cd-client-name-row"><b>'+esc(v.client_name||'Без имени')+'</b>'+(v.new_client && !isImportedBooking(v) ? '<span class="badge-new" title="Новый клиент в zapis.kz">Новый</span>' : '')+'<span class="cd-dot">·</span>'+masterSelectHtml+zoneSelectHtml+statusPillHtml+'</span>' +
             '<span class="cd-client-services">'+servicesHtml+'</span>' +
           '</span>' +
           '<span class="cd-price-wrap"><input type="number" min="0" step="500" value="'+price+'" '+(locked?'disabled':'')+'><span class="cd-currency">₸</span></span>' +
