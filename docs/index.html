@@ -2698,12 +2698,12 @@
   function visitConsumablesTotal(bookingId){
     return (dayClose.consumables[bookingId] || []).reduce((s,c) => s + c.qty * c.unitCost, 0);
   }
-  // The consumable's cost comes entirely out of the master's share and
-  // goes entirely to the salon — it isn't split by the commission rate.
+  // Расходник вычитается из стоимости услуги, а остаток делится между мастером
+  // (по его проценту) и салоном (остальное) — так же считает Аналитика и таблицы.
   function visitSplit(price, rate, consumablesTotal){
-    const master = Math.max(0, Math.round(price * rate) - consumablesTotal);
-    const salon = Math.round(price * (1 - rate)) + consumablesTotal;
-    return { master, salon };
+    const base = Math.max(0, price - consumablesTotal);
+    const master = Math.round(base * rate);
+    return { master, salon: base - master };
   }
 
   function renderCloseDayServices(){
