@@ -490,7 +490,7 @@
   .cd-adj-chip button{background:none; border:none; color:inherit; cursor:pointer; font-size:13px; line-height:1; padding:2px 5px; border-radius:50%; opacity:.7;}
   .cd-adj-chip button:hover{opacity:1; background:rgba(0,0,0,.08);}
   .cd-adj-form-title.fine{color:var(--bad);} .cd-adj-form-title.tip{color:var(--good);}
-  .cd-adj-form .cd-adj-note{width:200px;}
+  .cd-adj-form .cd-adj-note{width:260px; max-width:100%;}
   .cd-adj-pay{font-size:12.5px; color:var(--muted); white-space:nowrap;}
   .cd-adj-pay b{color:var(--ink); font-weight:700; font-variant-numeric:tabular-nums;}
   .cd-split{font-size:12px; color:var(--muted); white-space:nowrap;}
@@ -2717,9 +2717,9 @@
     const master = Math.round(base * rate);
     return { master, salon: base - master };
   }
-  // Поправки мастеру за день: штраф (минус мастеру, плюс прибыль салона) и чаевые от клиента
+  // Поправки мастеру за день: вычет (минус мастеру, плюс прибыль салона) и чаевые от клиента
   // (плюс только мастеру — не входят ни в выручку, ни в прибыль салона, ни в Аналитику и P&L).
-  const ADJ_KINDS = { fine: { label: 'Штраф', sign: -1 }, tip: { label: 'Чаевые', sign: 1 } };
+  const ADJ_KINDS = { fine: { label: 'Вычет', sign: -1 }, tip: { label: 'Чаевые', sign: 1 } };
   function masterAdjList(date, master){
     return (dayClose.masterAdj[date] || []).map((a, idx) => Object.assign({ idx }, a)).filter(a => a.master === master);
   }
@@ -2878,14 +2878,15 @@
           ? '<div class="cd-cons-form cd-adj-form" data-master="'+esc(master)+'" data-kind="'+kind+'">' +
               '<b class="cd-adj-form-title '+kind+'">'+ADJ_KINDS[kind].label+'</b>' +
               '<input type="number" class="cd-adj-amount" placeholder="Сумма, ₸" min="0" step="500">' +
-              '<input type="text" class="cd-adj-note" placeholder="Комментарий (необязательно)" maxlength="80">' +
+              '<input type="text" class="cd-adj-note" list="adjReasonOptions" placeholder="'+(kind === 'fine' ? 'За что вычет (например, опоздание)' : 'Комментарий (необязательно)')+'" maxlength="80">' +
               '<button type="button" class="mini-action-btn cd-adj-save">Добавить</button>' +
               '<button type="button" class="mini-action-btn cd-adj-cancel" data-kind="'+kind+'" data-master="'+esc(master)+'">Отмена</button>' +
             '</div>'
-          : '<button type="button" class="cd-add-consumable-btn cd-adj-add" data-kind="'+kind+'" data-master="'+esc(master)+'" title="'+(kind === 'fine' ? 'Вычесть из выплаты мастеру (сумма уйдёт в прибыль салона)' : 'Добавить к выплате только мастеру (в выручку не входит)')+'">'+(kind === 'fine' ? '− Штраф' : '+ Чаевые')+'</button>';
+          : '<button type="button" class="cd-add-consumable-btn cd-adj-add" data-kind="'+kind+'" data-master="'+esc(master)+'" title="'+(kind === 'fine' ? 'Вычесть из выплаты мастеру (сумма уйдёт в прибыль салона)' : 'Добавить к выплате только мастеру (в выручку не входит)')+'">'+(kind === 'fine' ? '− Вычет' : '+ Чаевые')+'</button>';
       }
     }
-    return '<div class="cd-adj">' +
+    return '<datalist id="adjReasonOptions"><option value="Опоздание"><option value="Порча материала"><option value="Жалоба клиента"><option value="Недостача"><option value="Нарушение регламента"></datalist>' +
+      '<div class="cd-adj">' +
       '<div class="cd-adj-chips">'+chips+forms+'</div>' +
       '<div class="cd-adj-pay">К выплате мастеру: <b data-role="masterpay">—</b></div>' +
     '</div>';
@@ -2959,7 +2960,7 @@
     if(masterHint){
       const parts = [];
       if(grandTip) parts.push('чаевые +' + Math.round(grandTip).toLocaleString('ru-RU') + ' ₸');
-      if(grandFine) parts.push('штрафы −' + Math.round(grandFine).toLocaleString('ru-RU') + ' ₸');
+      if(grandFine) parts.push('вычеты −' + Math.round(grandFine).toLocaleString('ru-RU') + ' ₸');
       masterHint.hidden = !parts.length;
       masterHint.textContent = parts.length ? 'Включая ' + parts.join(', ') : '';
     }
@@ -4140,7 +4141,7 @@
   function buildMastersReportRows(date){
     const visits = state.bookings.filter(b => dayStr(b.start) === date);
     const byMaster = new Map();
-    const entry = vm => { if(!byMaster.has(vm)) byMaster.set(vm, { count:0, revenue:0, consumables:0, masterPay:0, salonNet:0, fine:0, tip:0 }); return byMaster.get(vm); };
+    const entry = vm => { if(!byMaster.has(vm)) byMaster.set(vm, { count:0, revenue:0, consumables:0, masterPay:0, salonNet:0, fine:0, tip:0, reasons:[] }); return byMaster.get(vm); };
     for(const v of visits){
       if(v.status === 'NOT_SERVED' || visitStatus(v.id) !== 'completed') continue;
       const price = dayClose.prices[v.id] || 0;
@@ -4152,16 +4153,16 @@
     }
     for(const a of (dayClose.masterAdj[date] || [])){
       const m = entry(a.master);
-      if(a.kind === 'fine'){ m.fine += a.amount; m.masterPay -= a.amount; m.salonNet += a.amount; }
+      if(a.kind === 'fine'){ m.fine += a.amount; m.masterPay -= a.amount; m.salonNet += a.amount; m.reasons.push((a.note || 'без пояснения') + ' (' + Math.round(a.amount).toLocaleString('ru-RU') + ' ₸)'); }
       else { m.tip += a.amount; m.masterPay += a.amount; }
     }
-    const rows = [['Мастер','Ставка, %','Услуг завершено','Выручка, ₸','Расходники, ₸','Штрафы, ₸','Чаевые, ₸','ЗП мастера, ₸','ЧП салона, ₸']];
+    const rows = [['Мастер','Ставка, %','Услуг завершено','Выручка, ₸','Расходники, ₸','Вычеты, ₸','За что вычет','Чаевые, ₸','ЗП мастера, ₸','ЧП салона, ₸']];
     const totals = { count:0, revenue:0, consumables:0, masterPay:0, salonNet:0, fine:0, tip:0 };
     Array.from(byMaster.entries()).sort((a,b) => a[0].localeCompare(b[0],'ru')).forEach(([master, m]) => {
-      rows.push([master, Math.round(masterRate(master)*100), m.count, Math.round(m.revenue), Math.round(m.consumables), Math.round(m.fine), Math.round(m.tip), Math.round(m.masterPay), Math.round(m.salonNet)]);
+      rows.push([master, Math.round(masterRate(master)*100), m.count, Math.round(m.revenue), Math.round(m.consumables), Math.round(m.fine), m.reasons.join('; '), Math.round(m.tip), Math.round(m.masterPay), Math.round(m.salonNet)]);
       for(const k of Object.keys(totals)) totals[k] += m[k];
     });
-    rows.push(['Итого', '', totals.count, Math.round(totals.revenue), Math.round(totals.consumables), Math.round(totals.fine), Math.round(totals.tip), Math.round(totals.masterPay), Math.round(totals.salonNet)]);
+    rows.push(['Итого', '', totals.count, Math.round(totals.revenue), Math.round(totals.consumables), Math.round(totals.fine), '', Math.round(totals.tip), Math.round(totals.masterPay), Math.round(totals.salonNet)]);
     return rows;
   }
   function buildConsReportRows(date){
