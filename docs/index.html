@@ -482,6 +482,17 @@
   .cd-cons-form input[type="text"]{width:150px; padding:5px 8px; border-radius:7px; border:1px solid var(--border); background:var(--bg); color:var(--ink); font:inherit; font-size:12.5px;}
   .cd-cons-form input[type="number"]{width:84px; padding:5px 8px; border-radius:7px; border:1px solid var(--border); background:var(--bg); color:var(--ink); font:inherit; font-size:12.5px; font-variant-numeric:tabular-nums;}
   .cd-cons-total-preview{font-size:12.5px; font-weight:600; color:var(--muted); font-variant-numeric:tabular-nums; white-space:nowrap;}
+  .cd-adj{display:flex; align-items:center; justify-content:space-between; gap:10px 16px; flex-wrap:wrap; padding:10px 18px; border-top:1px dashed var(--border); background:var(--surface-2);}
+  .cd-adj-chips{display:flex; align-items:center; gap:6px; flex-wrap:wrap;}
+  .cd-adj-chip{display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:600; padding:3px 4px 3px 9px; border-radius:999px;}
+  .cd-adj-chip.fine{background:var(--bad-soft); color:var(--bad);}
+  .cd-adj-chip.tip{background:var(--good-soft); color:var(--good);}
+  .cd-adj-chip button{background:none; border:none; color:inherit; cursor:pointer; font-size:13px; line-height:1; padding:2px 5px; border-radius:50%; opacity:.7;}
+  .cd-adj-chip button:hover{opacity:1; background:rgba(0,0,0,.08);}
+  .cd-adj-form-title.fine{color:var(--bad);} .cd-adj-form-title.tip{color:var(--good);}
+  .cd-adj-form .cd-adj-note{width:200px;}
+  .cd-adj-pay{font-size:12.5px; color:var(--muted); white-space:nowrap;}
+  .cd-adj-pay b{color:var(--ink); font-weight:700; font-variant-numeric:tabular-nums;}
   .cd-split{font-size:12px; color:var(--muted); white-space:nowrap;}
   .cd-split b{color:var(--ink); font-weight:600;}
 
@@ -1112,7 +1123,7 @@
     </div>
     <div class="cd-summary" id="closeDayTotal" hidden>
       <div class="cd-summary-tile"><span class="label">Расходники за день</span><span class="value" id="closeDayConsValue">—</span><span class="cd-tile-hint" id="closeDayConsHint" hidden></span></div>
-      <div class="cd-summary-tile"><span class="label">К выплате мастерам</span><span class="value" id="closeDayMasterValue">—</span></div>
+      <div class="cd-summary-tile"><span class="label">К выплате мастерам</span><span class="value" id="closeDayMasterValue">—</span><span class="cd-tile-hint" id="closeDayMasterHint" hidden></span></div>
       <div class="cd-summary-tile accent"><span class="label">Прибыль салона</span><span class="value" id="closeDaySalonValue">—</span></div>
       <div class="cd-summary-tile total"><span class="label">Итого за день</span><span class="value" id="closeDayTotalValue">—</span></div>
     </div>
@@ -2650,6 +2661,7 @@
     serviceStatus: {},
     writeoffs: {},
     adjustments: {},
+    masterAdj: {},
     closed: {},
     openForms: new Set(),
     visitZone: {},
@@ -2704,6 +2716,17 @@
     const base = Math.max(0, price - consumablesTotal);
     const master = Math.round(base * rate);
     return { master, salon: base - master };
+  }
+  // Поправки мастеру за день: штраф (минус мастеру, плюс прибыль салона) и чаевые от клиента
+  // (плюс только мастеру — не входят ни в выручку, ни в прибыль салона, ни в Аналитику и P&L).
+  const ADJ_KINDS = { fine: { label: 'Штраф', sign: -1 }, tip: { label: 'Чаевые', sign: 1 } };
+  function masterAdjList(date, master){
+    return (dayClose.masterAdj[date] || []).map((a, idx) => Object.assign({ idx }, a)).filter(a => a.master === master);
+  }
+  function masterAdjTotals(date, master){
+    let fine = 0, tip = 0;
+    for(const a of masterAdjList(date, master)){ if(a.kind === 'fine') fine += a.amount; else tip += a.amount; }
+    return { fine, tip };
   }
 
   function renderCloseDayServices(){
@@ -2831,18 +2854,50 @@
           '</div>';
         }
       }
+      html += renderMasterAdjHtml(date, master, dayEditable);
       html += '</div>';
     }
     container.innerHTML = html;
     updateCloseDayTotals();
   }
 
+  function renderMasterAdjHtml(date, master, editable){
+    const list = masterAdjList(date, master);
+    const chips = list.map(a => {
+      const k = ADJ_KINDS[a.kind] || ADJ_KINDS.fine;
+      return '<span class="cd-adj-chip '+a.kind+'">'+k.label+' '+(k.sign < 0 ? '−' : '+')+Math.round(a.amount).toLocaleString('ru-RU')+' ₸' +
+        (a.note ? ' · '+esc(a.note) : '') +
+        (editable ? '<button type="button" class="cd-adj-remove" data-idx="'+a.idx+'" title="Удалить" aria-label="Удалить">×</button>' : '') + '</span>';
+    }).join('');
+    let forms = '';
+    if(editable){
+      for(const kind of ['fine', 'tip']){
+        const key = 'adj|'+kind+'|'+master;
+        const open = dayClose.openForms.has(key);
+        forms += open
+          ? '<div class="cd-cons-form cd-adj-form" data-master="'+esc(master)+'" data-kind="'+kind+'">' +
+              '<b class="cd-adj-form-title '+kind+'">'+ADJ_KINDS[kind].label+'</b>' +
+              '<input type="number" class="cd-adj-amount" placeholder="Сумма, ₸" min="0" step="500">' +
+              '<input type="text" class="cd-adj-note" placeholder="Комментарий (необязательно)" maxlength="80">' +
+              '<button type="button" class="mini-action-btn cd-adj-save">Добавить</button>' +
+              '<button type="button" class="mini-action-btn cd-adj-cancel" data-kind="'+kind+'" data-master="'+esc(master)+'">Отмена</button>' +
+            '</div>'
+          : '<button type="button" class="cd-add-consumable-btn cd-adj-add" data-kind="'+kind+'" data-master="'+esc(master)+'" title="'+(kind === 'fine' ? 'Вычесть из выплаты мастеру (сумма уйдёт в прибыль салона)' : 'Добавить к выплате только мастеру (в выручку не входит)')+'">'+(kind === 'fine' ? '− Штраф' : '+ Чаевые')+'</button>';
+      }
+    }
+    return '<div class="cd-adj">' +
+      '<div class="cd-adj-chips">'+chips+forms+'</div>' +
+      '<div class="cd-adj-pay">К выплате мастеру: <b data-role="masterpay">—</b></div>' +
+    '</div>';
+  }
+
   function updateCloseDayTotals(){
-    let grand = 0, grandCons = 0, grandMaster = 0, grandSalon = 0;
+    let grand = 0, grandCons = 0, grandMaster = 0, grandSalon = 0, grandFine = 0, grandTip = 0;
+    const adjDate = document.getElementById('closeDayDate').value;
     document.querySelectorAll('.cd-master-group').forEach(group => {
       const master = group.dataset.master;
       const rate = masterRate(master);
-      let subtotal = 0;
+      let subtotal = 0, groupMasterPay = 0;
       group.querySelectorAll('.cd-visit').forEach(row => {
         const input = row.querySelector('input');
         const v = Number(input.value) || 0;
@@ -2866,8 +2921,13 @@
           (status === 'pending' ? ' <span class="cd-status-note">(предварительно)</span>' : '');
         if(status !== 'completed') return;
         subtotal += v;
-        grandCons += consTotal; grandMaster += split.master; grandSalon += split.salon;
+        grandCons += consTotal; grandMaster += split.master; grandSalon += split.salon; groupMasterPay += split.master;
       });
+      const adj = masterAdjTotals(adjDate, master);
+      groupMasterPay += adj.tip - adj.fine;
+      grandMaster += adj.tip - adj.fine; grandSalon += adj.fine; grandFine += adj.fine; grandTip += adj.tip;
+      const payEl = group.querySelector('[data-role="masterpay"]');
+      if(payEl) payEl.textContent = Math.round(groupMasterPay).toLocaleString('ru-RU') + ' ₸';
       group.querySelector('[data-role="subtotal"]').textContent = Math.round(subtotal).toLocaleString('ru-RU') + ' ₸';
       grand += subtotal;
     });
@@ -2895,6 +2955,14 @@
       }
     }
     if(masterEl) masterEl.textContent = Math.round(grandMaster).toLocaleString('ru-RU') + ' ₸';
+    const masterHint = document.getElementById('closeDayMasterHint');
+    if(masterHint){
+      const parts = [];
+      if(grandTip) parts.push('чаевые +' + Math.round(grandTip).toLocaleString('ru-RU') + ' ₸');
+      if(grandFine) parts.push('штрафы −' + Math.round(grandFine).toLocaleString('ru-RU') + ' ₸');
+      masterHint.hidden = !parts.length;
+      masterHint.textContent = parts.length ? 'Включая ' + parts.join(', ') : '';
+    }
     if(salonEl) salonEl.textContent = Math.round(grandSalon).toLocaleString('ru-RU') + ' ₸';
   }
 
@@ -4072,23 +4140,28 @@
   function buildMastersReportRows(date){
     const visits = state.bookings.filter(b => dayStr(b.start) === date);
     const byMaster = new Map();
+    const entry = vm => { if(!byMaster.has(vm)) byMaster.set(vm, { count:0, revenue:0, consumables:0, masterPay:0, salonNet:0, fine:0, tip:0 }); return byMaster.get(vm); };
     for(const v of visits){
       if(v.status === 'NOT_SERVED' || visitStatus(v.id) !== 'completed') continue;
       const price = dayClose.prices[v.id] || 0;
       const consTotal = visitConsumablesTotal(v.id);
       const vm = visitMaster(v);
       const split = visitSplit(price, masterRate(vm), consTotal);
-      if(!byMaster.has(vm)) byMaster.set(vm, { count:0, revenue:0, consumables:0, masterPay:0, salonNet:0 });
-      const m = byMaster.get(vm);
+      const m = entry(vm);
       m.count += 1; m.revenue += price; m.consumables += consTotal; m.masterPay += split.master; m.salonNet += split.salon;
     }
-    const rows = [['Мастер','Ставка, %','Услуг завершено','Выручка, ₸','Расходники, ₸','ЗП мастера, ₸','ЧП салона, ₸']];
-    const totals = { count:0, revenue:0, consumables:0, masterPay:0, salonNet:0 };
+    for(const a of (dayClose.masterAdj[date] || [])){
+      const m = entry(a.master);
+      if(a.kind === 'fine'){ m.fine += a.amount; m.masterPay -= a.amount; m.salonNet += a.amount; }
+      else { m.tip += a.amount; m.masterPay += a.amount; }
+    }
+    const rows = [['Мастер','Ставка, %','Услуг завершено','Выручка, ₸','Расходники, ₸','Штрафы, ₸','Чаевые, ₸','ЗП мастера, ₸','ЧП салона, ₸']];
+    const totals = { count:0, revenue:0, consumables:0, masterPay:0, salonNet:0, fine:0, tip:0 };
     Array.from(byMaster.entries()).sort((a,b) => a[0].localeCompare(b[0],'ru')).forEach(([master, m]) => {
-      rows.push([master, Math.round(masterRate(master)*100), m.count, Math.round(m.revenue), Math.round(m.consumables), Math.round(m.masterPay), Math.round(m.salonNet)]);
-      totals.count += m.count; totals.revenue += m.revenue; totals.consumables += m.consumables; totals.masterPay += m.masterPay; totals.salonNet += m.salonNet;
+      rows.push([master, Math.round(masterRate(master)*100), m.count, Math.round(m.revenue), Math.round(m.consumables), Math.round(m.fine), Math.round(m.tip), Math.round(m.masterPay), Math.round(m.salonNet)]);
+      for(const k of Object.keys(totals)) totals[k] += m[k];
     });
-    rows.push(['Итого', '', totals.count, Math.round(totals.revenue), Math.round(totals.consumables), Math.round(totals.masterPay), Math.round(totals.salonNet)]);
+    rows.push(['Итого', '', totals.count, Math.round(totals.revenue), Math.round(totals.consumables), Math.round(totals.fine), Math.round(totals.tip), Math.round(totals.masterPay), Math.round(totals.salonNet)]);
     return rows;
   }
   function buildConsReportRows(date){
@@ -4190,7 +4263,7 @@
 
   document.getElementById('closeDayGroups').addEventListener('input', e => {
     if(dayClose.closed[document.getElementById('closeDayDate').value]) return;
-    if(e.target.matches('input[type="number"]:not(.cd-cons-cost):not(.cd-cons-qty)')) updateCloseDayTotals();
+    if(e.target.matches('input[type="number"]:not(.cd-cons-cost):not(.cd-cons-qty):not(.cd-adj-amount)')) updateCloseDayTotals();
   });
   // Zone override for a visit — most masters only ever work one zone, so
   // this is only stored when it actually differs from the master's own.
@@ -4208,6 +4281,32 @@
     // Defense in depth: a closed day renders no editable controls at all,
     // but guard the mutations too in case of stale DOM state.
     if(dayClose.closed[document.getElementById('closeDayDate').value]) return;
+    const adjAdd = e.target.closest('.cd-adj-add');
+    if(adjAdd){ dayClose.openForms.add('adj|'+adjAdd.dataset.kind+'|'+adjAdd.dataset.master); renderCloseDay(); return; }
+    const adjCancel = e.target.closest('.cd-adj-cancel');
+    if(adjCancel){ dayClose.openForms.delete('adj|'+adjCancel.dataset.kind+'|'+adjCancel.dataset.master); renderCloseDay(); return; }
+    const adjSave = e.target.closest('.cd-adj-save');
+    if(adjSave){
+      const form = adjSave.closest('.cd-adj-form');
+      const amount = Math.round(Number(form.querySelector('.cd-adj-amount').value) || 0);
+      const note = form.querySelector('.cd-adj-note').value.trim();
+      const date = document.getElementById('closeDayDate').value;
+      if(amount > 0 && date){
+        if(!dayClose.masterAdj[date]) dayClose.masterAdj[date] = [];
+        dayClose.masterAdj[date].push({ master: form.dataset.master, kind: form.dataset.kind, amount, note });
+        dayClose.openForms.delete('adj|'+form.dataset.kind+'|'+form.dataset.master);
+        renderCloseDay();
+      } else form.querySelector('.cd-adj-amount').focus();
+      return;
+    }
+    const adjRemove = e.target.closest('.cd-adj-remove');
+    if(adjRemove){
+      const date = document.getElementById('closeDayDate').value;
+      const arr = dayClose.masterAdj[date];
+      if(arr){ arr.splice(Number(adjRemove.dataset.idx), 1); if(!arr.length) delete dayClose.masterAdj[date]; }
+      renderCloseDay();
+      return;
+    }
     const addBtn = e.target.closest('.cd-add-consumable-btn');
     if(addBtn){ dayClose.openForms.add(addBtn.dataset.booking); renderCloseDay(); return; }
     const cancelBtn = e.target.closest('.cd-cons-cancel');
@@ -4260,7 +4359,7 @@
   });
   document.getElementById('closeDayGroups').addEventListener('input', e => {
     const form = e.target.closest('.cd-cons-form');
-    if(!form) return;
+    if(!form || form.classList.contains('cd-adj-form')) return;
     if(e.target.matches('.cd-cons-item')){
       const known = getConsumablePrice(e.target.value);
       if(known != null){
@@ -4895,7 +4994,7 @@
       prices: dayClose.prices, consumables: dayClose.consumables,
       procurement: dayClose.procurement, stockIn: dayClose.stockIn, productSales: dayClose.productSales,
       serviceStatus: dayClose.serviceStatus, writeoffs: dayClose.writeoffs,
-      adjustments: dayClose.adjustments, closed: dayClose.closed,
+      adjustments: dayClose.adjustments, masterAdj: dayClose.masterAdj, closed: dayClose.closed,
       visitZone: dayClose.visitZone, serviceOverride: dayClose.serviceOverride, masterOverride: dayClose.masterOverride, serviceMap: dayClose.serviceMap, serviceCatalog: cloneCatalog(), catalogVersion: dayClose.catalogVersion || CATALOG_PRESET_VERSION,
     };
   }
@@ -4982,6 +5081,7 @@
     dayClose.serviceStatus = dc.serviceStatus || {};
     dayClose.writeoffs = dc.writeoffs || {};
     dayClose.adjustments = dc.adjustments || {};
+    dayClose.masterAdj = dc.masterAdj || {};
     dayClose.closed = dc.closed || {};
     dayClose.visitZone = dc.visitZone || {};
     dayClose.serviceOverride = dc.serviceOverride || {};
