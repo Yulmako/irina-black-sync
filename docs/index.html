@@ -4778,7 +4778,7 @@
       const m = entry(vm);
       const first = String(v.client_name || '').trim().split(/\s+/)[0] || 'Без имени';
       const svc = visitServices(v).join(', ') || 'услуга не указана';
-      m.lines.push('• ' + tgHtml(first) + (v.new_client ? ' (новый)' : '') + ' — ' + tgHtml(svc) + ' — ' + tgMoney(price) + (cons ? ', расходники ' + tgMoney(cons) : '') + ' → вам ' + tgMoney(split.master));
+      m.lines.push('• ' + tgHtml(first) + (v.new_client ? ' (новый)' : '') + ' — ' + tgHtml(svc) + ' — ' + tgMoney(price) + (cons ? ', расходники ' + tgMoney(cons) : '') + ' → мастеру ' + tgMoney(split.master));
       m.count++; m.revenue += price; m.cons += cons; m.share += split.master;
     }
     for(const sl of (dayClose.productSales[date] || [])){
@@ -4804,11 +4804,11 @@
       const m = byMaster.get(name);
       let t = '<b>' + tgHtml(name) + '</b> · ставка ' + Math.round(masterRate(name) * 100) + '%\n';
       if(m.lines.length) t += m.lines.join('\n') + '\n';
-      if(m.count) t += 'Услуг: ' + m.count + ' · выручка ' + tgMoney(m.revenue) + ' · расходники ' + tgMoney(m.cons) + '\nВаша доля с услуг: ' + tgMoney(m.share) + '\n';
+      if(m.count) t += 'Услуг: ' + m.count + ' · выручка ' + tgMoney(m.revenue) + ' · расходники ' + tgMoney(m.cons) + '\nДоля мастера с услуг: ' + tgMoney(m.share) + '\n';
       if(m.fine) t += 'Вычет: −' + tgMoney(m.fine) + ' (' + tgHtml(m.reasons.join('; ')) + ')\n';
       if(m.tip) t += 'Чаевые: +' + tgMoney(m.tip) + '\n';
       if(m.prodComm) t += 'С продажи продукции: +' + tgMoney(m.prodComm) + '\n';
-      t += '<b>К выплате на руки: ' + tgMoney(m.pay) + '</b>';
+      t += '<b>К выплате мастеру на руки: ' + tgMoney(m.pay) + '</b>';
       blocks.push(t);
     });
     if(!blocks.length) blocks.push('Завершённых услуг за день нет.');
