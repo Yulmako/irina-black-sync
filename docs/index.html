@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>try{var __t=localStorage.getItem('ibcrm_theme'); if(__t==='light'||__t==='dark') document.documentElement.setAttribute('data-theme', __t);}catch(e){}</script>
 <style>
   :root{
     --bg:#faf6f4; --surface:#ffffff; --surface-2:#f4ece9; --ink:#251920;
@@ -86,8 +87,13 @@
   #analyticsStats .stat{padding:14px 14px;}
   #analyticsStats .value{font-size:18px;}
 
-  .tabs{display:flex; gap:6px; border-bottom:1px solid var(--border); margin-bottom:18px; flex-wrap:wrap;}
+  .tabs{display:flex; gap:4px; border-bottom:1px solid var(--border); margin-bottom:18px; flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none;}
+  .tabs::-webkit-scrollbar{display:none;}
+  .tabs .tab{flex:none;}
   .tab .lbl-short{display:none;}
+  @media (max-width:1120px) and (min-width:601px){ .tab .lbl-full{display:none;} .tab .lbl-short{display:inline;} .tab{margin-right:7px; font-size:13px;} }
+  @media (max-width:900px) and (min-width:601px){ .tab{margin-right:5px; font-size:12.5px;} .tabs{gap:2px;} }
+  .theme-btn{display:inline-flex; align-items:center; gap:6px;}
   .svc-hint{margin:0; padding:12px 16px; font-size:12.5px; color:var(--muted); line-height:1.5; border-bottom:1px solid var(--border); background:var(--surface-2);}
   .svc-table td{vertical-align:middle;}
   .svc-name{font-weight:600; overflow-wrap:anywhere;}
@@ -126,7 +132,7 @@
   .nav-bar{display:contents;}
   .nav-toggle{display:none;}
   .tab{white-space:nowrap;}
-  .tab{padding:10px 4px; margin-right:12px; font-size:14px; font-weight:600; color:var(--muted); background:none; border:none; cursor:pointer; border-bottom:2px solid transparent; font-family:inherit;}
+  .tab{padding:10px 3px; margin-right:9px; font-size:13.5px; font-weight:600; color:var(--muted); background:none; border:none; cursor:pointer; border-bottom:2px solid transparent; font-family:inherit;}
   .tab.active{color:var(--ink); border-bottom-color:var(--accent);}
   .tab .count{color:var(--muted); font-weight:500;}
   .cd-subtabs{display:flex; gap:4px; border-bottom:1px solid var(--border); margin-bottom:18px; flex-wrap:wrap;}
@@ -885,6 +891,7 @@
       <span id="syncWarn" class="sync-warn" hidden></span>
       <span id="saveNote"></span>
       <div class="sync-actions">
+        <button class="refresh-btn theme-btn" id="themeBtn" type="button" aria-label="Переключить тему" title="Переключить тёмную и светлую тему"><span id="themeIco" aria-hidden="true">☀</span><span id="themeTxt">Светлая</span></button>
         <button class="refresh-btn" id="logoutBtn">Выйти</button>
       </div>
     </div>
@@ -4887,6 +4894,26 @@
     note.hidden = !(closed && sent);
     if(sent){ const t = new Date(sent.at); note.textContent = 'В Telegram отправлено ' + String(t.getHours()).padStart(2,'0') + ':' + String(t.getMinutes()).padStart(2,'0'); }
   }
+
+  // ---------------- тема: тёмная / светлая ----------------
+  (function(){
+    const root = document.documentElement, btn = document.getElementById('themeBtn');
+    const effective = () => root.getAttribute('data-theme') || (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    function paint(){
+      const dark = effective() === 'dark';
+      document.getElementById('themeIco').textContent = dark ? '☀' : '☾';
+      document.getElementById('themeTxt').textContent = dark ? 'Светлая' : 'Тёмная';
+      btn.title = dark ? 'Включить светлую тему' : 'Включить тёмную тему';
+    }
+    btn.addEventListener('click', () => {
+      const next = effective() === 'dark' ? 'light' : 'dark';
+      root.setAttribute('data-theme', next);
+      try{ localStorage.setItem('ibcrm_theme', next); }catch(e){}
+      paint();
+    });
+    paint();
+  })();
+
   document.getElementById('closeDayTelegram').addEventListener('click', async () => {
     const date = document.getElementById('closeDayDate').value;
     if(!date) return;
