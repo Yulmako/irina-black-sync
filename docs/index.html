@@ -4805,6 +4805,8 @@
     const [y, mo, d] = date.split('-').map(Number);
     const wd = ['вс','пн','вт','ср','чт','пт','сб'][new Date(y, mo - 1, d).getDay()];
     const head = '<b>Сводка за ' + date.split('-').reverse().join('.') + ' (' + wd + ')</b>' + (resend ? '\n<i>Исправленная сводка — прошлая отправка неактуальна</i>' : '') + '\nIrina Black Beauty Corner';
+    const dayVisits = state.bookings.filter(b => dayStr(b.start) === date);
+    const newLine = dayVisits.length && !dayVisits.every(isImportedBooking) ? '\nНовых клиентов за день: ' + newClientKeys(dayVisits).size : '';
     const blocks = [];
     const byMaster = buildDayMasterBlocks(date);
     Array.from(byMaster.keys()).sort((a, b) => a.localeCompare(b, 'ru')).forEach(name => {
@@ -4826,9 +4828,9 @@
     st += staff.length ? staff.map(m => '• ' + tgHtml(m.name) + ' — ' + tgHtml(m.role)).join('\n') : 'Отметок по персоналу нет.';
     blocks.push(st);
     // склейка в сообщения до 3800 знаков (лимит Telegram 4096)
-    const out = []; let cur = head;
+    const out = []; let cur = head + newLine;
     for(const b of blocks){
-      if((cur + '\n\n' + b).length > 3800 && cur !== head){ out.push(cur); cur = b; }
+      if((cur + '\n\n' + b).length > 3800 && cur !== head + newLine){ out.push(cur); cur = b; }
       else cur += '\n\n' + b;
     }
     out.push(cur);
