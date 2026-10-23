@@ -891,7 +891,7 @@
   </header>
 
   <div class="stats" id="stats">
-    <div class="stat"><span class="label">Всего записей</span><span class="value">—</span></div>
+    <div class="stat"><span class="label">Прибыль салона</span><span class="value">—</span></div>
     <div class="stat"><span class="label">Новых клиентов за месяц</span><span class="value">—</span></div>
     <div class="stat accent"><span class="label">Предстоящие записи</span><span class="value">—</span></div>
     <div class="stat"><span class="label">Доля онлайн-записи</span><span class="value">—</span></div>
@@ -1719,6 +1719,37 @@
     }
     return keys;
   }
+  // Прибыль салона за месяц — сумма «Прибыли салона» из Закрытия дня по всем дням месяца:
+  // (цена − расходники) × доля салона по завершённым услугам + вычеты мастерам + продажа продукции − % за продажу.
+  function salonProfitForMonth(monthKey){
+    let profit = 0;
+    for(const b of state.bookings){
+      const date = dayStr(b.start);
+      if(date.slice(0,7) !== monthKey || visitStatus(b.id) !== 'completed') continue;
+      if(FROZEN_DATES.has(date) && !isImportedBooking(b)) continue;
+      profit += visitSplit(dayClose.prices[b.id] || 0, masterRate(visitMaster(b)), visitConsumablesTotal(b.id)).salon;
+    }
+    for(const date in dayClose.masterAdj){
+      if(date.slice(0,7) !== monthKey) continue;
+      for(const a of dayClose.masterAdj[date]) if(a.kind === 'fine') profit += Number(a.amount) || 0;
+    }
+    for(const date in dayClose.productSales){
+      if(date.slice(0,7) !== monthKey) continue;
+      for(const r of dayClose.productSales[date]) profit += r.qty * r.unitPrice - saleCommission(r);
+    }
+    return Math.round(profit);
+  }
+  function renderSalonProfitTile(){
+    const tile = document.querySelector('#stats .stat');
+    if(!tile) return;
+    const now = new Date();
+    const monthKey = now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
+    const v = salonProfitForMonth(monthKey);
+    tile.querySelector('.value').textContent = v.toLocaleString('ru-RU') + ' ₸';
+    const label = tile.querySelector('.label');
+    label.textContent = 'Прибыль салона · ' + MONTHS_FULL[now.getMonth()];
+    label.title = 'Сумма «Прибыли салона» из Закрытия дня за месяц: завершённые услуги за вычетом расходников и доли мастера, вычеты мастерам и продажа продукции. Без аренды, зарплат персонала и закупа — их видно в P&L.';
+  }
   function renderStats(){
     const now = new Date();
     const bookings = state.bookings;
@@ -1732,7 +1763,7 @@
     const onlineShare = total ? Math.round(online/total*100) : 0;
 
     const tiles = document.querySelectorAll('.stat .value');
-    tiles[0].textContent = total.toLocaleString('ru-RU');
+    renderSalonProfitTile();
     tiles[1].textContent = monthNew.size.toLocaleString('ru-RU');
     const newLabel = document.querySelectorAll('.stat .label')[1];
     newLabel.textContent = 'Новых клиентов · ' + MONTHS_FULL[now.getMonth()];
@@ -3342,6 +3373,7 @@
       masterHint.textContent = parts.length ? 'Включая ' + parts.join(', ') : '';
     }
     if(salonEl) salonEl.textContent = Math.round(grandSalon).toLocaleString('ru-RU') + ' ₸';
+    renderSalonProfitTile();
   }
 
   // ---------------- close-day: Расходники (day's consumables log) ----------------
