@@ -1238,6 +1238,8 @@
       <span class="cd-status-note" id="closeDayPendingNote" hidden></span>
       <div class="cd-spacer"></div>
       <button class="cd-save-btn" id="closeDaySave">Закрыть день</button>
+      <span class="cd-status-note" id="closeDayTgNote" hidden></span>
+      <button class="cd-unlock-btn" id="closeDayTelegram" hidden title="Отправить сводку по мастерам и персоналу в Telegram-канал">Отправить в Telegram</button>
       <button class="cd-unlock-btn" id="closeDayUnlock" hidden>Разблокировать день</button>
     </div>
     <div class="cd-summary" id="closeDayTotal" hidden>
@@ -3055,6 +3057,7 @@
     writeoffs: {},
     adjustments: {},
     masterAdj: {},
+    tgSent: {},
     staff: { members: [], shifts: {}, activity: {} },
     closed: {},
     openForms: new Set(),
@@ -3148,6 +3151,7 @@
     saveBtn.disabled = false;
     saveBtn.title = '';
     unlockBtn.hidden = !closed;
+    renderTgControls(date, closed);
 
     const container = document.getElementById('closeDayGroups');
     const empty = document.getElementById('closeDayEmpty');
@@ -4674,7 +4678,7 @@
   // Three separate reports for the selected day — мастера, расходники,
   // закуп — each pulled fresh from dayClose state (not the last-rendered
   // DOM), matching exactly what counts toward that day's totals.
-  function showReportToast(msg){
+  function showReportToast(msg, ms){
     let toast = document.getElementById('reportToast');
     if(!toast){
       toast = document.createElement('div');
@@ -4685,7 +4689,7 @@
     toast.textContent = msg;
     toast.classList.add('show');
     clearTimeout(showReportToast._t);
-    showReportToast._t = setTimeout(() => toast.classList.remove('show'), 3200);
+    showReportToast._t = setTimeout(() => toast.classList.remove('show'), ms || 3200);
   }
   // Builds a one-sheet .xlsx workbook from a rows-of-arrays table (header
   // row first) via SheetJS, loaded from cdnjs — see the <script> tag at
@@ -4755,6 +4759,144 @@
     rows.push(['Итого', '', totals.count, Math.round(totals.revenue), Math.round(totals.consumables), Math.round(totals.fine), '', Math.round(totals.tip), Math.round(totals.prodComm), Math.round(totals.masterPay), Math.round(totals.salonNet)]);
     return rows;
   }
+
+  // ---------------- Закрытие дня → сводка в Telegram-канал ----------------
+  // Сообщения уходят через функцию Supabase send_telegram: токен бота лежит только в базе (таблица telegram_config,
+  // supabase/telegram.sql), на странице его нет. В канал идёт сводка по каждому мастеру (клиенты, услуги, расходники,
+  // вычет/чаевые, выплата на руки) и список персонала на смене. Клиенты — только имя, без фамилии и телефона.
+  const tgHtml = v => String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const tgMoney = n => Math.round(n || 0).toLocaleString('ru-RU') + ' ₸';
+  const tgSigned = n => (n < 0 ? '−' : '+') + Math.round(Math.abs(n)).toLocaleString('ru-RU') + ' ₸';
+  function buildDayMasterBlocks(date){
+    const byMaster = new Map();
+    const entry = name => { if(!byMaster.has(name)) byMaster.set(name, { lines: [], count: 0, revenue: 0, cons: 0, share: 0, fine: 0, reasons: [], tip: 0, prodComm: 0 }); return byMaster.get(name); };
+    const visits = state.bookings.filter(b => dayStr(b.start) === date).sort((a, b) => new Date(a.start) - new Date(b.start));
+    for(const v of visits){
+      if(v.status === 'NOT_SERVED' || visitStatus(v.id) !== 'completed') continue;
+      const price = dayClose.prices[v.id] || 0, cons = visitConsumablesTotal(v.id), vm = visitMaster(v);
+      const split = visitSplit(price, masterRate(vm), cons);
+      const m = entry(vm);
+      const first = String(v.client_name || '').trim().split(/\s+/)[0] || 'Без имени';
+      const svc = visitServices(v).join(', ') || 'услуга не указана';
+      m.lines.push('• ' + tgHtml(first) + (v.new_client ? ' (новый)' : '') + ' — ' + tgHtml(svc) + ' — ' + tgMoney(price) + (cons ? ', расходники ' + tgMoney(cons) : '') + ' → вам ' + tgMoney(split.master));
+      m.count++; m.revenue += price; m.cons += cons; m.share += split.master;
+    }
+    for(const sl of (dayClose.productSales[date] || [])){
+      const comm = saleCommission(sl); if(!comm) continue;
+      const known = Array.from(byMaster.keys()).concat(state.masters.map(x => x.name)).find(n => sameName(n, sl.seller));
+      const m = entry(known || sl.seller.trim());
+      m.prodComm += comm;
+    }
+    for(const a of (dayClose.masterAdj[date] || [])){
+      const m = entry(a.master);
+      if(a.kind === 'fine'){ m.fine += a.amount; m.reasons.push(a.note || 'без пояснения'); } else m.tip += a.amount;
+    }
+    byMaster.forEach(m => { m.pay = m.share + m.tip - m.fine + m.prodComm; });
+    return byMaster;
+  }
+  function buildDayTelegramMessages(date, resend){
+    const [y, mo, d] = date.split('-').map(Number);
+    const wd = ['вс','пн','вт','ср','чт','пт','сб'][new Date(y, mo - 1, d).getDay()];
+    const head = '<b>Сводка за ' + date.split('-').reverse().join('.') + ' (' + wd + ')</b>' + (resend ? '\n<i>Исправленная сводка — прошлая отправка неактуальна</i>' : '') + '\nIrina Black Beauty Corner';
+    const blocks = [];
+    const byMaster = buildDayMasterBlocks(date);
+    Array.from(byMaster.keys()).sort((a, b) => a.localeCompare(b, 'ru')).forEach(name => {
+      const m = byMaster.get(name);
+      let t = '<b>' + tgHtml(name) + '</b> · ставка ' + Math.round(masterRate(name) * 100) + '%\n';
+      if(m.lines.length) t += m.lines.join('\n') + '\n';
+      if(m.count) t += 'Услуг: ' + m.count + ' · выручка ' + tgMoney(m.revenue) + ' · расходники ' + tgMoney(m.cons) + '\nВаша доля с услуг: ' + tgMoney(m.share) + '\n';
+      if(m.fine) t += 'Вычет: −' + tgMoney(m.fine) + ' (' + tgHtml(m.reasons.join('; ')) + ')\n';
+      if(m.tip) t += 'Чаевые: +' + tgMoney(m.tip) + '\n';
+      if(m.prodComm) t += 'С продажи продукции: +' + tgMoney(m.prodComm) + '\n';
+      t += '<b>К выплате на руки: ' + tgMoney(m.pay) + '</b>';
+      blocks.push(t);
+    });
+    if(!blocks.length) blocks.push('Завершённых услуг за день нет.');
+    // персонал на смене
+    const onIds = dayClose.staff.shifts[date] || [];
+    const staff = dayClose.staff.members.filter(m => onIds.indexOf(m.id) >= 0).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+    let st = '<b>Персонал на смене</b>\n';
+    st += staff.length ? staff.map(m => '• ' + tgHtml(m.name) + ' — ' + tgHtml(m.role)).join('\n') : 'Отметок по персоналу нет.';
+    blocks.push(st);
+    // склейка в сообщения до 3800 знаков (лимит Telegram 4096)
+    const out = []; let cur = head;
+    for(const b of blocks){
+      if((cur + '\n\n' + b).length > 3800 && cur !== head){ out.push(cur); cur = b; }
+      else cur += '\n\n' + b;
+    }
+    out.push(cur);
+    return out;
+  }
+  async function tgRpc(name, body){
+    const res = await fetch(SUPABASE_URL + '/rest/v1/rpc/' + name, {
+      method: 'POST',
+      headers: { apikey: SUPABASE_ANON_KEY, Authorization: 'Bearer ' + SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({ password: currentPassword }, body)),
+    });
+    if(!res.ok){ let msg = ''; try{ msg = (await res.json()).message || ''; }catch(e){} const err = new Error(msg || ('http ' + res.status)); err.http = res.status; throw err; }
+    const txt = await res.text();
+    return txt ? JSON.parse(txt) : null;
+  }
+  const tgSleep = ms => new Promise(r => setTimeout(r, ms));
+  let tgBusy = false;
+  async function sendDaySummaryToTelegram(date, opts){
+    opts = opts || {};
+    if(tgBusy) return;
+    tgBusy = true;
+    const btn = document.getElementById('closeDayTelegram');
+    if(btn){ btn.disabled = true; btn.textContent = 'Отправляю…'; }
+    try{
+      let ready = false;
+      try{ ready = await tgRpc('telegram_ready', {}); }catch(e){ ready = false; }
+      if(!ready){
+        showReportToast('Telegram не настроен: выполните supabase/telegram.sql в Supabase (инструкция в README). Сводка не отправлена.', 8000);
+        return;
+      }
+      const texts = buildDayTelegramMessages(date, !!dayClose.tgSent[date]);
+      const ids = [];
+      for(let i = 0; i < texts.length; i++){
+        ids.push(await tgRpc('send_telegram', { p_text: texts[i] }));
+        if(i < texts.length - 1) await tgSleep(1200);      // порядок сообщений в канале
+      }
+      // проверяем ответ Telegram по последнему сообщению (токен/доступ бота)
+      let result = null;
+      for(let t = 0; t < 6 && !result; t++){ await tgSleep(1000); try{ result = await tgRpc('telegram_result', { p_request_id: ids[ids.length - 1] }); }catch(e){} }
+      if(result && result.ok){
+        dayClose.tgSent[date] = { at: new Date().toISOString(), n: texts.length };
+        scheduleSave('day_close');
+        showReportToast('Сводка отправлена в Telegram-канал');
+      } else if(result){
+        showReportToast('Telegram не принял сообщение: ' + (result.error || ('код ' + result.status)) + '. Проверьте, что бот добавлен в канал как администратор.', 8000);
+      } else {
+        showReportToast('Сводка поставлена в очередь, но подтверждения от Telegram пока нет — проверьте канал.', 6000);
+      }
+    }catch(e){
+      showReportToast('Не удалось отправить сводку в Telegram: ' + (e.message || 'ошибка связи'), 6000);
+    }finally{
+      tgBusy = false;
+      renderTgControls(document.getElementById('closeDayDate').value, !!dayClose.closed[document.getElementById('closeDayDate').value]);
+    }
+  }
+  function renderTgControls(date, closed){
+    const btn = document.getElementById('closeDayTelegram'), note = document.getElementById('closeDayTgNote');
+    if(!btn || !note) return;
+    const sent = dayClose.tgSent[date];
+    btn.hidden = !closed;
+    btn.disabled = tgBusy;
+    btn.textContent = tgBusy ? 'Отправляю…' : (sent ? 'Отправить в Telegram повторно' : 'Отправить в Telegram');
+    note.hidden = !(closed && sent);
+    if(sent){ const t = new Date(sent.at); note.textContent = 'В Telegram отправлено ' + String(t.getHours()).padStart(2,'0') + ':' + String(t.getMinutes()).padStart(2,'0'); }
+  }
+  document.getElementById('closeDayTelegram').addEventListener('click', async () => {
+    const date = document.getElementById('closeDayDate').value;
+    if(!date) return;
+    if(dayClose.tgSent[date]){
+      const ok = await showConfirmDialog('Сводка за этот день уже отправлялась. Отправить ещё раз (в канал уйдёт новая «исправленная» сводка)?', { okText: 'Отправить' });
+      if(!ok) return;
+    }
+    sendDaySummaryToTelegram(date);
+  });
+
   function buildConsReportRows(date){
     const visits = state.bookings.filter(b => dayStr(b.start) === date && visitStatus(b.id) === 'completed');
     const rows = [['Мастер','Клиент','Расходник','Кол-во','Цена за ед., ₸','Сумма, ₸']];
@@ -5001,6 +5143,7 @@
     dayClose.closed[date] = true;
     analyticsCache.key = null;
     renderCloseDay();
+    flushSaves().then(() => sendDaySummaryToTelegram(date));   // сводка мастерам в Telegram
   });
   // Указать услугу вручную, если в zapis.kz она не заполнена.
   function showServiceDialog(bookingId){
@@ -5922,7 +6065,7 @@
       prices: dayClose.prices, consumables: dayClose.consumables,
       procurement: dayClose.procurement, stockIn: dayClose.stockIn, productSales: dayClose.productSales,
       serviceStatus: dayClose.serviceStatus, writeoffs: dayClose.writeoffs,
-      adjustments: dayClose.adjustments, masterAdj: dayClose.masterAdj, staff: dayClose.staff, closed: dayClose.closed,
+      adjustments: dayClose.adjustments, masterAdj: dayClose.masterAdj, tgSent: dayClose.tgSent, staff: dayClose.staff, closed: dayClose.closed,
       visitZone: dayClose.visitZone, serviceOverride: dayClose.serviceOverride, masterOverride: dayClose.masterOverride, serviceMap: dayClose.serviceMap, serviceCatalog: cloneCatalog(), catalogVersion: dayClose.catalogVersion || CATALOG_PRESET_VERSION,
     };
   }
@@ -6010,6 +6153,7 @@
     dayClose.writeoffs = dc.writeoffs || {};
     dayClose.adjustments = dc.adjustments || {};
     dayClose.masterAdj = dc.masterAdj || {};
+    dayClose.tgSent = dc.tgSent || {};
     dayClose.staff = { members: (dc.staff && dc.staff.members) || [], shifts: (dc.staff && dc.staff.shifts) || {}, activity: (dc.staff && dc.staff.activity) || {} };
     dayClose.closed = dc.closed || {};
     dayClose.visitZone = dc.visitZone || {};
