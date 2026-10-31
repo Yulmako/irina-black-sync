@@ -516,6 +516,14 @@
   .cd-visit:last-child{border-bottom:none;}
   .cd-visit.is-new, .cd-visit-extra.is-new{background:var(--accent-soft); background:color-mix(in srgb, var(--accent-soft) 50%, transparent);}
   .badge-new-lg{display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700; letter-spacing:.02em; color:var(--accent); background:var(--accent-soft); border:1px solid var(--accent); padding:1px 8px; border-radius:999px; white-space:nowrap;}
+  .st-fine{font-size:11px; font-weight:600; color:var(--bad);}
+  .cd-new-star{border:0; background:transparent; cursor:pointer; font-size:17px; line-height:1; padding:0 3px; color:var(--muted); font-family:inherit;}
+  .cd-new-star:hover:not(:disabled){color:var(--accent);}
+  .cd-new-star.on{color:var(--accent); font-size:11px; font-weight:700; letter-spacing:.02em; background:var(--accent-soft); border:1px solid var(--accent); padding:1px 8px; border-radius:999px; white-space:nowrap;}
+  .cd-new-star.manual{text-shadow:0 0 0 currentColor;}
+  .cd-new-star:disabled{cursor:default; opacity:.7;}
+  .cd-new-star:focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:4px;}
+  .cd-low-note{font-size:11px; font-weight:700; color:var(--accent); background:var(--accent-soft); padding:1px 7px; border-radius:999px; margin-left:4px; white-space:nowrap;}
   .cd-new-count{font-size:11.5px; font-weight:700; color:var(--accent); background:var(--accent-soft); padding:2px 9px; border-radius:999px; margin-left:8px;}
   .cd-visit .cd-time{font-variant-numeric:tabular-nums; color:var(--muted); font-size:13px; width:44px; flex:none;}
   .cd-visit .cd-client{flex:1 1 auto; min-width:0;}
@@ -1438,6 +1446,32 @@
         </div>
         <div class="empty" id="productSaleEmpty" hidden><b>Продаж продукции за этот день нет</b>Добавьте первую продажу кнопкой выше.</div>
       </div>
+
+      <div class="panel" style="margin-top:16px;">
+        <div class="filters">
+          <span class="result-count">Штраф персонала — вычитается из зарплаты сотрудника (вкладка «Персонал», P&amp;L) и идёт в прибыль салона.</span>
+          <div class="spacer"></div>
+          <button type="button" class="refresh-btn" id="addStaffFineToggle">Добавить штраф персонала</button>
+        </div>
+        <div class="add-master-row" id="addStaffFineRow" hidden>
+          <select id="newFineStaff" style="width:230px;"></select>
+          <div class="am-rate-wrap">
+            <input type="number" id="newFineAmount" placeholder="Сумма штрафа" min="1" step="100">
+            <span>₸</span>
+          </div>
+          <input type="text" id="newFineNote" placeholder="За что штраф" list="fineReasonOptions" maxlength="80" style="width:240px;" autocomplete="off">
+          <datalist id="fineReasonOptions"><option value="Опоздание"><option value="Прогул"><option value="Нарушение регламента"><option value="Недостача"><option value="Порча имущества"><option value="Жалоба клиента"></datalist>
+          <button type="button" class="cd-save-btn" id="addStaffFineSave">Добавить</button>
+          <button type="button" class="am-cancel" id="addStaffFineCancel">Отмена</button>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Сотрудник</th><th>За что</th><th class="num">Сумма</th><th></th></tr></thead>
+            <tbody id="staffFineBody"></tbody>
+          </table>
+        </div>
+        <div class="empty" id="staffFineEmpty" hidden><b>Штрафов персоналу за этот день нет</b>Добавьте штраф кнопкой выше.</div>
+      </div>
     </div>
 
     <div id="cd-panel-procurement" hidden>
@@ -1832,10 +1866,16 @@
   }
 
   // Ключи (клиент) записей с отметкой «новый» из zapis.kz; не считаем неявки, отменённые услуги и архив из таблиц.
+  // «Новый клиент»: по данным zapis.kz, но админ может поправить вручную звёздочкой в Закрытии дня.
+  function isNewBooking(b){
+    if(isImportedBooking(b)) return false;
+    const o = dayClose.newOverride && dayClose.newOverride[b.id];
+    return typeof o === 'boolean' ? o : !!b.new_client;
+  }
   function newClientKeys(list){
     const keys = new Set();
     for(const b of list){
-      if(!b.new_client || b.status === 'NOT_SERVED' || isImportedBooking(b)) continue;
+      if(!isNewBooking(b) || b.status === 'NOT_SERVED') continue;
       if(typeof visitStatus === 'function' && visitStatus(b.id) === 'cancelled') continue;
       const k = b.client_id || b.client_phone || b.client_name;
       if(k) keys.add(String(k));
@@ -1850,7 +1890,7 @@
       const date = dayStr(b.start);
       if(date.slice(0,7) !== monthKey || visitStatus(b.id) !== 'completed') continue;
       if(FROZEN_DATES.has(date) && !isImportedBooking(b)) continue;
-      profit += visitSplit(dayClose.prices[b.id] || 0, masterRate(visitMaster(b)), visitConsumablesTotal(b.id)).salon;
+      profit += visitSplit(dayClose.prices[b.id] || 0, masterRate(visitMaster(b)), visitConsumablesTotal(b.id), b.id).salon;
     }
     for(const date in dayClose.masterAdj){
       if(date.slice(0,7) !== monthKey) continue;
@@ -1859,6 +1899,10 @@
     for(const date in dayClose.productSales){
       if(date.slice(0,7) !== monthKey) continue;
       for(const r of dayClose.productSales[date]) profit += r.qty * r.unitPrice - saleCommission(r);
+    }
+    for(const date in dayClose.staffFines){
+      if(date.slice(0,7) !== monthKey) continue;
+      profit += staffFinesTotal(date);
     }
     return Math.round(profit);
   }
@@ -1955,7 +1999,7 @@
       const services = visitServices(b).length ? visitServices(b) : ['—'];
       return '<tr>' +
         '<td>'+esc(fmtDateTime(b.start))+'</td>' +
-        '<td class="client-cell"><b>'+esc(b.client_name || 'Без имени')+(b.new_client ? '<span class="badge-new">Новый</span>' : '')+'</b><span>'+esc(b.client_phone||'')+'</span></td>' +
+        '<td class="client-cell"><b>'+esc(b.client_name || 'Без имени')+(isNewBooking(b) ? '<span class="badge-new">Новый</span>' : '')+'</b><span>'+esc(b.client_phone||'')+'</span></td>' +
         '<td>'+esc(visitMaster(b))+'</td>' +
         '<td class="svc-list">'+services.map(s => '<span>'+esc(s)+'</span>').join('')+'</td>' +
         '<td>'+(b.online ? '<span class="pill info">Онлайн</span>' : '<span class="pill plain">Вручную</span>')+'</td>' +
@@ -2680,7 +2724,7 @@
     let totalProcurement = 0;
     for(const date in dayClose.procurement){
       if(date < from || date > to) continue;
-      for(const p of dayClose.procurement[date]) totalProcurement += p.qty * p.unitCost;
+      for(const p of dayClose.procurement[date]) if(!isPayrollProc(p)) totalProcurement += p.qty * p.unitCost;
     }
     const tiles = document.querySelectorAll('#analyticsStats .value');
     tiles[0].textContent = fmt(totalRevenue);
@@ -3171,6 +3215,10 @@
   // consumables (paints, disposables — feeds Инвентаризация usage),
   // retail product for resale, Nail-zone-specific supplies, and general
   // salon/admin purchases (snacks, cleaning, repairs, marketing, etc.).
+  // Позиции «ЗП персонала …» попадают в закуп дня для учёта, но зарплата в P&L уже считается по сменам —
+  // поэтому в P&L, Аналитике и Инвентаризации они не учитываются повторно.
+  const PAYROLL_PROC_ITEMS = ['ЗП персонала админ', 'ЗП персонала тех персонал'];
+  const isPayrollProc = p => (p.category || 'Расходники') === 'Салон' && PAYROLL_PROC_ITEMS.indexOf(p.item) >= 0;
   const PROCUREMENT_CATEGORIES = ['Расходники', 'Продукция', 'Nail зал', 'Салон'];
   const PROCUREMENT_ITEMS = {
     'Расходники': ['Краска Kapus','Оксидант Kapus','Пудра Kapus','Краска Screen','Оксидант Screen','Пудра Screen',
@@ -3186,7 +3234,7 @@
       'Тапочки одноразовые','Педикюрные пакеты','Набор для японского маникюра','Лампа для сушки геля','Пылесос',
       'Лезвие','Глина','Жабо','Одеколон','Бальзам Эстель','Оксидант De Luxe','Воск для депиляции','Мыло для бритья',
       'Лак для ногтей','База Ruber'],
-    'Салон': ['Конфеты, печенье','Орешки','Заварка','Сахар','Соль','Зубочистки','Кофемашина','Одноразовые стаканы',
+    'Салон': ['ЗП персонала админ','ЗП персонала тех персонал','Конфеты, печенье','Орешки','Заварка','Сахар','Соль','Зубочистки','Кофемашина','Одноразовые стаканы',
       'Вода','Жидкость для мытья посуды','Порошок для стирки','Кондиционер для стирки','Доместос',
       'Швабра, тряпки для пола','Тряпки для пыли','Канцелярские товары','Мусорные пакеты (большие)',
       'Мусорные пакеты (маленькие)','Цветы','Мебель','Вывеска','Полотенце','Футболки','Доставка','Визитки',
@@ -3300,6 +3348,8 @@
   const dayClose = {
     prices: {},
     priceSyncAsked: false,   // один раз предлагали заменить суммы в открытых днях на данные zapis.kz
+    newOverride: {}, // id записи → true/false: ручная отметка «новый клиент» (поверх данных zapis.kz)
+    staffFines: {},  // дата → [{ staffId, amount, note }] штрафы персонала (вычитаются из его ЗП)
     priceAuto: {},   // id записи → сумма, подставленная автоматически из оплаты zapis.kz (если её не правили руками — обновляется)
     consumables: {},
     procurement: {},
@@ -3381,10 +3431,15 @@
   }
   // Расходник вычитается из стоимости услуги, а остаток делится между мастером
   // (по его проценту) и салоном (остальное) — так же считает Аналитика и таблицы.
-  function visitSplit(price, rate, consumablesTotal){
+  // Услуга дешевле 3 000 ₸ — мастер получает 100% (цена − расходники), салону 0. Ровно 3 000 — по обычному проценту.
+  // Архив из таблиц (id вида jan-12) не пересчитываем.
+  const LOW_PRICE_LIMIT = 3000;
+  function visitSplit(price, rate, consumablesTotal, bookingId){
     const base = Math.max(0, price - consumablesTotal);
-    const master = Math.round(base * rate);
-    return { master, salon: base - master };
+    const archived = bookingId != null && /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)-\d+$/.test(String(bookingId));
+    const low = price > 0 && price < LOW_PRICE_LIMIT && !archived;
+    const master = low ? base : Math.round(base * rate);
+    return { master, salon: base - master, low };
   }
   // Поправки мастеру за день: вычет (минус мастеру, плюс прибыль салона) и чаевые от клиента
   // (плюс только мастеру — не входят ни в выручку, ни в прибыль салона, ни в Аналитику и P&L).
@@ -3498,11 +3553,11 @@
           : (canEditSvc
               ? '<button type="button" class="cd-set-service-btn" data-booking="'+v.id+'">+ Указать услугу</button>'
               : '<span class="cd-status-note">Услуга не указана</span>');
-        const isNewVisit = !notServed && !!v.new_client && !isImportedBooking(v) && vStatus !== 'cancelled';
+        const isNewVisit = !notServed && isNewBooking(v) && vStatus !== 'cancelled';
         html += '<div class="cd-visit'+(notServed?' not-served':'')+(isNewVisit?' is-new':'')+'" data-booking="'+v.id+'">' +
           '<span class="cd-time">'+timeStr(v.start)+'</span>' +
           '<span class="cd-client">' +
-            '<span class="cd-client-name-row"><b>'+esc(v.client_name||'Без имени')+'</b>'+(isNewVisit ? '<span class="badge-new-lg" title="Новый клиент по данным zapis.kz">★ Новый клиент</span>' : '')+'<span class="cd-dot">·</span>'+masterSelectHtml+zoneSelectHtml+statusPillHtml+'</span>' +
+            '<span class="cd-client-name-row"><b>'+esc(v.client_name||'Без имени')+'</b>'+newStarHtml(v, dayEditable, vStatus)+(isNewVisit && isImportedBooking(v) ? '<span class="badge-new-lg">★ Новый клиент</span>' : '')+'<span class="cd-dot">·</span>'+masterSelectHtml+zoneSelectHtml+statusPillHtml+'</span>' +
             '<span class="cd-client-services">'+servicesHtml+'</span>' +
           '</span>' +
           '<span class="cd-price-wrap">'+(priceFromPaid ? '<span class="cd-paid-note" title="'+(Number(v.paid) > 0 ? 'Сумма оплаты' : 'Сумма «Итого»')+' из zapis.kz. Можно поправить вручную — тогда она больше не обновляется сама.">'+(Number(v.paid) > 0 ? 'оплачено' : 'итого')+'</span>' : '')+'<input type="number" min="0" step="500" value="'+price+'" '+(locked?'disabled':'')+'><span class="cd-currency">₸</span></span>' +
@@ -3510,7 +3565,7 @@
         if(!notServed){
           const cons = dayClose.consumables[v.id] || [];
           const consTotal = cons.reduce((s,c)=>s+c.qty*c.unitCost,0);
-          const split = visitSplit(price, masterRate(master), consTotal);
+          const split = visitSplit(price, masterRate(master), consTotal, v.id);
           const chips = cons.map((c,idx) =>
             '<span class="cd-cons-chip">'+esc(c.item)+' ×'+c.qty+' · '+Math.round(c.qty*c.unitCost).toLocaleString('ru-RU')+' ₸' +
             (vStatus === 'pending' && dayEditable ? '<button type="button" class="cd-cons-remove" data-booking="'+v.id+'" data-idx="'+idx+'">×</button>' : '') +
@@ -3528,7 +3583,7 @@
             '</div>' : '';
           const splitHtml = vStatus === 'cancelled'
             ? '<span class="cd-status-note">Отменено — не учитывается</span>'
-            : '%мастера <b>'+split.master.toLocaleString('ru-RU')+' ₸</b> · %салона <b>'+split.salon.toLocaleString('ru-RU')+' ₸</b>' +
+            : '%мастера <b>'+split.master.toLocaleString('ru-RU')+' ₸</b> · %салона <b>'+split.salon.toLocaleString('ru-RU')+' ₸</b>' + (split.low ? ' <span class="cd-low-note" title="Услуга дешевле 3 000 ₸ — мастер получает 100% (цена − расходники)">100% мастеру</span>' : '') +
               (vStatus === 'pending' && dayEditable ? ' <span class="cd-status-note">(предварительно)</span>' : '');
           const changeMasterBtn = dayEditable
             ? '<button type="button" class="mini-action-btn cd-change-master" data-booking="'+v.id+'">Сменить мастера</button>' : '';
@@ -3557,6 +3612,12 @@
     updateCloseDayTotals();
   }
 
+  function newStarHtml(v, editable, vStatus){
+    if(isImportedBooking(v) || v.status === 'NOT_SERVED') return '';
+    const on = isNewBooking(v), manual = typeof dayClose.newOverride[v.id] === 'boolean';
+    const title = (on ? 'Новый клиент' : 'Не новый клиент') + (manual ? ' (отмечено вручную)' : ' (по данным zapis.kz)') + (editable ? '. Нажмите, чтобы ' + (on ? 'снять отметку' : 'отметить как нового') : '');
+    return '<button type="button" class="cd-new-star'+(on ? ' on' : '')+(manual ? ' manual' : '')+'" data-booking="'+v.id+'" '+(editable ? '' : 'disabled ')+'title="'+esc(title)+'" aria-pressed="'+on+'" aria-label="Новый клиент">'+(on ? '★ Новый клиент' : '☆')+'</button>';
+  }
   function renderMasterAdjHtml(date, master, editable){
     const list = masterAdjList(date, master);
     const chips = list.map(a => {
@@ -3581,7 +3642,7 @@
           : '<button type="button" class="cd-add-consumable-btn cd-adj-add" data-kind="'+kind+'" data-master="'+esc(master)+'" title="'+(kind === 'fine' ? 'Вычесть из выплаты мастеру (сумма уйдёт в прибыль салона)' : 'Добавить к выплате только мастеру (в выручку не входит)')+'">'+(kind === 'fine' ? '− Вычет' : '+ Чаевые')+'</button>';
       }
     }
-    return '<datalist id="adjReasonOptions"><option value="Опоздание"><option value="Порча материала"><option value="Жалоба клиента"><option value="Недостача"><option value="Нарушение регламента"></datalist>' +
+    return '<datalist id="adjReasonOptions"><option value="Опоздание"><option value="Порча материала"><option value="Жалоба клиента"><option value="Недостача"><option value="Нарушение регламента"><option value="Чай"><option value="Zapis.kz"></datalist>' +
       '<div class="cd-adj">' +
       '<div class="cd-adj-chips">'+chips+forms+'</div>' +
       '<div class="cd-adj-pay">К выплате мастеру: <b data-role="masterpay">—</b></div>' +
@@ -3603,7 +3664,7 @@
         if(row.classList.contains('not-served')) return;
         const status = visitStatus(bookingId);
         const consTotal = visitConsumablesTotal(bookingId);
-        const split = visitSplit(v, rate, consTotal);
+        const split = visitSplit(v, rate, consTotal, bookingId);
         const splitEl = row.nextElementSibling && row.nextElementSibling.querySelector('.cd-split');
         // Only a confirmed («Завершена») visit counts toward the day's
         // totals. A cancelled visit is resolved (doesn't block closing the
@@ -3614,7 +3675,7 @@
           if(splitEl) splitEl.innerHTML = '<span class="cd-status-note">Отменено — не учитывается</span>';
           return;
         }
-        if(splitEl) splitEl.innerHTML = '%мастера <b>'+split.master.toLocaleString('ru-RU')+' ₸</b> · %салона <b>'+split.salon.toLocaleString('ru-RU')+' ₸</b>' +
+        if(splitEl) splitEl.innerHTML = '%мастера <b>'+split.master.toLocaleString('ru-RU')+' ₸</b> · %салона <b>'+split.salon.toLocaleString('ru-RU')+' ₸</b>' + (split.low ? ' <span class="cd-low-note" title="Услуга дешевле 3 000 ₸ — мастер получает 100% (цена − расходники)">100% мастеру</span>' : '') +
           (status === 'pending' ? ' <span class="cd-status-note">(предварительно)</span>' : '');
         if(status !== 'completed') return;
         subtotal += v;
@@ -3639,6 +3700,8 @@
     const salesComm = sales.reduce((s,r) => s + saleCommission(r), 0);   // процент сотрудникам за продажу
     grand += salesTotal;
     grandSalon += salesTotal - salesComm;
+    const staffFinesSum = date ? staffFinesTotal(date) : 0;
+    grandSalon += staffFinesSum;
     grandMaster += salesComm;
     grandCons += salesTotal;
     document.getElementById('closeDayTotalValue').textContent = Math.round(grand).toLocaleString('ru-RU') + ' ₸';
@@ -3654,7 +3717,7 @@
       // «Прибыль салона» дня: % салона + вычеты мастерам + продажа продукции (за вычетом процента сотрудникам)
       const extra = Math.round(grandSalon) !== Math.round(pctSalon);
       pctSalonHint.hidden = !extra;
-      pctSalonHint.textContent = extra ? 'С вычетами и продукцией — прибыль салона ' + fmt0(grandSalon) : '';
+      pctSalonHint.textContent = extra ? 'С вычетами, штрафами и продукцией — прибыль салона ' + fmt0(grandSalon) : '';
     }
     const procEl = document.getElementById('closeDayProcValue');
     if(procEl) procEl.textContent = fmt0(((dayClose.procurement[date] || [])).reduce((t, p) => t + p.qty * p.unitCost, 0));
@@ -3874,6 +3937,69 @@
   function saleCommissionFor(date, name){
     return (dayClose.productSales[date] || []).filter(x => sameName(x.seller, name)).reduce((t, x) => t + saleCommission(x), 0);
   }
+  // ---------------- штрафы персонала ----------------
+  function staffFineList(date){ return dayClose.staffFines[date] || []; }
+  function staffFinesTotal(date){ return staffFineList(date).reduce((t, f) => t + (Number(f.amount) || 0), 0); }
+  function staffFineName(f){
+    const m = dayClose.staff.members.find(x => x.id === f.staffId);
+    return m ? m.name : (f.staffName || 'Сотрудник');
+  }
+  function renderStaffFines(){
+    const date = document.getElementById('closeDayDate').value;
+    if(!date) return;
+    const sel = document.getElementById('newFineStaff');
+    const keep = sel.value;
+    const members = dayClose.staff.members.filter(m => m.active !== false).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+    sel.innerHTML = members.length
+      ? members.map(m => '<option value="'+esc(m.id)+'">'+esc(m.name)+' · '+esc(m.role)+'</option>').join('')
+      : '<option value="">Сначала добавьте сотрудника во вкладке «Персонал»</option>';
+    if(keep && members.some(m => m.id === keep)) sel.value = keep;
+    const rows = staffFineList(date);
+    const body = document.getElementById('staffFineBody'), empty = document.getElementById('staffFineEmpty');
+    if(!rows.length){ body.innerHTML = ''; empty.hidden = false; return; }
+    empty.hidden = true;
+    const locked = !!(dayClose.closed && dayClose.closed[date]);
+    body.innerHTML = rows.map((f, idx) => {
+      const m = dayClose.staff.members.find(x => x.id === f.staffId);
+      return '<tr><td>'+esc(staffFineName(f))+(m ? ' <span class="st-role">'+esc(m.role)+'</span>' : '')+'</td>' +
+        '<td>'+(f.note ? esc(f.note) : '<span class="cd-status-note">без пояснения</span>')+'</td>' +
+        '<td class="num">−'+Math.round(f.amount).toLocaleString('ru-RU')+' ₸</td>' +
+        '<td class="cp-actions">'+(locked ? '' : '<button type="button" class="mini-action-btn fine-remove" data-idx="'+idx+'">Удалить</button>')+'</td></tr>';
+    }).join('') + '<tr class="total-row"><td>Итого</td><td></td><td class="num">−'+Math.round(staffFinesTotal(date)).toLocaleString('ru-RU')+' ₸</td><td></td></tr>';
+  }
+  function addStaffFine(){
+    const date = document.getElementById('closeDayDate').value;
+    if(!date) return;
+    const sel = document.getElementById('newFineStaff'), amountEl = document.getElementById('newFineAmount'), noteEl = document.getElementById('newFineNote');
+    const m = dayClose.staff.members.find(x => x.id === sel.value);
+    const amount = Math.round(Number(amountEl.value) || 0);
+    if(!m){ sel.focus(); return; }
+    if(amount <= 0){ amountEl.focus(); return; }
+    if(!dayClose.staffFines[date]) dayClose.staffFines[date] = [];
+    dayClose.staffFines[date].push({ staffId: m.id, staffName: m.name, amount, note: noteEl.value.trim() });
+    amountEl.value = ''; noteEl.value = '';
+    document.getElementById('addStaffFineRow').hidden = true;
+    renderCloseDay();
+    if(typeof renderStaff === 'function') renderStaff();
+  }
+  document.getElementById('addStaffFineToggle').addEventListener('click', () => {
+    const row = document.getElementById('addStaffFineRow');
+    row.hidden = !row.hidden;
+    if(!row.hidden) document.getElementById('newFineAmount').focus();
+  });
+  document.getElementById('addStaffFineCancel').addEventListener('click', () => { document.getElementById('addStaffFineRow').hidden = true; });
+  document.getElementById('addStaffFineSave').addEventListener('click', addStaffFine);
+  document.getElementById('newFineAmount').addEventListener('keydown', e => { if(e.key === 'Enter') addStaffFine(); });
+  document.getElementById('newFineNote').addEventListener('keydown', e => { if(e.key === 'Enter') addStaffFine(); });
+  document.getElementById('staffFineBody').addEventListener('click', e => {
+    const btn = e.target.closest('.fine-remove');
+    if(!btn) return;
+    const date = document.getElementById('closeDayDate').value;
+    (dayClose.staffFines[date] || []).splice(Number(btn.dataset.idx), 1);
+    if(dayClose.staffFines[date] && !dayClose.staffFines[date].length) delete dayClose.staffFines[date];
+    renderCloseDay();
+    if(typeof renderStaff === 'function') renderStaff();
+  });
   function renderProductSales(){
     const date = document.getElementById('closeDayDate').value;
     if(!date) return;
@@ -4011,6 +4137,7 @@
     }
     for(const date in dayClose.procurement){
       for(const p of dayClose.procurement[date]){
+        if(isPayrollProc(p)) continue;
         const t = get(p.item);
         t.bought += p.qty; t.boughtValue += p.qty * p.unitCost;
       }
@@ -4406,6 +4533,7 @@
     const entries = [];
     for(const date in dayClose.procurement){
       for(const p of dayClose.procurement[date]){
+        if(isPayrollProc(p)) continue;
         entries.push({
           date, type: 'in', item: p.item, qty: p.qty, unitCost: p.unitCost,
           sum: p.qty * p.unitCost, who: 'Закуп · ' + (p.category || 'Расходники'), category: p.category || 'Расходники'
@@ -4970,6 +5098,7 @@
     renderConsLog();
     renderProcurement();
     renderProductSales();
+    renderStaffFines();
     renderDayStaff();
     scheduleSave('day_close');
   }
@@ -5034,7 +5163,7 @@
       const price = dayClose.prices[v.id] || 0;
       const consTotal = visitConsumablesTotal(v.id);
       const vm = visitMaster(v);
-      const split = visitSplit(price, masterRate(vm), consTotal);
+      const split = visitSplit(price, masterRate(vm), consTotal, v.id);
       const m = entry(vm);
       m.count += 1; m.revenue += price; m.consumables += consTotal; m.masterPay += split.master; m.salonNet += split.salon;
     }
@@ -5081,12 +5210,12 @@
     for(const v of visits){
       if(v.status === 'NOT_SERVED' || visitStatus(v.id) !== 'completed') continue;
       const price = dayClose.prices[v.id] || 0, cons = visitConsumablesTotal(v.id), vm = visitMaster(v);
-      const split = visitSplit(price, masterRate(vm), cons);
+      const split = visitSplit(price, masterRate(vm), cons, v.id);
       const m = entry(vm);
       m.visits.push({
         time: timeStr(v.start),
         client: String(v.client_name || '').trim().split(/\s+/)[0] || 'Без имени',
-        isNew: !!v.new_client && !isImportedBooking(v),
+        isNew: isNewBooking(v),
         service: visitServices(v).join(', ') || 'услуга не указана',
         price: Math.round(price), cons: Math.round(cons), share: Math.round(split.master),
       });
@@ -5403,6 +5532,16 @@
     else dayClose.visitZone[bookingId] = e.target.value;
   });
   document.getElementById('closeDayGroups').addEventListener('click', e => {
+    const star = e.target.closest('.cd-new-star');
+    if(star && !star.disabled){
+      const b = state.bookings.find(x => String(x.id) === star.dataset.booking);
+      if(b){
+        const want = !isNewBooking(b);
+        if(want === !!b.new_client) delete dayClose.newOverride[b.id]; else dayClose.newOverride[b.id] = want;
+        renderCloseDay();
+      }
+      return;
+    }
     // Defense in depth: a closed day renders no editable controls at all,
     // but guard the mutations too in case of stale DOM state.
     if(dayClose.closed[document.getElementById('closeDayDate').value]) return;
@@ -5704,16 +5843,26 @@
     return out;
   }
   // ЗП персонала по строкам P&L за месяц. Строка заменяется расчётом, только если у должности есть смены.
+  function staffMonthFine(monthStr, id){           // штрафы сотрудника за месяц
+    let sum = 0;
+    for(const date in dayClose.staffFines){
+      if(date.slice(0,7) !== monthStr) continue;
+      for(const f of dayClose.staffFines[date]) if(f.staffId === id) sum += Number(f.amount) || 0;
+    }
+    return sum;
+  }
   function staffPayLines(monthStr){
     const counts = staffMonthShiftCounts(monthStr);
-    const values = {}, keys = {};
+    const values = {}, keys = {}, loose = {};
     for(const m of dayClose.staff.members){
       const n = counts[m.id] || 0, k = staffRoleKey(m.role);
-      if(!n || !k) continue;
-      values[k] = (values[k] || 0) + Math.round(n * (Number(m.rate) || 0));
+      const fine = staffMonthFine(monthStr, m.id);
+      if(!k) continue;
+      if(!n){ if(fine) loose[k] = (loose[k] || 0) + fine; continue; }   // смен нет — штраф вычтем из ручной строки P&L
+      values[k] = (values[k] || 0) + Math.round(n * (Number(m.rate) || 0)) - fine;
       keys[k] = true;
     }
-    return { values, keys };
+    return { values, keys, loose };
   }
   // мастера: имя -> Set(дней месяца с записями)
   function masterWorkDays(monthStr){
@@ -5812,7 +5961,7 @@
     if(!members.length) html += '<tr><td colspan="'+(days + 1 + tailCols)+'" class="st-empty">Сотрудников пока нет. Нажмите «Добавить сотрудника».</td></tr>';
     let totalPay = 0, totalShifts = 0;
     for(const m of members){
-      const sh = counts[m.id] || 0, rate = Number(m.rate) || 0, pay = Math.round(sh * rate);
+      const sh = counts[m.id] || 0, rate = Number(m.rate) || 0, fineSum = staffMonthFine(staffMonth, m.id), pay = Math.round(sh * rate) - fineSum;
       totalPay += pay; totalShifts += sh;
       let cells = '';
       for(let d = 1; d <= days; d++){
@@ -5821,7 +5970,7 @@
         cells += '<td class="st-cell'+(on ? ' on' : '')+(isWeekend(d) ? ' we' : '')+'"><button type="button" class="st-toggle" data-id="'+m.id+'" data-day="'+d+'" aria-pressed="'+on+'" aria-label="'+esc(m.name)+', '+d+'">'+(on ? '✓' : '')+'</button></td>';
       }
       html += '<tr class="'+(m.active === false ? 'st-inactive' : '')+'"><td class="st-name"><b>'+esc(m.name)+'</b> <span class="st-role">'+esc(m.role)+'</span>'+(m.active === false ? ' <span class="st-role">не работает</span>' : '')+' <button type="button" class="st-edit" data-id="'+m.id+'" title="Изменить сотрудника" aria-label="Изменить: '+esc(m.name)+'">✎</button></td>' +
-        '<td class="num st-sum">'+sh+'</td>' + (unlocked ? '<td class="num st-sum">'+Math.round(rate).toLocaleString('ru-RU')+' ₸</td><td class="num st-sum"><b>'+pay.toLocaleString('ru-RU')+' ₸</b></td>' : '') + cells + '</tr>';
+        '<td class="num st-sum">'+sh+'</td>' + (unlocked ? '<td class="num st-sum">'+Math.round(rate).toLocaleString('ru-RU')+' ₸</td><td class="num st-sum"><b>'+pay.toLocaleString('ru-RU')+' ₸</b>'+(fineSum ? '<div class="st-fine" title="Штрафы за месяц вычтены из зарплаты">штраф −'+Math.round(fineSum).toLocaleString('ru-RU')+' ₸</div>' : '')+'</td>' : '') + cells + '</tr>';
     }
     // ---- «на смене» ----
     let foot = '<tr class="total-row"><td class="st-name">Персонал · итого / на смене</td><td class="num st-sum">'+totalShifts+'</td>' + (unlocked ? '<td class="num st-sum"></td><td class="num st-sum"><b>'+totalPay.toLocaleString('ru-RU')+' ₸</b></td>' : '');
@@ -6068,11 +6217,12 @@
       const consTotal = visitConsumablesTotal(b.id);
       revenue += price;
       consumablesRevenue += consTotal;
-      masterPay += visitSplit(price, masterRate(visitMaster(b)), consTotal).master;
+      masterPay += visitSplit(price, masterRate(visitMaster(b)), consTotal, b.id).master;
     }
     for(const date in dayClose.procurement){
       if(date < from || date > to) continue;
       for(const p of dayClose.procurement[date]){
+        if(isPayrollProc(p)) continue;
         const sum = p.qty * p.unitCost;
         const cat = p.category || 'Расходники';
         if(cat === 'Салон') procSalon += sum;
@@ -6098,6 +6248,7 @@
     // Зарплата персонала по сменам из вкладки «Персонал» заменяет ручной ввод в соответствующих строках.
     const staffLines = staffPayLines(monthStr);
     const fixed = Object.assign({}, state.pnlFixed[monthStr] || PNL_EMPTY_MONTH, staffLines.values);
+    for(const k in staffLines.loose) fixed[k] = (Number(fixed[k]) || 0) - staffLines.loose[k];
     const opex = computed.masterPay + fixed.adminSalary + fixed.techSalary + fixed.accountantSalary + fixed.smmSalary
       + computed.procSalon + computed.procProduct + computed.procConsumables
       + fixed.rent + fixed.utilities + fixed.internet + fixed.security
@@ -6490,7 +6641,7 @@
       prices: dayClose.prices, consumables: dayClose.consumables,
       procurement: dayClose.procurement, stockIn: dayClose.stockIn, productSales: dayClose.productSales,
       serviceStatus: dayClose.serviceStatus, writeoffs: dayClose.writeoffs,
-      adjustments: dayClose.adjustments, priceAuto: dayClose.priceAuto, priceSyncAsked: dayClose.priceSyncAsked, masterAdj: dayClose.masterAdj, masterPub: dayClose.masterPub, staff: dayClose.staff, closed: dayClose.closed,
+      adjustments: dayClose.adjustments, priceAuto: dayClose.priceAuto, priceSyncAsked: dayClose.priceSyncAsked, newOverride: dayClose.newOverride, staffFines: dayClose.staffFines, masterAdj: dayClose.masterAdj, masterPub: dayClose.masterPub, staff: dayClose.staff, closed: dayClose.closed,
       visitZone: dayClose.visitZone, serviceOverride: dayClose.serviceOverride, masterOverride: dayClose.masterOverride, serviceMap: dayClose.serviceMap, serviceCatalog: cloneCatalog(), catalogVersion: dayClose.catalogVersion || CATALOG_PRESET_VERSION,
     };
   }
@@ -6572,6 +6723,8 @@
     dayClose.prices = dc.prices || {};
     dayClose.priceAuto = dc.priceAuto || {};
     dayClose.priceSyncAsked = !!dc.priceSyncAsked;
+    dayClose.newOverride = dc.newOverride || {};
+    dayClose.staffFines = dc.staffFines || {};
     dayClose.consumables = dc.consumables || {};
     dayClose.procurement = dc.procurement || {};
     dayClose.stockIn = dc.stockIn || {};
@@ -6927,7 +7080,7 @@
     if(state.tab === 'pnl') renderPnl();
   }
 
-  const APP_VERSION = '31.10 · оплата v4';   // видно в шапке: по ней понятно, какая версия сайта загружена
+  const APP_VERSION = '31.10 · штрафы v1';   // видно в шапке: по ней понятно, какая версия сайта загружена
   function renderSyncNote(){
     const el = document.getElementById('syncNote');
     const m = state.syncStatus;
