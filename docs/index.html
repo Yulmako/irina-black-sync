@@ -537,6 +537,7 @@
   .master-dialog-err{margin:8px 0 0; font-size:13px; color:var(--bad, #b3261e);}
   .cd-zone-select:disabled{opacity:.65; cursor:default; background:transparent; border-color:transparent; padding-left:0; appearance:none;}
   .cd-visit .cd-price-wrap{display:flex; align-items:center; gap:5px; flex:none;}
+  .cd-paid-note{font-size:10.5px; font-weight:600; color:var(--good); background:var(--good-soft); border-radius:999px; padding:1px 7px; cursor:help; white-space:nowrap;}
   .cd-visit input[type="number"]{
     width:96px; padding:7px 9px; border-radius:8px; border:1px solid var(--border);
     background:var(--bg); color:var(--ink); font:inherit; font-size:13.5px; text-align:right;
@@ -3274,6 +3275,7 @@
   // right here in «Закрытие дня». Only set when it differs from the default.
   const dayClose = {
     prices: {},
+    priceAuto: {},   // id записи → сумма, подставленная автоматически из оплаты zapis.kz (если её не правили руками — обновляется)
     consumables: {},
     procurement: {},
     stockIn: {},
@@ -3315,6 +3317,20 @@
   function timeStr(iso){
     const d = new Date(iso);
     return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  }
+  // Цена визита в «Закрытии дня»: сумма, оплаченная в zapis.kz (она меняется, когда администратор
+  // принимает оплату или правит её при завершении услуги). Пока день открыт и сумму не меняли руками,
+  // она обновляется при каждой синхронизации; если оплаты нет — как раньше, ориентир по услуге.
+  // Закрытые дни не трогаем: их итоги уже зафиксированы.
+  function resolveVisitPrice(v, notServed, dayEditable){
+    const cur = dayClose.prices[v.id];
+    if(notServed) return cur != null ? cur : 0;
+    const paid = Number(v.paid) > 0 ? Math.round(Number(v.paid)) : null;
+    if(paid !== null && dayEditable && !FROZEN_DATES.has(dayStr(v.start))){
+      const untouched = cur == null || cur === suggestedPrice(v) || cur === dayClose.priceAuto[v.id];
+      if(untouched){ if(dayClose.priceAuto[v.id] !== paid){ dayClose.priceAuto[v.id] = paid; setTimeout(() => scheduleSave('day_close'), 0); } return paid; }
+    }
+    return cur != null ? cur : suggestedPrice(v);
   }
   function suggestedPrice(b){
     const svcs = visitServices(b);
@@ -3412,8 +3428,9 @@
         const notServed = v.status === 'NOT_SERVED';
         const vStatus = visitStatus(v.id);
         const locked = notServed || vStatus !== 'pending' || !dayEditable;
-        const price = dayClose.prices[v.id] != null ? dayClose.prices[v.id] : (notServed ? 0 : suggestedPrice(v));
+        const price = resolveVisitPrice(v, notServed, dayEditable);
         dayClose.prices[v.id] = price;
+        const priceFromPaid = !notServed && dayClose.priceAuto[v.id] != null && dayClose.priceAuto[v.id] === price;
         const statusPillHtml = notServed ? '<span class="pill bad">Не пришёл</span>' :
           vStatus === 'pending' ? '<span class="pill warn">Ожидает подтверждения</span>' :
           vStatus === 'completed' ? '<span class="pill good">Завершена</span>' :
@@ -3442,7 +3459,7 @@
             '<span class="cd-client-name-row"><b>'+esc(v.client_name||'Без имени')+'</b>'+(isNewVisit ? '<span class="badge-new-lg" title="Новый клиент по данным zapis.kz">★ Новый клиент</span>' : '')+'<span class="cd-dot">·</span>'+masterSelectHtml+zoneSelectHtml+statusPillHtml+'</span>' +
             '<span class="cd-client-services">'+servicesHtml+'</span>' +
           '</span>' +
-          '<span class="cd-price-wrap"><input type="number" min="0" step="500" value="'+price+'" '+(locked?'disabled':'')+'><span class="cd-currency">₸</span></span>' +
+          '<span class="cd-price-wrap">'+(priceFromPaid ? '<span class="cd-paid-note" title="Сумма оплаты из zapis.kz. Можно поправить вручную — тогда она больше не обновляется сама.">оплачено</span>' : '')+'<input type="number" min="0" step="500" value="'+price+'" '+(locked?'disabled':'')+'><span class="cd-currency">₸</span></span>' +
           '</div>';
         if(!notServed){
           const cons = dayClose.consumables[v.id] || [];
@@ -5252,7 +5269,10 @@
 
   document.getElementById('closeDayGroups').addEventListener('input', e => {
     if(dayClose.closed[document.getElementById('closeDayDate').value]) return;
-    if(e.target.matches('input[type="number"]:not(.cd-cons-cost):not(.cd-cons-qty):not(.cd-adj-amount)')) updateCloseDayTotals();
+    if(e.target.matches('input[type="number"]:not(.cd-cons-cost):not(.cd-cons-qty):not(.cd-adj-amount)')){
+      updateCloseDayTotals();
+      if(e.target.closest('.cd-price-wrap')) scheduleSave('day_close');   // ручная цена сохраняется сразу, чтобы автообновление её не затёрло
+    }
   });
   // Zone override for a visit — most masters only ever work one zone, so
   // this is only stored when it actually differs from the master's own.
@@ -6355,7 +6375,7 @@
       prices: dayClose.prices, consumables: dayClose.consumables,
       procurement: dayClose.procurement, stockIn: dayClose.stockIn, productSales: dayClose.productSales,
       serviceStatus: dayClose.serviceStatus, writeoffs: dayClose.writeoffs,
-      adjustments: dayClose.adjustments, masterAdj: dayClose.masterAdj, masterPub: dayClose.masterPub, staff: dayClose.staff, closed: dayClose.closed,
+      adjustments: dayClose.adjustments, priceAuto: dayClose.priceAuto, masterAdj: dayClose.masterAdj, masterPub: dayClose.masterPub, staff: dayClose.staff, closed: dayClose.closed,
       visitZone: dayClose.visitZone, serviceOverride: dayClose.serviceOverride, masterOverride: dayClose.masterOverride, serviceMap: dayClose.serviceMap, serviceCatalog: cloneCatalog(), catalogVersion: dayClose.catalogVersion || CATALOG_PRESET_VERSION,
     };
   }
@@ -6435,6 +6455,7 @@
     state.consumablePrices = kv.consumable_prices || [];
     const dc = kv.day_close || {};
     dayClose.prices = dc.prices || {};
+    dayClose.priceAuto = dc.priceAuto || {};
     dayClose.consumables = dc.consumables || {};
     dayClose.procurement = dc.procurement || {};
     dayClose.stockIn = dc.stockIn || {};
