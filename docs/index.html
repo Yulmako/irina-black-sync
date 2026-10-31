@@ -3324,10 +3324,16 @@
   // принимает оплату или правит её при завершении услуги). Пока день открыт и сумму не меняли руками,
   // она обновляется при каждой синхронизации; если оплаты нет — как раньше, ориентир по услуге.
   // Закрытые дни не трогаем: их итоги уже зафиксированы.
+  // Сумма визита из zapis.kz: «Оплачено», а если оплату получить не удалось — «Итого» по записи.
+  function zapisAmount(v){
+    if(Number(v.paid) > 0) return { sum: Math.round(Number(v.paid)), kind: 'paid' };
+    if(Number(v.total) > 0) return { sum: Math.round(Number(v.total)), kind: 'total' };
+    return null;
+  }
   function resolveVisitPrice(v, notServed, dayEditable){
     const cur = dayClose.prices[v.id];
     if(notServed) return cur != null ? cur : 0;
-    const paid = Number(v.paid) > 0 ? Math.round(Number(v.paid)) : null;
+    const za = zapisAmount(v), paid = za ? za.sum : null;
     if(paid !== null && dayEditable && !FROZEN_DATES.has(dayStr(v.start))){
       const untouched = cur == null || cur === suggestedPrice(v) || cur === dayClose.priceAuto[v.id];
       if(untouched){ if(dayClose.priceAuto[v.id] !== paid){ dayClose.priceAuto[v.id] = paid; setTimeout(() => scheduleSave('day_close'), 0); } return paid; }
@@ -3393,14 +3399,14 @@
     // Состояние оплаты из zapis.kz по визитам дня.
     const paidNote = document.getElementById('closeDayPaidNote'), pullBtn = document.getElementById('closeDayPullPaid');
     const served = visits.filter(v => v.status !== 'NOT_SERVED');
-    const withPaid = served.filter(v => Number(v.paid) > 0);
+    const withPaid = served.filter(v => zapisAmount(v)), nPaid = served.filter(v => Number(v.paid) > 0).length;
     const hasPaidCol = state.bookings.some(b => 'paid' in b);
     paidNote.hidden = !served.length;
     paidNote.textContent = !hasPaidCol ? 'Оплата из zapis.kz не подключена: выполните bookings_paid.sql в Supabase'
-      : withPaid.length ? 'Оплата из zapis.kz: ' + withPaid.length + ' из ' + served.length
+      : withPaid.length ? 'Оплата из zapis.kz: ' + nPaid + ' из ' + served.length + (withPaid.length > nPaid ? ' (ещё ' + (withPaid.length - nPaid) + ' — по «Итого»)' : '')
       : 'Оплата из zapis.kz не получена (0 из ' + served.length + ')';
     paidNote.title = !hasPaidCol ? 'В таблице bookings нет колонок оплаты' : 'Сколько визитов дня синхронизация получила с суммой «Оплачено»';
-    pullBtn.hidden = closed || !withPaid.length || withPaid.every(v => dayClose.prices[v.id] === Math.round(Number(v.paid)));
+    pullBtn.hidden = closed || !withPaid.length || withPaid.every(v => dayClose.prices[v.id] === zapisAmount(v).sum);
     saveBtn.hidden = closed;
     saveBtn.disabled = false;
     saveBtn.title = '';
@@ -3472,7 +3478,7 @@
             '<span class="cd-client-name-row"><b>'+esc(v.client_name||'Без имени')+'</b>'+(isNewVisit ? '<span class="badge-new-lg" title="Новый клиент по данным zapis.kz">★ Новый клиент</span>' : '')+'<span class="cd-dot">·</span>'+masterSelectHtml+zoneSelectHtml+statusPillHtml+'</span>' +
             '<span class="cd-client-services">'+servicesHtml+'</span>' +
           '</span>' +
-          '<span class="cd-price-wrap">'+(priceFromPaid ? '<span class="cd-paid-note" title="Сумма оплаты из zapis.kz. Можно поправить вручную — тогда она больше не обновляется сама.">оплачено</span>' : '')+'<input type="number" min="0" step="500" value="'+price+'" '+(locked?'disabled':'')+'><span class="cd-currency">₸</span></span>' +
+          '<span class="cd-price-wrap">'+(priceFromPaid ? '<span class="cd-paid-note" title="'+(Number(v.paid) > 0 ? 'Сумма оплаты' : 'Сумма «Итого»')+' из zapis.kz. Можно поправить вручную — тогда она больше не обновляется сама.">'+(Number(v.paid) > 0 ? 'оплачено' : 'итого')+'</span>' : '')+'<input type="number" min="0" step="500" value="'+price+'" '+(locked?'disabled':'')+'><span class="cd-currency">₸</span></span>' +
           '</div>';
         if(!notServed){
           const cons = dayClose.consumables[v.id] || [];
@@ -5182,13 +5188,13 @@
   document.getElementById('closeDayPullPaid').addEventListener('click', async () => {
     const date = document.getElementById('closeDayDate').value;
     if(!date || dayClose.closed[date]) return;
-    const list = state.bookings.filter(b => dayStr(b.start) === date && b.status !== 'NOT_SERVED' && Number(b.paid) > 0);
-    const diff = list.filter(v => dayClose.prices[v.id] != null && dayClose.prices[v.id] !== Math.round(Number(v.paid)) && dayClose.prices[v.id] !== dayClose.priceAuto[v.id]);
+    const list = state.bookings.filter(b => dayStr(b.start) === date && b.status !== 'NOT_SERVED' && zapisAmount(b));
+    const diff = list.filter(v => dayClose.prices[v.id] != null && dayClose.prices[v.id] !== zapisAmount(v).sum && dayClose.prices[v.id] !== dayClose.priceAuto[v.id]);
     if(diff.length){
       const ok = await showConfirmDialog('У ' + diff.length + ' визитов сумма отличается от оплаченной в zapis.kz (в том числе ваши ручные правки). Заменить на оплаченные?', { okText: 'Заменить' });
       if(!ok) return;
     }
-    list.forEach(v => { const paid = Math.round(Number(v.paid)); dayClose.prices[v.id] = paid; dayClose.priceAuto[v.id] = paid; });
+    list.forEach(v => { const paid = zapisAmount(v).sum; dayClose.prices[v.id] = paid; dayClose.priceAuto[v.id] = paid; });
     scheduleSave('day_close');
     renderCloseDay();
     showReportToast('Суммы обновлены из zapis.kz: ' + list.length + '.', 4000);
@@ -6840,7 +6846,7 @@
     if(state.tab === 'pnl') renderPnl();
   }
 
-  const APP_VERSION = '31.10 · оплата zapis.kz';   // видно в шапке: по ней понятно, какая версия сайта загружена
+  const APP_VERSION = '31.10 · оплата v2';   // видно в шапке: по ней понятно, какая версия сайта загружена
   function renderSyncNote(){
     const el = document.getElementById('syncNote');
     const m = state.syncStatus;
