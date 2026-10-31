@@ -6840,12 +6840,13 @@
     if(state.tab === 'pnl') renderPnl();
   }
 
+  const APP_VERSION = '31.10 · оплата zapis.kz';   // видно в шапке: по ней понятно, какая версия сайта загружена
   function renderSyncNote(){
     const el = document.getElementById('syncNote');
     const m = state.syncStatus;
     const warn = document.getElementById('syncWarn');
-    if(!m || !m.last_synced_at){ el.textContent = 'Данные ещё не синхронизированы'; warn.hidden = true; return; }
-    el.innerHTML = 'Записи из zapis.kz обновлены: <b>'+esc(fmtDateTime(m.last_synced_at))+'</b>';
+    if(!m || !m.last_synced_at){ el.textContent = 'Данные ещё не синхронизированы · версия сайта ' + APP_VERSION; warn.hidden = true; return; }
+    el.innerHTML = 'Записи из zapis.kz обновлены: <b>'+esc(fmtDateTime(m.last_synced_at))+'</b> · версия сайта '+APP_VERSION;
     const hours = (Date.now() - new Date(m.last_synced_at).getTime()) / 3600000;
     if(hours > 3){
       warn.hidden = false;
