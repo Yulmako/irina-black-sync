@@ -156,6 +156,7 @@ async function fetchAllBookings() {
   rangeEnd.setDate(rangeEnd.getDate() + DAYS_FORWARD);
 
   const byId = new Map();
+  const sample = []; // несколько «сырых» записей для диагностики оплаты (без имён и телефонов)
   let cursor = new Date(rangeStart);
   while (cursor < rangeEnd) {
     const windowEnd = new Date(cursor);
@@ -166,11 +167,12 @@ async function fetchAllBookings() {
     for (const r of records) {
       const cleaned = cleanRecord(r, mastersMap);
       if (cleaned) byId.set(cleaned.id, cleaned);
+      if (cleaned && sample.length < 3 && /SERVED|COMPLETE|DONE|PAID/i.test(String(r.status || ''))) sample.push(r);
     }
     cursor = chunkEnd;
   }
 
-  return { bookings: Array.from(byId.values()), rangeStart, rangeEnd };
+  return { bookings: Array.from(byId.values()), rangeStart, rangeEnd, sample };
 }
 
 async function supabase(path, init) {
@@ -230,13 +232,15 @@ async function updateSyncStatus({ rangeStart, rangeEnd, count }) {
 }
 
 async function main() {
-  const { bookings, rangeStart, rangeEnd } = await fetchAllBookings();
+  const { bookings, rangeStart, rangeEnd, sample } = await fetchAllBookings();
   await upsertBookings(bookings);
   const withPaid = bookings.filter((b) => b.paid);
   console.log(`Оплата найдена у ${withPaid.length} из ${bookings.length} записей.`);
   if (!withPaid.length && bookings.length) {
-    console.warn('Поле оплаты в ответе zapis.kz не найдено. Платёжные поля первой записи с оплатой-подобными ключами:',
-      JSON.stringify((bookings.find((b) => b.pay_info) || {}).pay_info || 'нет'));
+    console.warn('Поле оплаты в ответе zapis.kz не найдено. Пример записей (имена и телефоны скрыты):');
+    const redact = (k, v) => (/name|phone|surname|email|comment|note|title/i.test(k) ? '***' : typeof v === 'string' ? v.slice(0, 60) : v);
+    for (const r of sample) console.warn(JSON.stringify(r, redact));
+    if (!sample.length) console.warn('Нет ни одной записи со статусом «обслужен» — смотрите статусы:', [...new Set(bookings.map((b) => b.status))].join(', '));
   }
   await updateSyncStatus({ rangeStart, rangeEnd, count: bookings.length });
   console.log(`Synced ${bookings.length} bookings (${fmt(rangeStart)} — ${fmt(rangeEnd)}) into Supabase.`);
