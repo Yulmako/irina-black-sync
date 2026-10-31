@@ -2054,14 +2054,18 @@
     body.innerHTML = rows.map(m => {
       const active = m.active !== false;
       if(state.masterEditing === m.name){
-        return '<tr class="master-edit-row" data-name="'+esc(m.name)+'">' +
+        // Высота строки та же, что была до редактирования, — страница не «прыгает».
+        return '<tr class="master-edit-row" data-name="'+esc(m.name)+'"'+(state.masterEditH ? ' style="height:'+state.masterEditH+'px"' : '')+'>' +
           '<td><b>'+esc(m.name)+'</b></td>' +
           '<td><input type="text" class="me-zone" list="zoneOptions" value="'+esc(m.zone||'')+'" placeholder="Зона"></td>' +
           '<td class="num"><input type="number" class="me-rate" min="0" max="100" step="1" value="'+Math.round(m.commission_rate*100)+'"> %</td>' +
-          '<td><div class="mcell-btns">' +
-            '<button type="button" class="mini-action-btn primary me-save" data-name="'+esc(m.name)+'">Сохранить</button>' +
-            '<button type="button" class="mini-action-btn me-cancel">Отмена</button>' +
-          '</div></td><td></td></tr>';
+          '<td><div class="master-status-cell">' +
+            '<div class="mcell-top"><span class="pill '+(active ? 'good' : 'plain')+'">'+(active ? 'Активен' : 'Не обслуживает')+'</span></div>' +
+            '<div class="mcell-btns">' +
+              '<button type="button" class="mini-action-btn primary me-save" data-name="'+esc(m.name)+'">Сохранить</button>' +
+              '<button type="button" class="mini-action-btn me-cancel">Отмена</button>' +
+            '</div></div></td>' +
+          '<td>'+botCellHtml(m)+'</td></tr>';
       }
       const grp = sharedWith(m.name).length ? ' master-grouped' : '';
       return '<tr class="'+(active ? '' : 'master-inactive')+grp+'">' +
@@ -2207,7 +2211,7 @@
   }
   document.getElementById('mastersBody').addEventListener('click', e => {
     const edit = e.target.closest('.master-edit-btn');
-    if(edit){ state.masterEditing = edit.dataset.name; renderMasters(); return; }
+    if(edit){ const tr = edit.closest('tr'); state.masterEditH = tr ? tr.offsetHeight : 0; state.masterEditing = edit.dataset.name; renderMasters(); return; }
     if(e.target.closest('.me-cancel')){ state.masterEditing = null; renderMasters(); return; }
     const save = e.target.closest('.me-save');
     if(save){ saveMasterEdit(save.dataset.name); return; }
