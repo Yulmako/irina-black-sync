@@ -1352,6 +1352,7 @@
       <span class="day-status" id="closeDayStatus"></span>
       <span class="cd-status-note" id="closeDayPendingNote" hidden></span>
       <span class="cd-status-note" id="closeDayPaidNote" hidden></span>
+      <button type="button" class="cd-unlock-btn" id="closeDayPullAll" hidden title="Заменить суммы в незакрытых днях на данные zapis.kz">Обновить все открытые дни</button>
       <button type="button" class="cd-unlock-btn" id="closeDayPullPaid" hidden title="Заменить суммы визитов на оплаченные в zapis.kz (ручные правки за этот день будут перезаписаны)">Подтянуть оплату</button>
       <div class="cd-spacer"></div>
       <button class="cd-save-btn" id="closeDaySave">Закрыть день</button>
@@ -3407,6 +3408,15 @@
       : withPaid.length ? 'Оплата из zapis.kz: ' + nPaid + ' из ' + served.length + (withPaid.length > nPaid ? ' (ещё ' + (withPaid.length - nPaid) + ' — по «Итого»)' : '')
       : 'Оплата из zapis.kz не получена (0 из ' + served.length + ')';
     paidNote.title = !hasPaidCol ? 'В таблице bookings нет колонок оплаты' : 'Сколько визитов дня синхронизация получила с суммой «Оплачено»';
+    const closedDiff = closed ? withPaid.filter(v => dayClose.prices[v.id] !== zapisAmount(v).sum).length : 0;
+    if(closedDiff){
+      paidNote.textContent += ' · суммы отличаются у ' + closedDiff + ' — чтобы обновить, разблокируйте день';
+      paidNote.title = 'День закрыт, его суммы не меняются сами. Нажмите «Разблокировать день», затем «Подтянуть оплату» и снова «Закрыть день».';
+    }
+    const allDiffs = openDaysPriceDiffs();
+    const pullAll = document.getElementById('closeDayPullAll');
+    pullAll.hidden = !allDiffs.length;
+    pullAll.textContent = 'Обновить все открытые дни (' + allDiffs.length + ')';
     pullBtn.hidden = closed || !withPaid.length || withPaid.every(v => dayClose.prices[v.id] === zapisAmount(v).sum);
     saveBtn.hidden = closed;
     saveBtn.disabled = false;
@@ -5187,14 +5197,18 @@
 
   // Один раз после появления данных об оплате: предложить заменить суммы в незакрытых днях на данные zapis.kz
   // (в этих днях уже могли сохраниться примерные цены, которые сами не обновляются).
-  let priceSyncOffered = false;
-  async function offerPriceSync(){
-    if(priceSyncOffered || dayClose.priceSyncAsked || !currentPassword) return;
+  // Визиты незакрытых дней, где сохранённая сумма отличается от zapis.kz.
+  function openDaysPriceDiffs(){
     const today = todayStr();
-    const list = state.bookings.filter(b => {
+    return state.bookings.filter(b => {
       const d = dayStr(b.start), za = zapisAmount(b);
       return za && d <= today && !dayClose.closed[d] && !FROZEN_DATES.has(d) && b.status !== 'NOT_SERVED' && dayClose.prices[b.id] != null && dayClose.prices[b.id] !== za.sum;
     });
+  }
+  let priceSyncOffered = false;
+  async function offerPriceSync(){
+    if(priceSyncOffered || dayClose.priceSyncAsked || !currentPassword) return;
+    const list = openDaysPriceDiffs();
     if(!list.length) return;
     priceSyncOffered = true;
     const days = new Set(list.map(b => dayStr(b.start))).size;
@@ -5208,6 +5222,20 @@
     scheduleSave('day_close');
     renderEverything();
   }
+
+  document.getElementById('closeDayPullAll').addEventListener('click', async () => {
+    const list = openDaysPriceDiffs();
+    if(!list.length){ renderCloseDay(); return; }
+    const days = new Set(list.map(b => dayStr(b.start))).size;
+    const ok = await showConfirmDialog('Заменить суммы у ' + list.length + ' визитов (дней: ' + days + ') на данные zapis.kz? Ручные правки в этих днях тоже заменятся; закрытые дни не меняются.', { okText: 'Заменить' });
+    if(!ok) return;
+    list.forEach(b => { const sum = zapisAmount(b).sum; dayClose.prices[b.id] = sum; dayClose.priceAuto[b.id] = sum; });
+    dayClose.priceSyncAsked = true;
+    analyticsCache.key = null;
+    scheduleSave('day_close');
+    renderEverything();
+    showReportToast('Суммы обновлены из zapis.kz: ' + list.length + '.', 5000);
+  });
 
   // Принудительно заменить суммы визитов дня на оплаченные в zapis.kz.
   document.getElementById('closeDayPullPaid').addEventListener('click', async () => {
@@ -6872,7 +6900,7 @@
     if(state.tab === 'pnl') renderPnl();
   }
 
-  const APP_VERSION = '31.10 · оплата v3';   // видно в шапке: по ней понятно, какая версия сайта загружена
+  const APP_VERSION = '31.10 · оплата v4';   // видно в шапке: по ней понятно, какая версия сайта загружена
   function renderSyncNote(){
     const el = document.getElementById('syncNote');
     const m = state.syncStatus;
