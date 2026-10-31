@@ -445,6 +445,8 @@
   .proc-item-suggest div{padding:8px 12px; font-size:13.5px; cursor:pointer; color:var(--ink);}
   .proc-item-suggest div:hover, .proc-item-suggest div.active{background:var(--surface-2);}
   .proc-item-suggest .no-match{color:var(--muted); cursor:default;}
+  .proc-item-suggest .suggest-head{font-size:11px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; background:var(--surface-2);}
+  .proc-item-suggest .suggest-cat{float:right; font-size:11px; color:var(--muted);}
   .am-cancel{
     padding:9px 14px; border-radius:9px; border:1px solid var(--border); background:none;
     color:var(--muted); font:inherit; font-size:13.5px; font-weight:600; cursor:pointer;
@@ -3207,22 +3209,40 @@
   // lists (e.g. "Салон" has 60+ items) inside the artifact frame, so this
   // is a small hand-built combobox instead: filters PROCUREMENT_ITEMS for
   // the selected category as you type, click (or Enter) to pick.
+  // Позиции раздела: заготовленный список + всё, что уже закупали (история закупа), позиции прайса расходников и
+  // позиции, добавленные в инвентаризации, — чтобы новые позиции не пропадали из списка после перезагрузки.
+  function procItemsFor(cat){
+    const seen = new Set(), out = [];
+    const add = n => { n = String(n || '').trim(); const k = n.toLowerCase(); if(n && !seen.has(k)){ seen.add(k); out.push(n); } };
+    (PROCUREMENT_ITEMS[cat] || []).forEach(add);
+    const extra = [];
+    const addExtra = n => { n = String(n || '').trim(); const k = n.toLowerCase(); if(n && !seen.has(k)){ seen.add(k); extra.push(n); } };
+    for(const d in dayClose.procurement) for(const p of (dayClose.procurement[d] || [])) if((p.category || 'Расходники') === cat) addExtra(p.item);
+    if(cat === 'Расходники') state.consumablePrices.forEach(c => addExtra(c.item));
+    (state.inventoryEdits || []).forEach(e => { if(e.newCategory === cat) addExtra(e.newItem); });
+    return out.concat(extra.sort((x, y) => x.localeCompare(y, 'ru')));
+  }
   function renderProcItemSuggestions(query){
     const cat = document.getElementById('newProcCategory').value || PROCUREMENT_CATEGORIES[0];
-    const list = PROCUREMENT_ITEMS[cat] || [];
-    const q = (query || '').trim().toLowerCase();
-    const matches = q ? list.filter(i => i.toLowerCase().includes(q)) : list;
+    const list = procItemsFor(cat);
+    const norm = t => String(t).toLowerCase().replace(/ё/g, 'е');   // «елка» находит «Ёлка»
+    const q = norm((query || '').trim());
+    const matches = q ? list.filter(i => norm(i).includes(q)) : list;
     const box = document.getElementById('newProcItemSuggest');
-    if(!matches.length){
-      box.innerHTML = '<div class="no-match">Ничего не найдено</div>';
-      box.hidden = false;
-      return;
+    let html = matches.map(i => '<div data-val="'+esc(i)+'" data-cat="'+esc(cat)+'">'+esc(i)+'</div>').join('');
+    // Совпадения из других разделов (если ввели название) — выбор такой позиции переключает раздел.
+    if(q){
+      const others = [];
+      PROCUREMENT_CATEGORIES.filter(c => c !== cat).forEach(c => procItemsFor(c).filter(i => norm(i).includes(q)).forEach(i => others.push([c, i])));
+      if(others.length) html += '<div class="no-match suggest-head">В других разделах</div>' + others.map(([c, i]) => '<div data-val="'+esc(i)+'" data-cat="'+esc(c)+'">'+esc(i)+' <span class="suggest-cat">'+esc(c)+'</span></div>').join('');
     }
-    box.innerHTML = matches.map(i => '<div data-val="'+esc(i)+'">'+esc(i)+'</div>').join('');
+    if(!html) html = '<div class="no-match">Ничего не найдено</div>';
+    box.innerHTML = html;
     box.hidden = false;
   }
-  function pickProcItem(value){
+  function pickProcItem(value, cat){
     const itemEl = document.getElementById('newProcItem');
+    if(cat && document.getElementById('newProcCategory').value !== cat) document.getElementById('newProcCategory').value = cat;
     itemEl.value = value;
     document.getElementById('newProcItemSuggest').hidden = true;
     const known = getConsumablePrice(value);
@@ -3237,7 +3257,7 @@
     const opt = e.target.closest('[data-val]');
     if(!opt) return;
     e.preventDefault();
-    pickProcItem(opt.dataset.val);
+    pickProcItem(opt.dataset.val, opt.dataset.cat);
   });
   document.addEventListener('click', e => {
     if(!e.target.closest('.proc-item-wrap')) document.getElementById('newProcItemSuggest').hidden = true;
