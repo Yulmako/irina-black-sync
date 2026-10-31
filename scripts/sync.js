@@ -67,11 +67,9 @@ async function zapisJson(url) {
 // ---- Оплата визитов ----
 // Список записей (reservation/list) сумм не содержит. Сумма «Оплачено» есть в карточке записи — той, что журнал
 // открывает по клику: в ней платежи клиента (payments[].amount), «Итого» (reservation.totalPrice) и долг.
-// Спрашиваем карточку только у обслуженных записей за последние PAY_DAYS_BACK дней: свежие (PAY_REFRESH_DAYS)
-// — каждый раз, потому что сумма может поменяться при завершении услуги; более старые — пока оплата не получена.
+// Спрашиваем карточку только у обслуженных записей ТЕКУЩЕГО дня (по времени Алматы) — при каждом запуске,
+// потому что сумма может поменяться при завершении услуги. Прошлые дни не трогаем: их суммы остаются как есть.
 const APP_BASE = `${ZAPIS_BASE}/rest/partner-app/v2`;
-const PAY_DAYS_BACK = 14;
-const PAY_REFRESH_DAYS = 2;
 const PAY_CONCURRENCY = 4;
 // Краткая карточка записи (то, что журнал показывает во всплывающей подсказке: «Итого», «Оплачено»).
 const DETAIL_CANDIDATES = [
@@ -160,14 +158,10 @@ async function fetchPayment(id, diag) {
 }
 
 // Дописывает bookings[i].paid / .total (только у тех, у кого получилось).
-async function enrichPayments(bookings, existingPaid) {
-  const now = Date.now();
-  const from = now - PAY_DAYS_BACK * 86400000;
-  const fresh = now - PAY_REFRESH_DAYS * 86400000;
-  const targets = bookings.filter((b) => {
-    const t = new Date(b.start).getTime();
-    return b.status === 'SERVED' && t >= from && t <= now && (t >= fresh || !existingPaid.get(b.id));
-  });
+async function enrichPayments(bookings) {
+  const dayKey = (d) => new Date(d).toLocaleDateString('en-CA'); // YYYY-MM-DD в часовом поясе Алматы (TZ задан выше)
+  const today = dayKey(Date.now());
+  const targets = bookings.filter((b) => b.status === 'SERVED' && dayKey(b.start) === today);
   const done = new Set();      // карточка получена (paid + total)
   const totalOnly = new Set(); // получено только «Итого»
   const diag = { fails: [], errors: 0 };
@@ -272,10 +266,10 @@ async function supabase(path, init) {
 }
 
 async function loadExistingPaid() {
-  const since = new Date(Date.now() - (PAY_DAYS_BACK + 1) * 86400000).toISOString();
+  const since = new Date(Date.now() - 86400000).toISOString();
   try {
-    const res = await supabase(`/rest/v1/bookings?select=id,paid&start=gte.${encodeURIComponent(since)}&limit=5000`);
-    return new Map((await res.json()).map((r) => [String(r.id), r.paid]));
+    const res = await supabase(`/rest/v1/bookings?select=id,paid,total&start=gte.${encodeURIComponent(since)}&limit=5000`);
+    return new Map((await res.json()).map((r) => [String(r.id), { paid: r.paid, total: r.total }]));
   } catch (e) {
     console.warn('Колонок оплаты в таблице bookings ещё нет — выполните supabase/bookings_paid.sql.');
     return null;
@@ -312,7 +306,7 @@ async function main() {
   // Оплату подмешиваем только если в базе есть колонки; записи без новой оплаты сохраняются без полей paid/total,
   // чтобы не затереть уже сохранённую сумму.
   const existingPaid = await loadExistingPaid();
-  const { done, totalOnly } = existingPaid ? await enrichPayments(bookings, existingPaid) : { done: new Set(), totalOnly: new Set() };
+  const { done, totalOnly } = existingPaid ? await enrichPayments(bookings) : { done: new Set(), totalOnly: new Set() };
   const withPay = bookings.filter((b) => done.has(b.id));
   const withTotal = bookings.filter((b) => totalOnly.has(b.id)).map(({ paid, ...rest }) => rest);
   const plain = bookings.filter((b) => !done.has(b.id) && !totalOnly.has(b.id)).map(({ paid, total, ...rest }) => rest);
