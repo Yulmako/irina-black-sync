@@ -64,6 +64,105 @@ async function zapisJson(url) {
   return body.response;
 }
 
+// ---- Оплата визитов ----
+// Список записей (reservation/list) сумм не содержит. Сумму «Оплачено» zapis.kz отдаёт отдельным запросом
+//   /rest/partner-app/v2/reservations/{запись}/reservation-clients/{клиент записи}/payment-info
+// (то же, что журнал показывает на вкладке «Оплата и чеки»). Спрашиваем её только у обслуженных записей
+// за последние PAY_DAYS_BACK дней: свежие (PAY_REFRESH_DAYS) — каждый раз, потому что сумма может
+// поменяться при завершении услуги; более старые — пока оплата не получена.
+const APP_BASE = `${ZAPIS_BASE}/rest/partner-app/v2`;
+const PAY_DAYS_BACK = 14;
+const PAY_REFRESH_DAYS = 2;
+const PAY_CONCURRENCY = 4;
+
+async function zapisRaw(url) {
+  const res = await fetch(url, { headers: ZAPIS_HEADERS });
+  const text = await res.text();
+  let json = null;
+  try { json = JSON.parse(text); } catch (e) { /* не JSON */ }
+  return { status: res.status, json, text };
+}
+
+// Номер «клиента записи» ищем в ответе по записи: массив клиентов с полем id.
+function findReservationClientId(node, depth = 0) {
+  if (!node || typeof node !== 'object' || depth > 4) return null;
+  if (!Array.isArray(node)) {
+    for (const [k, v] of Object.entries(node)) {
+      if (/^reservationClientId$/i.test(k) && v) return String(v);
+      if (/clients?$/i.test(k) && Array.isArray(v) && v[0] && typeof v[0] === 'object' && v[0].id) return String(v[0].id);
+    }
+  } else if (node[0] && typeof node[0] === 'object' && node[0].id && /client/i.test(JSON.stringify(Object.keys(node[0])))) {
+    return String(node[0].id);
+  }
+  for (const v of Array.isArray(node) ? node : Object.values(node)) {
+    const found = findReservationClientId(v, depth + 1);
+    if (found) return found;
+  }
+  return null;
+}
+
+async function fetchPayment(id, diag) {
+  let clientId = null;
+  for (const url of [`${APP_BASE}/reservations/${id}`, `${APP_BASE}/reservations/${id}/reservation-clients`]) {
+    const r = await zapisRaw(url);
+    if (r.json) clientId = findReservationClientId(r.json);
+    if (clientId) break;
+    if (diag.fails.length < 3) diag.fails.push(`${url} → HTTP ${r.status}: ${r.text.slice(0, 400)}`);
+  }
+  if (!clientId) return null;
+  const url = `${APP_BASE}/reservations/${id}/reservation-clients/${clientId}/payment-info`;
+  const r = await zapisRaw(url);
+  if (!Array.isArray(r.json)) {
+    if (diag.fails.length < 3) diag.fails.push(`${url} → HTTP ${r.status}: ${r.text.slice(0, 400)}`);
+    return null;
+  }
+  return r.json;
+}
+
+// Дописывает bookings[i].paid / .total (только у тех, у кого получилось); возвращает сколько записей получили оплату.
+async function enrichPayments(bookings, existingPaid) {
+  const now = Date.now();
+  const from = now - PAY_DAYS_BACK * 86400000;
+  const fresh = now - PAY_REFRESH_DAYS * 86400000;
+  const byId = new Map(bookings.map((b) => [b.id, b]));
+  const targets = bookings.filter((b) => {
+    const t = new Date(b.start).getTime();
+    return b.status === 'SERVED' && t >= from && t <= now && (t >= fresh || !existingPaid.get(b.id));
+  });
+  const done = new Set();
+  const diag = { fails: [], errors: 0 };
+  let idx = 0, failedInRow = 0, aborted = false;
+  async function worker() {
+    while (idx < targets.length && !aborted) {
+      const b = targets[idx++];
+      if (done.has(b.id)) continue;
+      try {
+        const rows = await fetchPayment(b.id, diag);
+        if (!rows) { if (++failedInRow >= 6 && !done.size) aborted = true; continue; }
+        failedInRow = 0;
+        for (const row of rows) {
+          const target = byId.get(String(row.reservationId));
+          if (!target) continue;
+          target.paid = Number(row.paidAmount) > 0 ? Number(row.paidAmount) : null;
+          target.total = Number(row.totalAmount) > 0 ? Number(row.totalAmount) : null;
+          done.add(target.id);
+        }
+      } catch (e) {
+        diag.errors++;
+        if (diag.fails.length < 3) diag.fails.push(`${b.id}: ${e.message}`);
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: PAY_CONCURRENCY }, worker));
+  const got = bookings.filter((b) => done.has(b.id) && b.paid).length;
+  console.log(`Оплата: запрошено ${targets.length}, получено по ${done.size}, из них с суммой ${got}.`);
+  if (diag.fails.length) {
+    console.warn(aborted ? 'Запросы оплаты остановлены: первые записи не удалось получить. Примеры ответов zapis.kz:' : 'Примеры неудачных запросов оплаты:');
+    diag.fails.forEach((f) => console.warn('  ' + f));
+  }
+  return done;
+}
+
 async function fetchMasters() {
   const list = await zapisJson(`${ZAPIS_BASE}/rest/v2/partner-web/reservation/masters-list`);
   const map = {};
@@ -76,55 +175,6 @@ async function fetchMasters() {
 async function fetchWindow(startDate, endDate) {
   const url = `${ZAPIS_BASE}/rest/v2/partner-web/reservation/list?master=&startDate=${startDate}&endDate=${endDate}`;
   return zapisJson(url);
-}
-
-// ---- Оплата визита ----
-// В журнале zapis.kz у записи есть «Итого» и «Оплачено» (оно меняется, когда администратор
-// принимает оплату или правит сумму при завершении услуги). Точное имя поля в ответе списка
-// записей заранее неизвестно, поэтому ищем по типичным названиям; весь «платёжный» кусок записи
-// дополнительно сохраняем в pay_info — по нему можно уточнить поле, не трогая zapis.kz.
-const PAID_KEY = /^(paid|payed|paidsum|paidamount|payedsum|payedamount|amountpaid|totalpaid|sumpaid|paysum|paymentsum|paymentamount|paymenttotal|paidtotal|oplacheno)$/i;
-const TOTAL_KEY = /^(total|totalprice|totalsum|totalcost|totalamount|price|sum|cost|amount|finalprice|finalsum|itogo)$/i;
-const PAY_ARRAY_KEY = /^(payments?|checks?|receipts?|transactions?)$/i;
-const PAY_INFO_KEY = /pay|paid|sum|price|cost|amount|total|discount|debt|balance|check|receipt|transaction|itog|oplat/i;
-
-function toNum(v) {
-  if (typeof v === 'number' && isFinite(v)) return v;
-  if (typeof v === 'string' && v.trim() !== '' && isFinite(Number(v.replace(/\s/g, '').replace(',', '.')))) {
-    return Number(v.replace(/\s/g, '').replace(',', '.'));
-  }
-  return null;
-}
-
-function sumPayments(arr) {
-  let sum = 0, any = false;
-  for (const p of arr) {
-    if (!p || typeof p !== 'object') continue;
-    for (const [k, v] of Object.entries(p)) {
-      if (/^(amount|sum|value|paid|total)$/i.test(k) && toNum(v) !== null) { sum += toNum(v); any = true; break; }
-    }
-  }
-  return any ? sum : null;
-}
-
-function extractPay(r) {
-  let paid = null, total = null;
-  const scan = (obj, depth) => {
-    for (const [k, v] of Object.entries(obj)) {
-      if (paid === null && PAID_KEY.test(k) && toNum(v) !== null) paid = toNum(v);
-      else if (total === null && TOTAL_KEY.test(k) && toNum(v) !== null) total = toNum(v);
-      else if (paid === null && PAY_ARRAY_KEY.test(k) && Array.isArray(v)) paid = sumPayments(v);
-      else if (depth < 1 && v && typeof v === 'object' && !Array.isArray(v) && /pay|check|receipt|total|bill/i.test(k)) scan(v, depth + 1);
-    }
-  };
-  scan(r, 0);
-  const info = {};
-  for (const [k, v] of Object.entries(r)) {
-    if (!PAY_INFO_KEY.test(k)) continue;
-    if (v === null || ['number', 'string', 'boolean'].includes(typeof v)) info[k] = typeof v === 'string' ? v.slice(0, 80) : v;
-    else if (JSON.stringify(v).length <= 1500) info[k] = v;
-  }
-  return { paid: paid !== null && paid > 0 ? paid : null, total: total !== null && total > 0 ? total : null, pay_info: Object.keys(info).length ? info : null };
 }
 
 function cleanRecord(r, mastersMap) {
@@ -141,7 +191,6 @@ function cleanRecord(r, mastersMap) {
     status: r.status || 'AWAITING',
     online: !!r.isOnline,
     new_client: !!r.isNew,
-    ...extractPay(r),
     synced_at: new Date().toISOString(),
   };
 }
@@ -156,7 +205,6 @@ async function fetchAllBookings() {
   rangeEnd.setDate(rangeEnd.getDate() + DAYS_FORWARD);
 
   const byId = new Map();
-  const sample = []; // несколько «сырых» записей для диагностики оплаты (без имён и телефонов)
   let cursor = new Date(rangeStart);
   while (cursor < rangeEnd) {
     const windowEnd = new Date(cursor);
@@ -167,12 +215,11 @@ async function fetchAllBookings() {
     for (const r of records) {
       const cleaned = cleanRecord(r, mastersMap);
       if (cleaned) byId.set(cleaned.id, cleaned);
-      if (cleaned && sample.length < 3 && /SERVED|COMPLETE|DONE|PAID/i.test(String(r.status || ''))) sample.push(r);
     }
     cursor = chunkEnd;
   }
 
-  return { bookings: Array.from(byId.values()), rangeStart, rangeEnd, sample };
+  return { bookings: Array.from(byId.values()), rangeStart, rangeEnd };
 }
 
 async function supabase(path, init) {
@@ -192,31 +239,28 @@ async function supabase(path, init) {
   return res;
 }
 
+async function loadExistingPaid() {
+  const since = new Date(Date.now() - (PAY_DAYS_BACK + 1) * 86400000).toISOString();
+  try {
+    const res = await supabase(`/rest/v1/bookings?select=id,paid&start=gte.${encodeURIComponent(since)}&limit=5000`);
+    return new Map((await res.json()).map((r) => [String(r.id), r.paid]));
+  } catch (e) {
+    console.warn('Колонок оплаты в таблице bookings ещё нет — выполните supabase/bookings_paid.sql.');
+    return null;
+  }
+}
+
 async function upsertBookings(bookings) {
   // Batch to keep individual requests small and reliable.
   const BATCH = 200;
   for (let i = 0; i < bookings.length; i += BATCH) {
     const chunk = bookings.slice(i, i + BATCH);
-    try {
-      await post(chunk);
-    } catch (err) {
-      // Колонок оплаты в базе ещё нет (не выполнен supabase/bookings_paid.sql) — синхронизация не должна ломаться.
-      if (!/paid|total|pay_info|PGRST204/i.test(String(err.message))) throw err;
-      if (!upsertBookings.warned) {
-        console.warn('ВНИМАНИЕ: в таблице bookings нет колонок оплаты — выполните supabase/bookings_paid.sql. Записи сохраняются без оплаты.');
-        upsertBookings.warned = true;
-      }
-      await post(chunk.map(({ paid, total, pay_info, ...rest }) => rest));
-    }
+    await supabase('/rest/v1/bookings?on_conflict=id', {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates' },
+      body: JSON.stringify(chunk),
+    });
   }
-}
-
-function post(chunk) {
-  return supabase('/rest/v1/bookings?on_conflict=id', {
-    method: 'POST',
-    headers: { Prefer: 'resolution=merge-duplicates' },
-    body: JSON.stringify(chunk),
-  });
 }
 
 async function updateSyncStatus({ rangeStart, rangeEnd, count }) {
@@ -232,16 +276,15 @@ async function updateSyncStatus({ rangeStart, rangeEnd, count }) {
 }
 
 async function main() {
-  const { bookings, rangeStart, rangeEnd, sample } = await fetchAllBookings();
-  await upsertBookings(bookings);
-  const withPaid = bookings.filter((b) => b.paid);
-  console.log(`Оплата найдена у ${withPaid.length} из ${bookings.length} записей.`);
-  if (!withPaid.length && bookings.length) {
-    console.warn('Поле оплаты в ответе zapis.kz не найдено. Пример записей (имена и телефоны скрыты):');
-    const redact = (k, v) => (/name|phone|surname|email|comment|note|title/i.test(k) ? '***' : typeof v === 'string' ? v.slice(0, 60) : v);
-    for (const r of sample) console.warn(JSON.stringify(r, redact));
-    if (!sample.length) console.warn('Нет ни одной записи со статусом «обслужен» — смотрите статусы:', [...new Set(bookings.map((b) => b.status))].join(', '));
-  }
+  const { bookings, rangeStart, rangeEnd } = await fetchAllBookings();
+  // Оплату подмешиваем только если в базе есть колонки; записи без новой оплаты сохраняются без полей paid/total,
+  // чтобы не затереть уже сохранённую сумму.
+  const existingPaid = await loadExistingPaid();
+  const enriched = existingPaid ? await enrichPayments(bookings, existingPaid) : new Set();
+  const withPay = bookings.filter((b) => enriched.has(b.id));
+  const withoutPay = bookings.filter((b) => !enriched.has(b.id)).map(({ paid, total, ...rest }) => rest);
+  await upsertBookings(withPay);
+  await upsertBookings(withoutPay);
   await updateSyncStatus({ rangeStart, rangeEnd, count: bookings.length });
   console.log(`Synced ${bookings.length} bookings (${fmt(rangeStart)} — ${fmt(rangeEnd)}) into Supabase.`);
 }
