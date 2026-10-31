@@ -1361,11 +1361,12 @@
       <button class="cd-unlock-btn" id="closeDayUnlock" hidden>Разблокировать день</button>
     </div>
     <div class="cd-summary" id="closeDayTotal" hidden>
-      <div class="cd-summary-tile"><span class="label">Расходники за день</span><span class="value" id="closeDayConsValue">—</span><span class="cd-tile-hint" id="closeDayConsHint" hidden></span></div>
+      <div class="cd-summary-tile total"><span class="label">Итого за день</span><span class="value" id="closeDayTotalValue">—</span><span class="cd-tile-hint" id="closeDayNewHint"></span></div>
+      <div class="cd-summary-tile accent"><span class="label">% салона</span><span class="value" id="closeDaySalonPctValue">—</span><span class="cd-tile-hint" id="closeDaySalonPctHint" hidden></span></div>
+      <div class="cd-summary-tile"><span class="label">% мастера</span><span class="value" id="closeDayMasterPctValue">—</span></div>
+      <div class="cd-summary-tile"><span class="label">Закуп</span><span class="value" id="closeDayProcValue">—</span></div>
+      <div class="cd-summary-tile"><span class="label">Расходники</span><span class="value" id="closeDayConsValue">—</span><span class="cd-tile-hint" id="closeDayConsHint" hidden></span></div>
       <div class="cd-summary-tile"><span class="label">К выплате мастерам</span><span class="value" id="closeDayMasterValue">—</span><span class="cd-tile-hint" id="closeDayMasterHint" hidden></span></div>
-      <div class="cd-summary-tile accent"><span class="label">Прибыль салона</span><span class="value" id="closeDaySalonValue">—</span></div>
-      <div class="cd-summary-tile"><span class="label">Новых клиентов</span><span class="value" id="closeDayNewValue">—</span><span class="cd-tile-hint" id="closeDayNewHint" hidden></span></div>
-      <div class="cd-summary-tile total"><span class="label">Итого за день</span><span class="value" id="closeDayTotalValue">—</span></div>
     </div>
 
     <div class="cd-subtabs four">
@@ -3434,13 +3435,8 @@
     }
     empty.hidden = true; totalWrap.hidden = false;
     {
-      const nvEl = document.getElementById('closeDayNewValue'), nvHint = document.getElementById('closeDayNewHint');
-      if(visits.every(isImportedBooking)){
-        nvEl.textContent = '—'; nvHint.hidden = false; nvHint.textContent = 'Архив из таблиц — отметки нет';
-      } else {
-        const n = newClientKeys(visits).size;
-        nvEl.textContent = n.toLocaleString('ru-RU'); nvHint.hidden = true;
-      }
+      const nvHint = document.getElementById('closeDayNewHint');
+      nvHint.textContent = visits.every(isImportedBooking) ? 'Новые клиенты: архив из таблиц — отметки нет' : 'Новых клиентов: ' + newClientKeys(visits).size.toLocaleString('ru-RU');
     }
 
     const byMaster = new Map();
@@ -3573,7 +3569,7 @@
   }
 
   function updateCloseDayTotals(){
-    let grand = 0, grandCons = 0, grandMaster = 0, grandSalon = 0, grandFine = 0, grandTip = 0;
+    let grand = 0, grandCons = 0, grandMaster = 0, grandSalon = 0, grandFine = 0, grandTip = 0, pctSalon = 0, pctMaster = 0;
     const adjDate = document.getElementById('closeDayDate').value;
     document.querySelectorAll('.cd-master-group').forEach(group => {
       const master = group.dataset.master;
@@ -3603,6 +3599,7 @@
         if(status !== 'completed') return;
         subtotal += v;
         grandCons += consTotal; grandMaster += split.master; grandSalon += split.salon; groupMasterPay += split.master;
+        pctSalon += split.salon; pctMaster += split.master;
       });
       const adj = masterAdjTotals(adjDate, master);
       const groupSaleComm = saleCommissionFor(adjDate, master);
@@ -3628,7 +3625,19 @@
     const consEl = document.getElementById('closeDayConsValue');
     const consHint = document.getElementById('closeDayConsHint');
     const masterEl = document.getElementById('closeDayMasterValue');
-    const salonEl = document.getElementById('closeDaySalonValue');
+    const fmt0 = n => Math.round(n).toLocaleString('ru-RU') + ' ₸';
+    const pctSalonEl = document.getElementById('closeDaySalonPctValue'), pctMasterEl = document.getElementById('closeDayMasterPctValue');
+    if(pctSalonEl) pctSalonEl.textContent = fmt0(pctSalon);
+    if(pctMasterEl) pctMasterEl.textContent = fmt0(pctMaster);
+    const pctSalonHint = document.getElementById('closeDaySalonPctHint');
+    if(pctSalonHint){
+      // «Прибыль салона» дня: % салона + вычеты мастерам + продажа продукции (за вычетом процента сотрудникам)
+      const extra = Math.round(grandSalon) !== Math.round(pctSalon);
+      pctSalonHint.hidden = !extra;
+      pctSalonHint.textContent = extra ? 'С вычетами и продукцией — прибыль салона ' + fmt0(grandSalon) : '';
+    }
+    const procEl = document.getElementById('closeDayProcValue');
+    if(procEl) procEl.textContent = fmt0(((dayClose.procurement[date] || [])).reduce((t, p) => t + p.qty * p.unitCost, 0));
     if(consEl) consEl.textContent = Math.round(grandCons).toLocaleString('ru-RU') + ' ₸';
     if(consHint){
       if(salesTotal > 0){
@@ -3648,7 +3657,6 @@
       masterHint.hidden = !parts.length;
       masterHint.textContent = parts.length ? 'Включая ' + parts.join(', ') : '';
     }
-    if(salonEl) salonEl.textContent = Math.round(grandSalon).toLocaleString('ru-RU') + ' ₸';
     renderSalonProfitTile();
   }
 
