@@ -73,13 +73,9 @@ const APP_BASE = `${ZAPIS_BASE}/rest/partner-app/v2`;
 const PAY_DAYS_BACK = 14;
 const PAY_REFRESH_DAYS = 2;
 const PAY_CONCURRENCY = 4;
-// Адрес карточки записи точно не известен — первый раз пробуем варианты и дальше используем тот, что ответил.
+// Краткая карточка записи (то, что журнал показывает во всплывающей подсказке: «Итого», «Оплачено»).
 const DETAIL_CANDIDATES = [
-  (id) => `${ZAPIS_BASE}/rest/v2/partner-web/reservation/${id}`,
   (id) => `${ZAPIS_BASE}/rest/v2/partner-web/reservation/${id}/info`,
-  (id) => `${ZAPIS_BASE}/rest/v2/partner-web/reservation/${id}/details`,
-  (id) => `${ZAPIS_BASE}/rest/v2/partner-web/reservation/info?id=${id}`,
-  (id) => `${ZAPIS_BASE}/rest/v2/partner-web/reservation/get?id=${id}`,
 ];
 
 async function zapisRaw(url) {
@@ -96,19 +92,38 @@ function redactedBody(json, text, limit = 1200) {
   return JSON.stringify(json, (k, v) => (/name|phone|surname|email|comment|whatsapp/i.test(k) ? (v == null ? v : '***') : v)).slice(0, limit);
 }
 
-// Карточка записи → { paid, total }. paid = сумма всех платежей клиентов записи (0, если платежей нет).
-// null — ответ не похож на карточку записи.
+// Сумма из значения поля: число, либо строка вида «10 000 ₸».
+function amountOf(v) {
+  if (typeof v === 'number' && isFinite(v)) return v;
+  if (typeof v === 'string' && /^[\d\s.,]+\s*(₸|тг|KZT)?$/i.test(v.trim())) {
+    const n = Number(v.replace(/[^\d.,]/g, '').replace(',', '.'));
+    return isFinite(n) ? n : null;
+  }
+  return null;
+}
+const PAID_KEY = /paid|payed|oplach|paidamount|amountpaid/i;
+const TOTAL_KEY = /^(total|totalprice|totalsum|totalamount|itogo|sum|price|amount|cost|finalprice)$/i;
+
+// Ответ краткой карточки → { paid, total }. Имена полей ищем по типичным названиям (в логе печатается
+// пример ответа, если что-то не находится). paid = null, если оплаты ещё нет.
 function parseReservationCard(json) {
-  const r = json && (json.response || json);
-  const res = r && r.reservation;
-  if (!res || typeof res !== 'object') return null;
-  let clients = r.clients;
-  if (typeof clients === 'string') { try { clients = JSON.parse(clients); } catch (e) { clients = null; } }
-  if (!Array.isArray(clients)) return null;
-  let paid = 0;
-  for (const c of clients) for (const p of (c && c.payments) || []) paid += Number(p && p.amount) || 0;
-  const total = Number(res.totalPrice) > 0 ? Number(res.totalPrice) : null;
-  return { paid: paid > 0 ? paid : null, total };
+  const d = json && json.data;
+  if (!d || typeof d !== 'object' || Array.isArray(d)) return null;
+  let paid = null, total = null, paidSeen = false;
+  const scan = (obj, depth) => {
+    for (const [k, v] of Object.entries(obj)) {
+      const n = amountOf(v);
+      if (n !== null && PAID_KEY.test(k) && !/total/i.test(k)) { if (paid === null) paid = n; paidSeen = true; }
+      else if (n !== null && TOTAL_KEY.test(k)) { if (total === null) total = n; }
+      else if (Array.isArray(v) && /^payments?$/i.test(k)) {
+        const sum = v.reduce((t, p) => t + (amountOf(p && p.amount) || 0), 0);
+        if (paid === null) paid = sum;
+        paidSeen = true;
+      } else if (v && typeof v === 'object' && !Array.isArray(v) && depth < 1) scan(v, depth + 1);
+    }
+  };
+  scan(d, 0);
+  return { paid: paid > 0 ? paid : null, total: total > 0 ? total : null, found: paidSeen || total !== null };
 }
 
 async function discoverDetailUrl(id, diag) {
@@ -116,7 +131,14 @@ async function discoverDetailUrl(id, diag) {
     const url = cand(id);
     let r;
     try { r = await zapisRaw(url); } catch (e) { diag.fails.push(`${url} → ${e.message}`); continue; }
-    if (parseReservationCard(r.json)) { diag.detailFn = cand; console.log(`Карточка записи: ${url.replace(String(id), '{id}')}`); return; }
+    const card = parseReservationCard(r.json);
+    if (card) {
+      diag.detailFn = cand;
+      console.log(`Карточка записи: ${url.replace(String(id), '{id}')}`);
+      console.log(`Пример ответа (без имён и телефонов): ${redactedBody(r.json, r.text, 1500)}`);
+      if (!card.found) console.warn('В ответе не нашлись поля «Итого/Оплачено» — пришлите этот пример.');
+      return;
+    }
     diag.fails.push(`${url} → HTTP ${r.status}: ${redactedBody(r.json, r.text, 250)}`);
   }
 }
@@ -128,7 +150,7 @@ async function fetchPayment(id, diag) {
   if (diag.detailFn) {
     const r = await zapisRaw(diag.detailFn(id));
     const card = parseReservationCard(r.json);
-    if (card) return { ...card, ok: true };
+    if (card && card.found) return { paid: card.paid, total: card.total, ok: true };
     if (diag.fails.length < 6) diag.fails.push(`${diag.detailFn(id)} → HTTP ${r.status}: ${redactedBody(r.json, r.text, 250)}`);
   }
   // Запасной вариант: «Итого» из краткой карточки.
