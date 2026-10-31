@@ -65,15 +65,22 @@ async function zapisJson(url) {
 }
 
 // ---- Оплата визитов ----
-// Список записей (reservation/list) сумм не содержит. Сумму «Оплачено» zapis.kz отдаёт отдельным запросом
-//   /rest/partner-app/v2/reservations/{запись}/reservation-clients/{клиент записи}/payment-info
-// (то же, что журнал показывает на вкладке «Оплата и чеки»). Спрашиваем её только у обслуженных записей
-// за последние PAY_DAYS_BACK дней: свежие (PAY_REFRESH_DAYS) — каждый раз, потому что сумма может
-// поменяться при завершении услуги; более старые — пока оплата не получена.
+// Список записей (reservation/list) сумм не содержит. Сумма «Оплачено» есть в карточке записи — той, что журнал
+// открывает по клику: в ней платежи клиента (payments[].amount), «Итого» (reservation.totalPrice) и долг.
+// Спрашиваем карточку только у обслуженных записей за последние PAY_DAYS_BACK дней: свежие (PAY_REFRESH_DAYS)
+// — каждый раз, потому что сумма может поменяться при завершении услуги; более старые — пока оплата не получена.
 const APP_BASE = `${ZAPIS_BASE}/rest/partner-app/v2`;
 const PAY_DAYS_BACK = 14;
 const PAY_REFRESH_DAYS = 2;
 const PAY_CONCURRENCY = 4;
+// Адрес карточки записи точно не известен — первый раз пробуем варианты и дальше используем тот, что ответил.
+const DETAIL_CANDIDATES = [
+  (id) => `${ZAPIS_BASE}/rest/v2/partner-web/reservation/${id}`,
+  (id) => `${ZAPIS_BASE}/rest/v2/partner-web/reservation/${id}/info`,
+  (id) => `${ZAPIS_BASE}/rest/v2/partner-web/reservation/${id}/details`,
+  (id) => `${ZAPIS_BASE}/rest/v2/partner-web/reservation/info?id=${id}`,
+  (id) => `${ZAPIS_BASE}/rest/v2/partner-web/reservation/get?id=${id}`,
+];
 
 async function zapisRaw(url) {
   const res = await fetch(url, { headers: ZAPIS_HEADERS });
@@ -83,98 +90,84 @@ async function zapisRaw(url) {
   return { status: res.status, json, text };
 }
 
-// Номер «клиента записи» ищем в ответе по записи: любое поле, в названии которого сочетаются
-// «reservation» и «client» (число или объект/массив с id), либо массив клиентов с полем id.
-function findReservationClientId(node, depth = 0) {
-  if (!node || typeof node !== 'object' || depth > 5) return null;
-  const items = Array.isArray(node) ? node.map((v, i) => [String(i), v]) : Object.entries(node);
-  for (const [k, v] of items) {
-    if (/reservation.*client|client.*reservation/i.test(k)) {
-      if ((typeof v === 'number' || (typeof v === 'string' && /^\d+$/.test(v))) && v) return String(v);
-      if (Array.isArray(v) && v[0] && typeof v[0] === 'object' && v[0].id) return String(v[0].id);
-      if (v && typeof v === 'object' && !Array.isArray(v) && v.id) return String(v.id);
-    }
-    if (/^clients$/i.test(k) && Array.isArray(v) && v[0] && typeof v[0] === 'object' && v[0].id) return String(v[0].id);
-  }
-  for (const [, v] of items) {
-    const found = findReservationClientId(v, depth + 1);
-    if (found) return found;
-  }
-  return null;
-}
-
 // Для лога: ответ без имён, телефонов и комментариев.
-function redactedBody(json, text, limit = 3000) {
-  if (!json) return text.slice(0, 400);
-  return JSON.stringify(json, (k, v) => (/name|phone|surname|email|comment/i.test(k) ? (v == null ? v : '***') : v)).slice(0, limit);
+function redactedBody(json, text, limit = 1200) {
+  if (!json) return text.slice(0, 300);
+  return JSON.stringify(json, (k, v) => (/name|phone|surname|email|comment|whatsapp/i.test(k) ? (v == null ? v : '***') : v)).slice(0, limit);
 }
 
+// Карточка записи → { paid, total }. paid = сумма всех платежей клиентов записи (0, если платежей нет).
+// null — ответ не похож на карточку записи.
+function parseReservationCard(json) {
+  const r = json && (json.response || json);
+  const res = r && r.reservation;
+  if (!res || typeof res !== 'object') return null;
+  let clients = r.clients;
+  if (typeof clients === 'string') { try { clients = JSON.parse(clients); } catch (e) { clients = null; } }
+  if (!Array.isArray(clients)) return null;
+  let paid = 0;
+  for (const c of clients) for (const p of (c && c.payments) || []) paid += Number(p && p.amount) || 0;
+  const total = Number(res.totalPrice) > 0 ? Number(res.totalPrice) : null;
+  return { paid: paid > 0 ? paid : null, total };
+}
+
+async function discoverDetailUrl(id, diag) {
+  for (const cand of DETAIL_CANDIDATES) {
+    const url = cand(id);
+    let r;
+    try { r = await zapisRaw(url); } catch (e) { diag.fails.push(`${url} → ${e.message}`); continue; }
+    if (parseReservationCard(r.json)) { diag.detailFn = cand; console.log(`Карточка записи: ${url.replace(String(id), '{id}')}`); return; }
+    diag.fails.push(`${url} → HTTP ${r.status}: ${redactedBody(r.json, r.text, 250)}`);
+  }
+}
+
+// → { paid, total, ok }: ok = true, если карточка получена (paid может быть null — оплаты ещё нет).
 async function fetchPayment(id, diag) {
-  let clientId = null, total = null;
-  const detailUrl = `${APP_BASE}/reservations/${id}`;
-  const d = await zapisRaw(detailUrl);
-  if (d.json) {
-    if (Number(d.json.totalPrice) > 0) total = Number(d.json.totalPrice);
-    clientId = findReservationClientId(d.json);
+  if (!diag.discovery) diag.discovery = discoverDetailUrl(id, diag);
+  await diag.discovery;
+  if (diag.detailFn) {
+    const r = await zapisRaw(diag.detailFn(id));
+    const card = parseReservationCard(r.json);
+    if (card) return { ...card, ok: true };
+    if (diag.fails.length < 6) diag.fails.push(`${diag.detailFn(id)} → HTTP ${r.status}: ${redactedBody(r.json, r.text, 250)}`);
   }
-  if (!clientId && diag.fails.length < 2) diag.fails.push(`${detailUrl} → HTTP ${d.status}, номер клиента записи не найден. Ответ: ${redactedBody(d.json, d.text)}`);
-  // запасные варианты адреса, если номер клиента записи в ответе не найден
-  const candidates = clientId ? [clientId] : [id, null];
-  for (const c of candidates) {
-    const url = c === null ? `${APP_BASE}/reservations/${id}/payment-info` : `${APP_BASE}/reservations/${id}/reservation-clients/${c}/payment-info`;
-    const r = await zapisRaw(url);
-    if (Array.isArray(r.json)) return { rows: r.json, total };
-    if (!clientId && diag.fails.length < 4) diag.fails.push(`${url} → HTTP ${r.status}: ${r.text.slice(0, 200)}`);
-    if (clientId) break;
-  }
-  return { rows: null, total };
+  // Запасной вариант: «Итого» из краткой карточки.
+  const d = await zapisRaw(`${APP_BASE}/reservations/${id}`);
+  const total = d.json && Number(d.json.totalPrice) > 0 ? Number(d.json.totalPrice) : null;
+  return { paid: null, total, ok: false };
 }
 
-// Дописывает bookings[i].paid / .total (только у тех, у кого получилось); возвращает сколько записей получили оплату.
+// Дописывает bookings[i].paid / .total (только у тех, у кого получилось).
 async function enrichPayments(bookings, existingPaid) {
   const now = Date.now();
   const from = now - PAY_DAYS_BACK * 86400000;
   const fresh = now - PAY_REFRESH_DAYS * 86400000;
-  const byId = new Map(bookings.map((b) => [b.id, b]));
   const targets = bookings.filter((b) => {
     const t = new Date(b.start).getTime();
     return b.status === 'SERVED' && t >= from && t <= now && (t >= fresh || !existingPaid.get(b.id));
   });
-  const done = new Set();      // получена оплата (paid + total)
-  const totalOnly = new Set(); // получено только «Итого» (оплату получить не удалось)
+  const done = new Set();      // карточка получена (paid + total)
+  const totalOnly = new Set(); // получено только «Итого»
   const diag = { fails: [], errors: 0 };
-  let idx = 0, failedInRow = 0, aborted = false;
+  let idx = 0;
   async function worker() {
-    while (idx < targets.length && !aborted) {
+    while (idx < targets.length) {
       const b = targets[idx++];
-      if (done.has(b.id)) continue;
       try {
-        const { rows, total } = await fetchPayment(b.id, diag);
-        if (!rows) {
-          if (total) { b.total = total; totalOnly.add(b.id); }
-          if (++failedInRow >= 6 && !done.size) aborted = true;
-          continue;
-        }
-        failedInRow = 0;
-        for (const row of rows) {
-          const target = byId.get(String(row.reservationId));
-          if (!target) continue;
-          target.paid = Number(row.paidAmount) > 0 ? Number(row.paidAmount) : null;
-          target.total = Number(row.totalAmount) > 0 ? Number(row.totalAmount) : null;
-          done.add(target.id);
-          totalOnly.delete(target.id);
-        }
+        const { paid, total, ok } = await fetchPayment(b.id, diag);
+        if (ok) { b.paid = paid; b.total = total; done.add(b.id); }
+        else if (total) { b.total = total; totalOnly.add(b.id); }
       } catch (e) {
         diag.errors++;
-        if (diag.fails.length < 3) diag.fails.push(`${b.id}: ${e.message}`);
+        if (diag.fails.length < 6) diag.fails.push(`${b.id}: ${e.message}`);
       }
     }
   }
   await Promise.all(Array.from({ length: PAY_CONCURRENCY }, worker));
   const got = bookings.filter((b) => done.has(b.id) && b.paid).length;
-  console.log(`Оплата: запрошено ${targets.length}, получено по ${done.size}, из них с суммой ${got}; только «Итого»: ${totalOnly.size}.`);
+  console.log(`Оплата: запрошено ${targets.length}, карточка получена по ${done.size}, из них с оплатой ${got}; только «Итого»: ${totalOnly.size}.`);
   if (diag.fails.length) {
-    console.warn(aborted ? 'Запросы оплаты остановлены: первые записи не удалось получить. Примеры ответов zapis.kz:' : 'Примеры неудачных запросов оплаты:');
+    console.warn(diag.detailFn ? 'Часть запросов не удалась:' : 'Адрес карточки записи не найден. Ответы zapis.kz на пробные адреса:');
     diag.fails.forEach((f) => console.warn('  ' + f));
   }
   return { done, totalOnly };
