@@ -1161,6 +1161,10 @@
         </table>
       </div>
       <p class="add-master-hint" style="padding:0 16px 14px;">Кабинет мастера: задайте мастеру пароль (от 8 знаков, у каждого свой) и передайте его. Мастер заходит на этот же сайт через ссылку «Вход для мастеров», видит только свои дни, закрытые администратором, и подтверждает данные за день. Подтверждённые дни отмечаются в графике во вкладке «Персонал».</p>
+      <div class="master-bulk" style="padding:0 16px 16px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+        <button type="button" class="mini-action-btn" id="pubAllBtn" title="Отправить в кабинеты мастеров все уже закрытые дни за последние 120 дней">Опубликовать закрытые дни мастерам</button>
+        <span class="add-master-hint" id="pubAllNote" style="margin:0;"></span>
+      </div>
       <div class="empty" id="mastersEmpty" hidden><b>Мастеров нет</b>Добавьте первого мастера кнопкой выше.</div>
     </div>
   </div>
@@ -4995,12 +4999,60 @@
       scheduleSave('day_close');
       showReportToast('День опубликован в кабинете мастеров: ' + items.map(x => x.master).join(', ') + '.', 6000);
     }catch(e){
-      showReportToast('Не удалось опубликовать день мастерам. Проверьте, что выполнен supabase/master_portal.sql, и связь.', 8000);
+      showAlertDialog('Не удалось опубликовать день мастерам' + (e && e.message ? ' («' + e.message + '»)' : '') + '. Проверьте, что в Supabase выполнен файл master_portal.sql, и связь.');
     }finally{
       pubBusy = false;
       const d = document.getElementById('closeDayDate').value;
       renderPubControls(d, !!dayClose.closed[d]);
     }
+  }
+  // Закрытые дни (за последние 120 дней), которые ещё не публиковались мастерам — например, закрытые до появления кабинета.
+  function unpublishedClosedDays(){
+    const from = new Date(); from.setDate(from.getDate() - 118);
+    const fromStr = from.getFullYear() + '-' + String(from.getMonth() + 1).padStart(2, '0') + '-' + String(from.getDate()).padStart(2, '0');
+    return Object.keys(dayClose.closed).filter(d => dayClose.closed[d] && d >= fromStr && !FROZEN_DATES.has(d) && !dayClose.masterPub[d]).sort();
+  }
+  let pubAllBusy = false;
+  // all=true — все закрытые дни заново; иначе только ещё не опубликованные. silent — без сообщений (автозапуск).
+  async function publishClosedDays(all, silent){
+    if(pubAllBusy || !currentPassword) return;
+    pubAllBusy = true;
+    const btn = document.getElementById('pubAllBtn'), note = document.getElementById('pubAllNote');
+    if(btn){ btn.disabled = true; btn.textContent = 'Публикую…'; }
+    let ok = 0, empty = 0, failed = false;
+    try{
+      let days = unpublishedClosedDays();
+      if(all){
+        const from = new Date(); from.setDate(from.getDate() - 118);
+        const fromStr = from.getFullYear() + '-' + String(from.getMonth() + 1).padStart(2, '0') + '-' + String(from.getDate()).padStart(2, '0');
+        days = Object.keys(dayClose.closed).filter(d => dayClose.closed[d] && d >= fromStr && !FROZEN_DATES.has(d)).sort();
+      }
+      for(let i = 0; i < days.length; i += 10){
+        const chunk = days.slice(i, i + 10), items = [], doneDays = [];
+        chunk.forEach(d => { const it = buildMasterSnapshots(d); if(it.length){ items.push(...it); doneDays.push([d, it]); } else empty++; });
+        if(!items.length) continue;
+        await sbRpc('publish_master_days', { p_items: items });
+        doneDays.forEach(([d, it]) => { dayClose.masterPub[d] = { at: new Date().toISOString(), n: it.length, to: it.map(x => x.master) }; ok++; });
+        scheduleSave('day_close');
+      }
+      if(!silent) showReportToast(ok ? 'Мастерам опубликовано дней: ' + ok + '. Теперь они видны в кабинетах.' : 'Публиковать нечего: закрытых дней с услугами мастеров нет.', 6000);
+    }catch(e){
+      failed = true;
+      if(!silent) showAlertDialog('Не удалось опубликовать дни мастерам' + (e && e.message ? ' («' + e.message + '»)' : '') + '. Проверьте, что в Supabase выполнен файл master_portal.sql, и связь.');
+    }finally{
+      pubAllBusy = false;
+      if(btn){ btn.disabled = false; btn.textContent = 'Опубликовать закрытые дни мастерам'; }
+      if(note) note.textContent = failed ? 'Не получилось — проверьте master_portal.sql.' : (ok ? 'Опубликовано дней: ' + ok : '');
+      const d = document.getElementById('closeDayDate').value; if(d) renderPubControls(d, !!dayClose.closed[d]);
+    }
+  }
+  document.getElementById('pubAllBtn').addEventListener('click', () => publishClosedDays(true, false));
+  // После входа администратора — тихо доопубликовать закрытые дни, которых нет в кабинетах.
+  let autoPubDone = false;
+  function autoPublishBackfill(){
+    if(autoPubDone || !currentPassword) return;
+    autoPubDone = true;
+    if(unpublishedClosedDays().length) publishClosedDays(false, true);
   }
   function renderPubControls(date, closed){
     const btn = document.getElementById('closeDayPublish'), note = document.getElementById('closeDayPubNote');
@@ -6736,7 +6788,11 @@
   function renderMasterPortal(){
     document.getElementById('mpName').textContent = mp.name;
     const now = new Date();
-    if(!mp.month) mp.month = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    if(!mp.month){
+      const cur = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+      const latest = mp.days.map(d => d.day.slice(0, 7)).sort().pop();
+      mp.month = (mp.days.some(d => d.day.slice(0, 7) === cur) || !latest) ? cur : latest;
+    }
     const [Y, M] = mp.month.split('-').map(Number);
     document.getElementById('mpMonth').textContent = MONTHS_FULL[M - 1].charAt(0).toUpperCase() + MONTHS_FULL[M - 1].slice(1) + ' ' + Y;
     const days = mp.days.filter(d => d.day.slice(0, 7) === mp.month).sort((a, b) => b.day.localeCompare(a.day));
@@ -6748,7 +6804,9 @@
       '<div class="mp-tile"><span class="label">Подтверждено дней</span><span class="value">' + okN + ' из ' + pub.length + '</span></div>' +
       '<div class="mp-tile' + (needN ? ' warn' : '') + '"><span class="label">Ждут подтверждения</span><span class="value">' + needN + '</span></div>';
     document.getElementById('mpDays').innerHTML = days.length ? days.map(mpDayHtml).join('') :
-      '<div class="mp-empty"><b>В этом месяце закрытых дней пока нет</b><br>Дни появятся здесь, когда администратор закроет их.</div>';
+      (mp.days.length
+        ? '<div class="mp-empty"><b>В этом месяце опубликованных дней нет</b><br>Переключите месяц стрелками выше — дни есть в других месяцах.</div>'
+        : '<div class="mp-empty"><b>Для вас пока ничего не опубликовано</b><br>Дни появляются здесь после того, как администратор закроет день. Если дни уже закрыты, а здесь пусто — сообщите администратору.</div>');
     document.getElementById('mpFoot').textContent = 'Данные обновлены в ' + mpHM(new Date().toISOString()) + '. Если что-то не сходится, скажите администратору — день будет исправлен и опубликован заново.';
   }
   function mpDayHtml(d){
@@ -6857,6 +6915,7 @@
       document.getElementById('app').hidden = false;
       renderEverything();
       renderSyncNote();
+      setTimeout(autoPublishBackfill, 1500);
     }catch(e){
       errEl.textContent = 'Неверный пароль или нет связи с сервером.';
     }finally{
