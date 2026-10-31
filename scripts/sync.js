@@ -83,40 +83,51 @@ async function zapisRaw(url) {
   return { status: res.status, json, text };
 }
 
-// Номер «клиента записи» ищем в ответе по записи: массив клиентов с полем id.
+// Номер «клиента записи» ищем в ответе по записи: любое поле, в названии которого сочетаются
+// «reservation» и «client» (число или объект/массив с id), либо массив клиентов с полем id.
 function findReservationClientId(node, depth = 0) {
-  if (!node || typeof node !== 'object' || depth > 4) return null;
-  if (!Array.isArray(node)) {
-    for (const [k, v] of Object.entries(node)) {
-      if (/^reservationClientId$/i.test(k) && v) return String(v);
-      if (/clients?$/i.test(k) && Array.isArray(v) && v[0] && typeof v[0] === 'object' && v[0].id) return String(v[0].id);
+  if (!node || typeof node !== 'object' || depth > 5) return null;
+  const items = Array.isArray(node) ? node.map((v, i) => [String(i), v]) : Object.entries(node);
+  for (const [k, v] of items) {
+    if (/reservation.*client|client.*reservation/i.test(k)) {
+      if ((typeof v === 'number' || (typeof v === 'string' && /^\d+$/.test(v))) && v) return String(v);
+      if (Array.isArray(v) && v[0] && typeof v[0] === 'object' && v[0].id) return String(v[0].id);
+      if (v && typeof v === 'object' && !Array.isArray(v) && v.id) return String(v.id);
     }
-  } else if (node[0] && typeof node[0] === 'object' && node[0].id && /client/i.test(JSON.stringify(Object.keys(node[0])))) {
-    return String(node[0].id);
+    if (/^clients$/i.test(k) && Array.isArray(v) && v[0] && typeof v[0] === 'object' && v[0].id) return String(v[0].id);
   }
-  for (const v of Array.isArray(node) ? node : Object.values(node)) {
+  for (const [, v] of items) {
     const found = findReservationClientId(v, depth + 1);
     if (found) return found;
   }
   return null;
 }
 
+// Для лога: ответ без имён, телефонов и комментариев.
+function redactedBody(json, text, limit = 3000) {
+  if (!json) return text.slice(0, 400);
+  return JSON.stringify(json, (k, v) => (/name|phone|surname|email|comment/i.test(k) ? (v == null ? v : '***') : v)).slice(0, limit);
+}
+
 async function fetchPayment(id, diag) {
-  let clientId = null;
-  for (const url of [`${APP_BASE}/reservations/${id}`, `${APP_BASE}/reservations/${id}/reservation-clients`]) {
+  let clientId = null, total = null;
+  const detailUrl = `${APP_BASE}/reservations/${id}`;
+  const d = await zapisRaw(detailUrl);
+  if (d.json) {
+    if (Number(d.json.totalPrice) > 0) total = Number(d.json.totalPrice);
+    clientId = findReservationClientId(d.json);
+  }
+  if (!clientId && diag.fails.length < 2) diag.fails.push(`${detailUrl} → HTTP ${d.status}, номер клиента записи не найден. Ответ: ${redactedBody(d.json, d.text)}`);
+  // запасные варианты адреса, если номер клиента записи в ответе не найден
+  const candidates = clientId ? [clientId] : [id, null];
+  for (const c of candidates) {
+    const url = c === null ? `${APP_BASE}/reservations/${id}/payment-info` : `${APP_BASE}/reservations/${id}/reservation-clients/${c}/payment-info`;
     const r = await zapisRaw(url);
-    if (r.json) clientId = findReservationClientId(r.json);
+    if (Array.isArray(r.json)) return { rows: r.json, total };
+    if (!clientId && diag.fails.length < 4) diag.fails.push(`${url} → HTTP ${r.status}: ${r.text.slice(0, 200)}`);
     if (clientId) break;
-    if (diag.fails.length < 3) diag.fails.push(`${url} → HTTP ${r.status}: ${r.text.slice(0, 400)}`);
   }
-  if (!clientId) return null;
-  const url = `${APP_BASE}/reservations/${id}/reservation-clients/${clientId}/payment-info`;
-  const r = await zapisRaw(url);
-  if (!Array.isArray(r.json)) {
-    if (diag.fails.length < 3) diag.fails.push(`${url} → HTTP ${r.status}: ${r.text.slice(0, 400)}`);
-    return null;
-  }
-  return r.json;
+  return { rows: null, total };
 }
 
 // Дописывает bookings[i].paid / .total (только у тех, у кого получилось); возвращает сколько записей получили оплату.
@@ -129,7 +140,8 @@ async function enrichPayments(bookings, existingPaid) {
     const t = new Date(b.start).getTime();
     return b.status === 'SERVED' && t >= from && t <= now && (t >= fresh || !existingPaid.get(b.id));
   });
-  const done = new Set();
+  const done = new Set();      // получена оплата (paid + total)
+  const totalOnly = new Set(); // получено только «Итого» (оплату получить не удалось)
   const diag = { fails: [], errors: 0 };
   let idx = 0, failedInRow = 0, aborted = false;
   async function worker() {
@@ -137,8 +149,12 @@ async function enrichPayments(bookings, existingPaid) {
       const b = targets[idx++];
       if (done.has(b.id)) continue;
       try {
-        const rows = await fetchPayment(b.id, diag);
-        if (!rows) { if (++failedInRow >= 6 && !done.size) aborted = true; continue; }
+        const { rows, total } = await fetchPayment(b.id, diag);
+        if (!rows) {
+          if (total) { b.total = total; totalOnly.add(b.id); }
+          if (++failedInRow >= 6 && !done.size) aborted = true;
+          continue;
+        }
         failedInRow = 0;
         for (const row of rows) {
           const target = byId.get(String(row.reservationId));
@@ -146,6 +162,7 @@ async function enrichPayments(bookings, existingPaid) {
           target.paid = Number(row.paidAmount) > 0 ? Number(row.paidAmount) : null;
           target.total = Number(row.totalAmount) > 0 ? Number(row.totalAmount) : null;
           done.add(target.id);
+          totalOnly.delete(target.id);
         }
       } catch (e) {
         diag.errors++;
@@ -155,12 +172,12 @@ async function enrichPayments(bookings, existingPaid) {
   }
   await Promise.all(Array.from({ length: PAY_CONCURRENCY }, worker));
   const got = bookings.filter((b) => done.has(b.id) && b.paid).length;
-  console.log(`Оплата: запрошено ${targets.length}, получено по ${done.size}, из них с суммой ${got}.`);
+  console.log(`Оплата: запрошено ${targets.length}, получено по ${done.size}, из них с суммой ${got}; только «Итого»: ${totalOnly.size}.`);
   if (diag.fails.length) {
     console.warn(aborted ? 'Запросы оплаты остановлены: первые записи не удалось получить. Примеры ответов zapis.kz:' : 'Примеры неудачных запросов оплаты:');
     diag.fails.forEach((f) => console.warn('  ' + f));
   }
-  return done;
+  return { done, totalOnly };
 }
 
 async function fetchMasters() {
@@ -280,11 +297,13 @@ async function main() {
   // Оплату подмешиваем только если в базе есть колонки; записи без новой оплаты сохраняются без полей paid/total,
   // чтобы не затереть уже сохранённую сумму.
   const existingPaid = await loadExistingPaid();
-  const enriched = existingPaid ? await enrichPayments(bookings, existingPaid) : new Set();
-  const withPay = bookings.filter((b) => enriched.has(b.id));
-  const withoutPay = bookings.filter((b) => !enriched.has(b.id)).map(({ paid, total, ...rest }) => rest);
+  const { done, totalOnly } = existingPaid ? await enrichPayments(bookings, existingPaid) : { done: new Set(), totalOnly: new Set() };
+  const withPay = bookings.filter((b) => done.has(b.id));
+  const withTotal = bookings.filter((b) => totalOnly.has(b.id)).map(({ paid, ...rest }) => rest);
+  const plain = bookings.filter((b) => !done.has(b.id) && !totalOnly.has(b.id)).map(({ paid, total, ...rest }) => rest);
   await upsertBookings(withPay);
-  await upsertBookings(withoutPay);
+  await upsertBookings(withTotal);
+  await upsertBookings(plain);
   await updateSyncStatus({ rangeStart, rangeEnd, count: bookings.length });
   console.log(`Synced ${bookings.length} bookings (${fmt(rangeStart)} — ${fmt(rangeEnd)}) into Supabase.`);
 }
