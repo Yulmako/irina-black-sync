@@ -3277,6 +3277,7 @@
   // right here in «Закрытие дня». Only set when it differs from the default.
   const dayClose = {
     prices: {},
+    priceSyncAsked: false,   // один раз предлагали заменить суммы в открытых днях на данные zapis.kz
     priceAuto: {},   // id записи → сумма, подставленная автоматически из оплаты zapis.kz (если её не правили руками — обновляется)
     consumables: {},
     procurement: {},
@@ -5184,6 +5185,30 @@
     paint();
   })();
 
+  // Один раз после появления данных об оплате: предложить заменить суммы в незакрытых днях на данные zapis.kz
+  // (в этих днях уже могли сохраниться примерные цены, которые сами не обновляются).
+  let priceSyncOffered = false;
+  async function offerPriceSync(){
+    if(priceSyncOffered || dayClose.priceSyncAsked || !currentPassword) return;
+    const today = todayStr();
+    const list = state.bookings.filter(b => {
+      const d = dayStr(b.start), za = zapisAmount(b);
+      return za && d <= today && !dayClose.closed[d] && !FROZEN_DATES.has(d) && b.status !== 'NOT_SERVED' && dayClose.prices[b.id] != null && dayClose.prices[b.id] !== za.sum;
+    });
+    if(!list.length) return;
+    priceSyncOffered = true;
+    const days = new Set(list.map(b => dayStr(b.start))).size;
+    const ok = await showConfirmDialog('В незакрытых днях у ' + list.length + ' визитов (дней: ' + days + ') сумма отличается от zapis.kz. Заменить на суммы из zapis.kz? Ручные правки в этих днях тоже заменятся; закрытые дни не меняются. Позже можно подтянуть оплату по одному дню кнопкой «Подтянуть оплату».', { okText: 'Заменить' });
+    dayClose.priceSyncAsked = true;
+    if(ok){
+      list.forEach(b => { const sum = zapisAmount(b).sum; dayClose.prices[b.id] = sum; dayClose.priceAuto[b.id] = sum; });
+      analyticsCache.key = null;
+      showReportToast('Суммы обновлены из zapis.kz: ' + list.length + '.', 5000);
+    }
+    scheduleSave('day_close');
+    renderEverything();
+  }
+
   // Принудительно заменить суммы визитов дня на оплаченные в zapis.kz.
   document.getElementById('closeDayPullPaid').addEventListener('click', async () => {
     const date = document.getElementById('closeDayDate').value;
@@ -6410,7 +6435,7 @@
       prices: dayClose.prices, consumables: dayClose.consumables,
       procurement: dayClose.procurement, stockIn: dayClose.stockIn, productSales: dayClose.productSales,
       serviceStatus: dayClose.serviceStatus, writeoffs: dayClose.writeoffs,
-      adjustments: dayClose.adjustments, priceAuto: dayClose.priceAuto, masterAdj: dayClose.masterAdj, masterPub: dayClose.masterPub, staff: dayClose.staff, closed: dayClose.closed,
+      adjustments: dayClose.adjustments, priceAuto: dayClose.priceAuto, priceSyncAsked: dayClose.priceSyncAsked, masterAdj: dayClose.masterAdj, masterPub: dayClose.masterPub, staff: dayClose.staff, closed: dayClose.closed,
       visitZone: dayClose.visitZone, serviceOverride: dayClose.serviceOverride, masterOverride: dayClose.masterOverride, serviceMap: dayClose.serviceMap, serviceCatalog: cloneCatalog(), catalogVersion: dayClose.catalogVersion || CATALOG_PRESET_VERSION,
     };
   }
@@ -6491,6 +6516,7 @@
     const dc = kv.day_close || {};
     dayClose.prices = dc.prices || {};
     dayClose.priceAuto = dc.priceAuto || {};
+    dayClose.priceSyncAsked = !!dc.priceSyncAsked;
     dayClose.consumables = dc.consumables || {};
     dayClose.procurement = dc.procurement || {};
     dayClose.stockIn = dc.stockIn || {};
@@ -6846,7 +6872,7 @@
     if(state.tab === 'pnl') renderPnl();
   }
 
-  const APP_VERSION = '31.10 · оплата v2';   // видно в шапке: по ней понятно, какая версия сайта загружена
+  const APP_VERSION = '31.10 · оплата v3';   // видно в шапке: по ней понятно, какая версия сайта загружена
   function renderSyncNote(){
     const el = document.getElementById('syncNote');
     const m = state.syncStatus;
@@ -6877,6 +6903,7 @@
       lastRefreshedAt = nowHM();
       renderEverything();
       renderSyncNote();
+      offerPriceSync();
     }catch(e){
       // молча оставляем последние известные данные
     }finally{
@@ -7035,6 +7062,7 @@
       renderEverything();
       renderSyncNote();
       setTimeout(autoPublishBackfill, 1500);
+      setTimeout(offerPriceSync, 2500);
     }catch(e){
       errEl.textContent = 'Неверный пароль или нет связи с сервером.';
     }finally{
