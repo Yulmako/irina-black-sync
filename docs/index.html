@@ -1351,6 +1351,8 @@
       </div>
       <span class="day-status" id="closeDayStatus"></span>
       <span class="cd-status-note" id="closeDayPendingNote" hidden></span>
+      <span class="cd-status-note" id="closeDayPaidNote" hidden></span>
+      <button type="button" class="cd-unlock-btn" id="closeDayPullPaid" hidden title="Заменить суммы визитов на оплаченные в zapis.kz (ручные правки за этот день будут перезаписаны)">Подтянуть оплату</button>
       <div class="cd-spacer"></div>
       <button class="cd-save-btn" id="closeDaySave">Закрыть день</button>
       <span class="cd-status-note" id="closeDayPubNote" hidden></span>
@@ -3388,6 +3390,17 @@
     const unlockBtn = document.getElementById('closeDayUnlock');
     pendingNote.hidden = pendingCount === 0 || closed;
     pendingNote.textContent = pendingCount ? 'Не подтверждено услуг: ' + pendingCount : '';
+    // Состояние оплаты из zapis.kz по визитам дня.
+    const paidNote = document.getElementById('closeDayPaidNote'), pullBtn = document.getElementById('closeDayPullPaid');
+    const served = visits.filter(v => v.status !== 'NOT_SERVED');
+    const withPaid = served.filter(v => Number(v.paid) > 0);
+    const hasPaidCol = state.bookings.some(b => 'paid' in b);
+    paidNote.hidden = !served.length;
+    paidNote.textContent = !hasPaidCol ? 'Оплата из zapis.kz не подключена: выполните bookings_paid.sql в Supabase'
+      : withPaid.length ? 'Оплата из zapis.kz: ' + withPaid.length + ' из ' + served.length
+      : 'Оплата из zapis.kz не получена (0 из ' + served.length + ')';
+    paidNote.title = !hasPaidCol ? 'В таблице bookings нет колонок оплаты' : 'Сколько визитов дня синхронизация получила с суммой «Оплачено»';
+    pullBtn.hidden = closed || !withPaid.length || withPaid.every(v => dayClose.prices[v.id] === Math.round(Number(v.paid)));
     saveBtn.hidden = closed;
     saveBtn.disabled = false;
     saveBtn.title = '';
@@ -5164,6 +5177,22 @@
     }));
     paint();
   })();
+
+  // Принудительно заменить суммы визитов дня на оплаченные в zapis.kz.
+  document.getElementById('closeDayPullPaid').addEventListener('click', async () => {
+    const date = document.getElementById('closeDayDate').value;
+    if(!date || dayClose.closed[date]) return;
+    const list = state.bookings.filter(b => dayStr(b.start) === date && b.status !== 'NOT_SERVED' && Number(b.paid) > 0);
+    const diff = list.filter(v => dayClose.prices[v.id] != null && dayClose.prices[v.id] !== Math.round(Number(v.paid)) && dayClose.prices[v.id] !== dayClose.priceAuto[v.id]);
+    if(diff.length){
+      const ok = await showConfirmDialog('У ' + diff.length + ' визитов сумма отличается от оплаченной в zapis.kz (в том числе ваши ручные правки). Заменить на оплаченные?', { okText: 'Заменить' });
+      if(!ok) return;
+    }
+    list.forEach(v => { const paid = Math.round(Number(v.paid)); dayClose.prices[v.id] = paid; dayClose.priceAuto[v.id] = paid; });
+    scheduleSave('day_close');
+    renderCloseDay();
+    showReportToast('Суммы обновлены из zapis.kz: ' + list.length + '.', 4000);
+  });
 
   document.getElementById('closeDayPublish').addEventListener('click', () => {
     const date = document.getElementById('closeDayDate').value;
