@@ -2014,7 +2014,7 @@
   // ---------------- masters ----------------
   function filteredMasters(){
     const q = state.masterSearch.trim().toLowerCase();
-    let list = state.masters.slice().sort((a,b) => (a.zone||'').localeCompare(b.zone||'','ru') || a.name.localeCompare(b.name,'ru'));
+    let list = state.masters.slice().sort((a,b) => a.name.localeCompare(b.name,'ru'));
     if(q) list = list.filter(m => m.name.toLowerCase().includes(q) || (m.zone||'').toLowerCase().includes(q));
     // Мастера с одним паролем (один кабинет) идут подряд.
     const st = state.botStatus;
@@ -2645,7 +2645,7 @@
       const salary = Math.round(profit * m.commission_rate);
       const net = profit - salary;
       return { ...m, profit, salary, net };
-    }).sort((a,b) => (a.zone||'').localeCompare(b.zone||'','ru') || b.revenue - a.revenue);
+    }).sort((a,b) => a.name.localeCompare(b.name,'ru'));
 
     const totalRevenue = rows.reduce((s,r)=>s+r.revenue,0);
     const totalConsumables = rows.reduce((s,r)=>s+r.consumables,0);
@@ -3467,7 +3467,7 @@
     }
 
     let html = '';
-    for(const [master, list] of byMaster){
+    for(const [master, list] of Array.from(byMaster).sort((a, b) => a[0].localeCompare(b[0], 'ru'))){
       html += '<div class="cd-master-group" data-master="'+esc(master)+'">' +
         '<div class="cd-master-head"><span class="cd-master-name-group"><b>'+esc(master)+'</b><span class="rate-pill">'+Math.round(masterRate(master)*100)+'%</span>'+(newClientKeys(list).size ? '<span class="cd-new-count" title="Новых клиентов у мастера за день">★ новых: '+newClientKeys(list).size+'</span>' : '')+'</span><span class="cd-subtotal" data-role="subtotal">—</span></div>';
       for(const v of list){
@@ -5603,7 +5603,7 @@
     document.body.appendChild(overlay);
     const input = overlay.querySelector('input'), err = overlay.querySelector('.master-dialog-err');
     const optsEl = overlay.querySelector('.master-options');
-    const candidates = active.filter(m => m.name !== current);
+    const candidates = active.filter(m => m.name !== current).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
     function renderOptions(){
       const q = input.value.trim().toLowerCase();
       const list = candidates.filter(m => !q || m.name.toLowerCase().includes(q));
@@ -5779,8 +5779,7 @@
     const worked = masterWorkDays(staffMonth);
     const roster = state.masters.filter(m => m.active !== false);
     const masterNames = new Set([...worked.keys(), ...roster.map(m => m.name)]);
-    const zoneIdx = n => { const m = state.masters.find(x => x.name === n); const i = m && m.zone ? ZONE_ORDER.indexOf(m.zone) : -1; return i < 0 ? 99 : i; };
-    const masters = Array.from(masterNames).sort((a, b) => zoneIdx(a) - zoneIdx(b) || a.localeCompare(b, 'ru'));
+    const masters = Array.from(masterNames).sort((a, b) => a.localeCompare(b, 'ru'));
     html += '<tr class="cat-row"><td colspan="'+(days + 1 + tailCols)+'"><span class="zone-sticky">Мастера · из записей zapis.kz</span></td></tr>';
     if(!masters.length) html += '<tr><td colspan="'+(days + 1 + tailCols)+'" class="st-empty">Пока нет мастеров и записей за этот месяц.</td></tr>';
     for(const name of masters){
