@@ -516,6 +516,7 @@
   .cd-visit:last-child{border-bottom:none;}
   .cd-visit.is-new, .cd-visit-extra.is-new{background:var(--accent-soft); background:color-mix(in srgb, var(--accent-soft) 50%, transparent);}
   .badge-new-lg{display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700; letter-spacing:.02em; color:var(--accent); background:var(--accent-soft); border:1px solid var(--accent); padding:1px 8px; border-radius:999px; white-space:nowrap;}
+  .st-sale{font-size:11px; font-weight:600; color:var(--good, #2e7d4f);}
   .st-fine{font-size:11px; font-weight:600; color:var(--bad);}
   .cd-new-star{border:0; background:transparent; cursor:pointer; font-size:17px; line-height:1; padding:0 3px; color:var(--muted); font-family:inherit;}
   .cd-new-star:hover:not(:disabled){color:var(--accent);}
@@ -2572,8 +2573,9 @@
     return null;
   }
 
+  const SALES_ROW_NAME = 'Продажа продукции';
   function buildLiveAnalyticsRange(fromStr, toStr){
-    const revenue = [], consumables = [], serviceCounts = [];
+    const revenue = [], consumables = [], serviceCounts = [], salaryAdj = [];
     for(const b of state.bookings){
       const date = dayStr(b.start);
       if(date < fromStr || date > toStr) continue;
@@ -2581,6 +2583,13 @@
       if(visitStatus(b.id) !== 'completed') continue;
       const price = dayClose.prices[b.id] || 0;
       revenue.push({ entry_date: date, master: visitMaster(b), amount: price });
+      {
+        // ЗП мастера — ровно как в Закрытии дня (по каждому визиту, с правилом «до 3 000 ₸ — 100% мастеру»):
+        // поправка = фактическая выплата − (прибыль визита × процент), её прибавляет Аналитика к расчёту по проценту.
+        const vm = visitMaster(b), cons = visitConsumablesTotal(b.id);
+        const delta = visitSplit(price, masterRate(vm), cons, b.id).master - (price - cons) * masterRate(vm);
+        if(delta) salaryAdj.push({ entry_date: date, master: vm, amount: delta });
+      }
       for(const c of (dayClose.consumables[b.id] || [])){
         consumables.push({ entry_date: date, master: visitMaster(b), item: c.item, qty: c.qty, unit_price: c.unitCost, total: c.qty*c.unitCost });
       }
@@ -2593,7 +2602,28 @@
       }
       for(const [cat, count] of counted) serviceCounts.push({ entry_date: date, master: visitMaster(b), category: cat, count });
     }
-    return { revenue, consumables, serviceCounts };
+    // продажа продукции: выручка (у мастера-продавца, иначе в строке «Продажа продукции»);
+    // ЗП — процент продавцу вместо обычного процента мастера. Сотруднику процент идёт в «Персонал».
+    for(const date in dayClose.productSales){
+      if(date < fromStr || date > toStr) continue;
+      for(const x of dayClose.productSales[date]){
+        const sum = x.qty * x.unitPrice, kind = saleSellerKind(x.seller), comm = saleCommission(x);
+        if(kind === 'master'){
+          const mn = saleMasterName(x.seller);
+          revenue.push({ entry_date: date, master: mn, amount: sum });
+          salaryAdj.push({ entry_date: date, master: mn, amount: comm - sum * masterRate(mn) });
+        } else {
+          revenue.push({ entry_date: date, master: SALES_ROW_NAME, amount: sum });
+          if(kind === 'other' && comm) salaryAdj.push({ entry_date: date, master: SALES_ROW_NAME, amount: comm });
+        }
+      }
+    }
+    // вычеты мастерам (в том числе за «замороженные» дни) уменьшают ЗП мастера и идут в прибыль салона
+    for(const date in dayClose.masterAdj){
+      if(date < fromStr || date > toStr) continue;
+      for(const a of dayClose.masterAdj[date]) if(a.kind === 'fine') salaryAdj.push({ entry_date: date, master: a.master, amount: -(Number(a.amount) || 0) });
+    }
+    return { revenue, consumables, serviceCounts, salaryAdj };
   }
 
   // Исторические даты (импорт) лежат готовыми суммами по мастерам. Если визит
@@ -2633,11 +2663,14 @@
     const inRange = d => d >= fromStr && d <= toStr;
     const live = buildLiveAnalyticsRange(fromStr, toStr);
     const adj = buildFrozenReassignments(fromStr, toStr);
+    const virtual = live.revenue.some(r => r.master === SALES_ROW_NAME)
+      ? [{ name: SALES_ROW_NAME, zone: 'Без мастера', commission_rate: 0, active: true, virtual: true }] : [];
     return {
-      masters: state.masters,
+      masters: state.masters.concat(virtual),
       revenue: FROZEN_ANALYTICS_REVENUE.filter(r => inRange(r.entry_date)).concat(adj.revenue, live.revenue),
       consumables: FROZEN_ANALYTICS_CONSUMABLES.filter(r => inRange(r.entry_date)).concat(adj.consumables, live.consumables),
       serviceCounts: FROZEN_ANALYTICS_SERVICE_COUNTS.filter(r => inRange(r.entry_date)).concat(adj.serviceCounts, live.serviceCounts),
+      salaryAdj: live.salaryAdj,
     };
   }
 
@@ -2683,10 +2716,11 @@
     for(const r of data.revenue){ const m = byMaster.get(r.master); if(m) m.revenue += Number(r.amount); }
     for(const c of data.consumables){ const m = byMaster.get(c.master); if(m) m.consumables += Number(c.total); }
     for(const s of data.serviceCounts){ const m = byMaster.get(s.master); if(m) m.services += Number(s.count); }
+    for(const a of data.salaryAdj){ const m = byMaster.get(a.master); if(m) m.salaryAdj = (m.salaryAdj || 0) + Number(a.amount); }
 
     const rows = Array.from(byMaster.values()).map(m => {
       const profit = m.revenue - m.consumables;
-      const salary = Math.round(profit * m.commission_rate);
+      const salary = Math.round(profit * m.commission_rate + (m.salaryAdj || 0));
       const net = profit - salary;
       return { ...m, profit, salary, net };
     }).sort((a,b) => a.name.localeCompare(b.name,'ru'));
@@ -2821,6 +2855,7 @@
     }
     const revByMasterBucket = sumByMasterBucket(data.revenue, r => Number(r.amount));
     const consByMasterBucket = sumByMasterBucket(data.consumables, c => Number(c.total));
+    const adjByMasterBucket = sumByMasterBucket(data.salaryAdj, a => Number(a.amount));
     // master -> category -> "bucket" -> count
     const catByMaster = new Map();
     for(const s of data.serviceCounts){
@@ -2893,7 +2928,8 @@
         const sum = arr => arr.reduce((x,y) => x+y, 0);
         const revV = vals(revByMasterBucket), consV = vals(consByMasterBucket);
         const profV = revV.map((v,i) => v - consV[i]);
-        const salV = profV.map(v => Math.round(v*r.commission_rate));
+        const adjV = buckets.map(b => adjByMasterBucket.get(r.name+'||'+b) || 0);
+        const salV = profV.map((v,i) => Math.round(v*r.commission_rate + adjV[i]));
         const netV = profV.map((v,i) => v - salV[i]);
         const put = (label, arr) => exportRows.push([zoneName, r.name, label, ...arr, sum(arr)]);
         const hasData = sum(revV) || sum(consV) || (catByMaster.get(r.name) && catByMaster.get(r.name).size);
@@ -2916,7 +2952,7 @@
           const v = (revByMasterBucket.get(r.name+'||'+b)||0) - (consByMasterBucket.get(r.name+'||'+b)||0);
           return { v, td: '<td class="num'+(v?'':' zero')+'">'+(v?fmt(v):'—')+'</td>' };
         });
-        const salaryCells = profitCells.map(p => Math.round(p.v*rate));
+        const salaryCells = profitCells.map((p,i) => Math.round(p.v*rate + (adjByMasterBucket.get(r.name+'||'+buckets[i]) || 0)));
         const netCells = profitCells.map((p,i) => p.v - salaryCells[i]);
 
         gridHtml += '<tr class="metric-row"><td>Расходники</td>'+cons.cells+'<td class="num">'+fmt(cons.total)+'</td></tr>';
@@ -3934,6 +3970,23 @@
     return s.seller && pct > 0 ? Math.round(s.qty * s.unitPrice * pct / 100) : 0;
   }
   const sameName = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+  // Кто продал: мастер, сотрудник из «Персонала» или кто-то другой — от этого зависит, куда идёт процент
+  // (мастер и «другой» — в ЗП мастеров, сотрудник — в его зарплату во вкладке «Персонал» и строку P&L).
+  function saleSellerKind(name){
+    if(!String(name || '').trim()) return 'none';
+    if(state.masters.some(m => sameName(m.name, name))) return 'master';
+    if(dayClose.staff.members.some(m => sameName(m.name, name))) return 'staff';
+    return 'other';
+  }
+  function saleMasterName(name){ const m = state.masters.find(x => sameName(x.name, name)); return m ? m.name : name; }
+  function staffMonthSaleComm(monthStr, member){   // процент сотруднику за продажу продукции за месяц
+    let sum = 0;
+    for(const date in dayClose.productSales){
+      if(date.slice(0,7) !== monthStr) continue;
+      for(const x of dayClose.productSales[date]) if(saleSellerKind(x.seller) === 'staff' && sameName(x.seller, member.name)) sum += saleCommission(x);
+    }
+    return sum;
+  }
   function saleCommissionFor(date, name){
     return (dayClose.productSales[date] || []).filter(x => sameName(x.seller, name)).reduce((t, x) => t + saleCommission(x), 0);
   }
@@ -5093,6 +5146,7 @@
   });
 
   function renderCloseDay(){
+    analyticsCache.key = null;
     renderCloseDayServices();
     renderCloseDayCalendar();
     renderConsLog();
@@ -5856,9 +5910,9 @@
     const values = {}, keys = {}, loose = {};
     for(const m of dayClose.staff.members){
       const n = counts[m.id] || 0, k = staffRoleKey(m.role);
-      const fine = staffMonthFine(monthStr, m.id);
+      const fine = staffMonthFine(monthStr, m.id) - staffMonthSaleComm(monthStr, m);   // штрафы минус процент с продаж
       if(!k) continue;
-      if(!n){ if(fine) loose[k] = (loose[k] || 0) + fine; continue; }   // смен нет — штраф вычтем из ручной строки P&L
+      if(!n){ if(fine) loose[k] = (loose[k] || 0) + fine; continue; }   // смен нет — поправку применим к ручной строке P&L
       values[k] = (values[k] || 0) + Math.round(n * (Number(m.rate) || 0)) - fine;
       keys[k] = true;
     }
@@ -5961,7 +6015,7 @@
     if(!members.length) html += '<tr><td colspan="'+(days + 1 + tailCols)+'" class="st-empty">Сотрудников пока нет. Нажмите «Добавить сотрудника».</td></tr>';
     let totalPay = 0, totalShifts = 0;
     for(const m of members){
-      const sh = counts[m.id] || 0, rate = Number(m.rate) || 0, fineSum = staffMonthFine(staffMonth, m.id), pay = Math.round(sh * rate) - fineSum;
+      const sh = counts[m.id] || 0, rate = Number(m.rate) || 0, fineSum = staffMonthFine(staffMonth, m.id), saleSum = staffMonthSaleComm(staffMonth, m), pay = Math.round(sh * rate) - fineSum + saleSum;
       totalPay += pay; totalShifts += sh;
       let cells = '';
       for(let d = 1; d <= days; d++){
@@ -5970,7 +6024,7 @@
         cells += '<td class="st-cell'+(on ? ' on' : '')+(isWeekend(d) ? ' we' : '')+'"><button type="button" class="st-toggle" data-id="'+m.id+'" data-day="'+d+'" aria-pressed="'+on+'" aria-label="'+esc(m.name)+', '+d+'">'+(on ? '✓' : '')+'</button></td>';
       }
       html += '<tr class="'+(m.active === false ? 'st-inactive' : '')+'"><td class="st-name"><b>'+esc(m.name)+'</b> <span class="st-role">'+esc(m.role)+'</span>'+(m.active === false ? ' <span class="st-role">не работает</span>' : '')+' <button type="button" class="st-edit" data-id="'+m.id+'" title="Изменить сотрудника" aria-label="Изменить: '+esc(m.name)+'">✎</button></td>' +
-        '<td class="num st-sum">'+sh+'</td>' + (unlocked ? '<td class="num st-sum">'+Math.round(rate).toLocaleString('ru-RU')+' ₸</td><td class="num st-sum"><b>'+pay.toLocaleString('ru-RU')+' ₸</b>'+(fineSum ? '<div class="st-fine" title="Штрафы за месяц вычтены из зарплаты">штраф −'+Math.round(fineSum).toLocaleString('ru-RU')+' ₸</div>' : '')+'</td>' : '') + cells + '</tr>';
+        '<td class="num st-sum">'+sh+'</td>' + (unlocked ? '<td class="num st-sum">'+Math.round(rate).toLocaleString('ru-RU')+' ₸</td><td class="num st-sum"><b>'+pay.toLocaleString('ru-RU')+' ₸</b>'+(saleSum ? '<div class="st-sale" title="Процент с продажи продукции добавлен к зарплате">% с продаж +'+Math.round(saleSum).toLocaleString('ru-RU')+' ₸</div>' : '')+(fineSum ? '<div class="st-fine" title="Штрафы за месяц вычтены из зарплаты">штраф −'+Math.round(fineSum).toLocaleString('ru-RU')+' ₸</div>' : '')+'</td>' : '') + cells + '</tr>';
     }
     // ---- «на смене» ----
     let foot = '<tr class="total-row"><td class="st-name">Персонал · итого / на смене</td><td class="num st-sum">'+totalShifts+'</td>' + (unlocked ? '<td class="num st-sum"></td><td class="num st-sum"><b>'+totalPay.toLocaleString('ru-RU')+' ₸</b></td>' : '');
@@ -6204,7 +6258,7 @@
   // Same «completed visits only» rule as Закрытие дня / Analytics.
   function buildPnlComputed(monthStr){
     const { from, to } = pnlMonthRange(monthStr);
-    let revenue = 0, consumablesRevenue = 0, masterPay = 0;
+    let revenue = 0, consumablesRevenue = 0, masterPay = 0, salesRevenue = 0;
     let procSalon = 0, procProduct = 0, procConsumables = 0;
     for(const b of state.bookings){
       const date = dayStr(b.start);
@@ -6218,6 +6272,19 @@
       revenue += price;
       consumablesRevenue += consTotal;
       masterPay += visitSplit(price, masterRate(visitMaster(b)), consTotal, b.id).master;
+    }
+    // продажа продукции: приход + процент продавцу в ЗП (мастеру — здесь, сотруднику — в его зарплате из «Персонала»)
+    for(const date in dayClose.productSales){
+      if(date < from || date > to) continue;
+      for(const x of dayClose.productSales[date]){
+        salesRevenue += x.qty * x.unitPrice;
+        if(saleSellerKind(x.seller) !== 'staff') masterPay += saleCommission(x);
+      }
+    }
+    // вычеты мастерам уменьшают ЗП мастеров (так же, как в Закрытии дня и Аналитике)
+    for(const date in dayClose.masterAdj){
+      if(date < from || date > to) continue;
+      for(const a of dayClose.masterAdj[date]) if(a.kind === 'fine') masterPay -= Number(a.amount) || 0;
     }
     for(const date in dayClose.procurement){
       if(date < from || date > to) continue;
@@ -6235,11 +6302,12 @@
     // «От продажи продукции» не привязана к мастеру — берём её из отдельной
     // категории закупа «Продукция» (закуп тоже не привязан к мастеру), без
     // вычитания из других строк.
-    const productSales = procProduct;
+    // «От продажи продукции» — фактические продажи из Закрытия дня (они же входят в Приход).
+    const productSales = salesRevenue;
     return {
       fromUslug: revenue - consumablesRevenue,
       productSales, fromConsumables: consumablesRevenue,
-      prihod: revenue,
+      prihod: revenue + salesRevenue,
       masterPay, procSalon, procProduct, procConsumables,
     };
   }
@@ -7080,7 +7148,7 @@
     if(state.tab === 'pnl') renderPnl();
   }
 
-  const APP_VERSION = '31.10 · штрафы v1';   // видно в шапке: по ней понятно, какая версия сайта загружена
+  const APP_VERSION = '03.11 · продажи в P&L v1';   // видно в шапке: по ней понятно, какая версия сайта загружена
   function renderSyncNote(){
     const el = document.getElementById('syncNote');
     const m = state.syncStatus;
