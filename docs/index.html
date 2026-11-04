@@ -496,6 +496,20 @@
     font-variant-numeric:tabular-nums;
   }
   td.cp-actions{text-align:right;}
+  /* Инвентаризация: колонки фиксированные, чтобы при правке позиции таблица и страница не «прыгали» */
+  @media (min-width: 900px){
+    .inv-table{table-layout:fixed; width:100%;}
+    .inv-table .ic-cat{width:130px;} .inv-table .ic-num{width:140px;} .inv-table .ic-left{width:96px;}
+    .inv-table .ic-sum{width:165px;} .inv-table .ic-act{width:280px;}
+    .inv-table th, .inv-table td{padding-left:8px; padding-right:8px;}
+    .inv-table th{white-space:nowrap; overflow:visible; text-overflow:clip;}
+    .inv-table td.cp-actions .mini-action-btn{padding:5px 9px;}
+    .inv-table td, .inv-table th{overflow:hidden; text-overflow:ellipsis;}
+    .inv-table td.cp-actions{white-space:nowrap; overflow:visible;}
+    .inv-table .inv-edit-row input, .inv-table .inv-edit-row select{width:100% !important; min-width:0; box-sizing:border-box;}
+    .inv-table .inv-edit-row td{vertical-align:middle;}
+    .inv-table .inv-edit-row input, .inv-table .inv-edit-row select{padding:7px 9px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--ink); font:inherit; font-size:13.5px;}
+  }
 
   /* ---------- close-day ---------- */
   .close-day-header{display:flex; align-items:center; gap:14px; margin-bottom:18px; flex-wrap:wrap;}
@@ -1611,7 +1625,8 @@
         <p class="add-master-hint">Поступление пополняет остаток и записывается в «Историю изменений». В расходы и P&amp;L оно не попадает — для покупки используйте «Закрытие дня → Закуп».</p>
       </div>
       <div class="table-scroll">
-        <table>
+        <table class="inv-table">
+          <colgroup><col class="ic-name"><col class="ic-cat"><col class="ic-num"><col class="ic-num"><col class="ic-left"><col class="ic-sum"><col class="ic-act"></colgroup>
           <thead><tr><th>Наименование</th><th>Категория</th><th class="num">Закуплено</th><th class="num">Использовано</th><th class="num">Остаток</th><th class="num">Стоимость закупа</th><th></th></tr></thead>
           <tbody id="inventoryBody"></tbody>
         </table>
@@ -1663,7 +1678,7 @@
       </div>
       <div class="table-scroll">
         <table>
-          <thead><tr><th>Дата</th><th>Тип</th><th>Наименование</th><th>Мастер / Клиент</th><th class="num">Кол-во</th><th class="num">Цена за ед.</th><th class="num">Сумма</th><th></th></tr></thead>
+          <thead><tr><th>Дата</th><th>Тип</th><th>Наименование</th><th>Мастер / Клиент</th><th class="num">Кол-во</th><th class="num">Цена за ед.</th><th class="num">Сумма</th></tr></thead>
           <tbody id="invHistoryBody"></tbody>
         </table>
       </div>
@@ -3312,9 +3327,19 @@
     (PROCUREMENT_ITEMS[cat] || []).forEach(add);
     const extra = [];
     const addExtra = n => { n = String(n || '').trim(); const k = n.toLowerCase(); if(n && !seen.has(k)){ seen.add(k); extra.push(n); } };
-    for(const d in dayClose.procurement) for(const p of (dayClose.procurement[d] || [])) if((p.category || 'Расходники') === cat) addExtra(p.item);
+    for(const d in dayClose.procurement) for(const p of (dayClose.procurement[d] || [])) if(!p.invHidden && (p.category || 'Расходники') === cat) addExtra(p.item);
     if(cat === 'Расходники') state.consumablePrices.forEach(c => addExtra(c.item));
-    (state.inventoryEdits || []).forEach(e => { if(e.newCategory === cat) addExtra(e.newItem); });
+    (state.inventoryEdits || []).forEach(e => { if(!e.deleted && e.newCategory === cat) addExtra(e.newItem); });
+    // удалённые из инвентаря позиции не предлагаем, пока их снова не внесут
+    const gone = new Set();
+    (state.inventoryEdits || []).forEach(e => { if(e.deleted) gone.add(String(e.oldItem).toLowerCase()); else gone.delete(String(e.newItem).toLowerCase()); });
+    for(const d in dayClose.procurement) for(const p of (dayClose.procurement[d] || [])) if(!p.invHidden) gone.delete(String(p.item).toLowerCase());
+    for(const d in dayClose.stockIn) for(const p of (dayClose.stockIn[d] || [])) if(!p.invHidden) gone.delete(String(p.item).toLowerCase());
+    if(gone.size){
+      const keep = n => !gone.has(String(n).toLowerCase());
+      for(let i = out.length - 1; i >= 0; i--) if(!keep(out[i])) out.splice(i, 1);
+      for(let i = extra.length - 1; i >= 0; i--) if(!keep(extra[i])) extra.splice(i, 1);
+    }
     return out.concat(extra.sort((x, y) => x.localeCompare(y, 'ru')));
   }
   function renderProcItemSuggestions(query){
@@ -4201,13 +4226,14 @@
     }
     for(const date in dayClose.procurement){
       for(const p of dayClose.procurement[date]){
-        if(isPayrollProc(p)) continue;
+        if(isPayrollProc(p) || p.invHidden) continue;
         const t = get(p.item);
         t.bought += p.qty; t.boughtValue += p.qty * p.unitCost;
       }
     }
     for(const date in dayClose.stockIn){
       for(const p of dayClose.stockIn[date]){
+        if(p.invHidden) continue;
         const t = get(p.item);
         t.bought += p.qty; t.boughtValue += p.qty * (p.unitCost || 0);
       }
@@ -4217,24 +4243,28 @@
     for(const bookingId in dayClose.consumables){
       if(visitStatus(bookingId) !== 'completed') continue;
       for(const c of dayClose.consumables[bookingId]){
+        if(c.invHidden) continue;
         const t = get(c.item);
         t.used += c.qty;
       }
     }
     for(const date in dayClose.productSales){
       for(const s of dayClose.productSales[date]){
+        if(s.invHidden) continue;
         const t = get(s.item);
         t.used += s.qty;
       }
     }
     for(const date in dayClose.writeoffs){
       for(const w of dayClose.writeoffs[date]){
+        if(w.invHidden) continue;
         const t = get(w.item);
         t.used += w.qty;
       }
     }
     for(const date in dayClose.adjustments){
       for(const a of dayClose.adjustments[date]){
+        if(a.invHidden) continue;
         const t = get(a.item);
         // New-style entries (from editing «Закуплено»/«Использовано» directly
         // in the row) carry an explicit field and a signed delta that can go
@@ -4311,7 +4341,8 @@
         '<td class="num">'+Math.round(r.boughtValue).toLocaleString('ru-RU')+' ₸</td>' +
         '<td class="cp-actions">' +
           '<button type="button" class="mini-action-btn inv-edit-btn" data-item="'+esc(r.item)+'">Редактировать</button> ' +
-          '<button type="button" class="mini-action-btn inv-writeoff-btn" data-item="'+esc(r.item)+'" data-left="'+r.left+'">Списать</button>' +
+          '<button type="button" class="mini-action-btn inv-writeoff-btn" data-item="'+esc(r.item)+'" data-left="'+r.left+'">Списать</button> ' +
+          '<button type="button" class="mini-action-btn danger inv-delete-btn" data-item="'+esc(r.item)+'" data-left="'+r.left+'" title="Удалить позицию из инвентаря полностью">Удалить</button>' +
         '</td>' +
         '</tr>'
         );
@@ -4528,19 +4559,55 @@
     }
     renderInventory();
   }
+  // Полное удаление позиции из инвентаря. Закуп (расходы, P&L) и стоимость расходников в визитах — это деньги,
+  // их не трогаем: такие записи только помечаются «скрыто из инвентаря». Поступления, списания и корректировки
+  // (то, что есть только в инвентаре) удаляются совсем. Если позицию потом купить/внести снова — она начнётся с нуля.
+  async function deleteInventoryItem(item, left){
+    const ok = await showConfirmDialog('Удалить позицию «' + item + '» из инвентаря полностью?' +
+      (left !== undefined && left !== '' && Number(left) !== 0 ? ' Остаток ' + left + ' будет обнулён.' : '') +
+      ' Она исчезнет из Инвентаризации, списков закупа и прайса расходников. ' +
+      'История изменений сохранится, закуп за прошлые дни, расходы в P&L и расходники в закрытых визитах не изменятся.', { okText: 'Удалить' });
+    if(!ok) return;
+    const same = n => n === item;
+    let category = null;
+    for(const date in dayClose.procurement) for(const p of dayClose.procurement[date]) if(same(p.item)){ p.invHidden = true; category = category || p.category || 'Расходники'; }
+    for(const id in dayClose.consumables) for(const c of dayClose.consumables[id]) if(same(c.item)) c.invHidden = true;
+    for(const date in dayClose.productSales) for(const x of dayClose.productSales[date]) if(same(x.item)) x.invHidden = true;
+    for(const key of ['stockIn', 'writeoffs', 'adjustments']){
+      for(const date in dayClose[key]) for(const x of dayClose[key][date]) if(same(x.item)){ x.invHidden = true; category = category || x.category || null; }
+    }
+    state.consumablePrices = state.consumablePrices.filter(c => c.item !== item);
+    PROCUREMENT_CATEGORIES.forEach(cat => {
+      const list = PROCUREMENT_ITEMS[cat]; if(!list) return;
+      const idx = list.findIndex(i => i.toLowerCase() === item.toLowerCase());
+      if(idx !== -1) list.splice(idx, 1);
+    });
+    state.inventoryEdits.push({ date: todayStr(), oldItem: item, newItem: item, newCategory: category || '', deleted: true, left: (left !== undefined && left !== '') ? Number(left) : null });
+    if(state.invEditingItem === item) state.invEditingItem = null;
+    populateConsumableOptions();
+    renderConsPrices();
+    renderInventory();
+    showReportToast('Позиция «' + item + '» удалена из инвентаря.', 4000);
+  }
   document.getElementById('inventoryBody').addEventListener('click', async e => {
     const editBtn = e.target.closest('.inv-edit-btn');
     if(editBtn){
+      const y = window.scrollY;
       state.invEditingItem = editBtn.dataset.item;
       renderInventory();
+      window.scrollTo(0, y);
       return;
     }
     const cancelBtn = e.target.closest('.inv-edit-cancel');
     if(cancelBtn){
+      const y = window.scrollY;
       state.invEditingItem = null;
       renderInventory();
+      window.scrollTo(0, y);
       return;
     }
+    const delBtn = e.target.closest('.inv-delete-btn');
+    if(delBtn){ deleteInventoryItem(delBtn.dataset.item, delBtn.dataset.left); return; }
     const saveBtn = e.target.closest('.inv-edit-save');
     if(saveBtn){
       const tr = saveBtn.closest('.inv-edit-row');
@@ -4652,7 +4719,7 @@
     for(const ed of state.inventoryEdits){
       entries.push({
         date: ed.date, type: 'edit', item: ed.newItem, qty: 0, unitCost: 0, sum: 0,
-        who: 'Правка · «' + ed.oldItem + '» → «' + ed.newItem + '» (' + ed.newCategory + ')', category: ed.newCategory
+        who: ed.deleted ? 'Удалена позиция «' + ed.oldItem + '»' + (ed.left ? ' (остаток ' + ed.left + ')' : '') : 'Правка · «' + ed.oldItem + '» → «' + ed.newItem + '» (' + ed.newCategory + ')', category: ed.newCategory
       });
     }
     entries.sort((a,b) => b.date.localeCompare(a.date));
@@ -5002,22 +5069,9 @@
       '<td class="num">'+(r.qty ? (r.type === 'adjustment' && r.qty > 0 ? '+' : '') + r.qty : '—')+'</td>' +
       '<td class="num">'+(r.unitCost ? Math.round(r.unitCost).toLocaleString('ru-RU')+' ₸' : '—')+'</td>' +
       '<td class="num">'+(r.sum ? Math.round(r.sum).toLocaleString('ru-RU')+' ₸' : '—')+'</td>' +
-      '<td class="cp-actions">'+(r.ref ? '<button type="button" class="mini-action-btn stock-remove" data-date="'+esc(r.ref.date)+'" data-idx="'+r.ref.idx+'" title="Отменить это поступление">Отменить</button>' : '')+'</td>' +
-      '</tr>'
+            '</tr>'
     )).join('');
   }
-  document.getElementById('invHistoryBody').addEventListener('click', async e => {
-    const btn = e.target.closest('.stock-remove');
-    if(!btn) return;
-    const list = dayClose.stockIn[btn.dataset.date];
-    const entry = list && list[Number(btn.dataset.idx)];
-    if(!entry) return;
-    const ok = await showConfirmDialog('Отменить поступление «' + entry.item + '» (' + entry.qty + ' шт.)? Остаток уменьшится.');
-    if(!ok) return;
-    list.splice(Number(btn.dataset.idx), 1);
-    if(!list.length) delete dayClose.stockIn[btn.dataset.date];
-    renderInventory();
-  });
   document.getElementById('searchInvHistory').addEventListener('input', e => { state.invHistorySearch = e.target.value; renderInventoryHistory(); });
   document.getElementById('invHistoryChips').addEventListener('click', e => {
     const chip = e.target.closest('.chip');
@@ -7159,7 +7213,7 @@
     if(state.tab === 'pnl') renderPnl();
   }
 
-  const APP_VERSION = '04.11 · поступление v1';   // видно в шапке: по ней понятно, какая версия сайта загружена
+  const APP_VERSION = '06.11 · история v1';   // видно в шапке: по ней понятно, какая версия сайта загружена
   function renderSyncNote(){
     const el = document.getElementById('syncNote');
     const m = state.syncStatus;
