@@ -3621,7 +3621,7 @@
         const svcList = visitServices(v);
         const canEditSvc = !notServed && dayEditable;
         const servicesHtml = svcList.length
-          ? esc(svcList.join(', ')) + (canEditSvc && dayClose.serviceOverride[v.id] ? ' <button type="button" class="cd-set-service-btn cd-svc-edit" data-booking="'+v.id+'" title="Изменить услугу">✎</button>' : '')
+          ? esc(svcList.join(', ')) + (canEditSvc ? ' <button type="button" class="cd-set-service-btn cd-svc-edit" data-booking="'+v.id+'" title="Изменить услугу">✎</button>' : '')
           : (canEditSvc
               ? '<button type="button" class="cd-set-service-btn" data-booking="'+v.id+'">+ Указать услугу</button>'
               : '<span class="cd-status-note">Услуга не указана</span>');
@@ -5800,14 +5800,16 @@
     const b = state.bookings.find(x => x.id === bookingId);
     if(!b) return;
     const cats = categoriesForZone(getVisitZone(b));
-    const current = (dayClose.serviceOverride[bookingId] || [])[0] || '';
+    const hasOverride = !!(dayClose.serviceOverride[bookingId] || []).length;
+    const original = (b.services || []).filter(Boolean).join(', ');
+    const current = visitServices(b).join(', ');
     const overlay = document.createElement('div');
     overlay.className = 'confirm-overlay';
-    overlay.innerHTML = '<div class="confirm-modal"><p><b>Услуга</b><br>'+esc(fmtVisitLine(b))+'</p>' +
+    overlay.innerHTML = '<div class="confirm-modal"><p><b>Услуга</b><br>'+esc(fmtVisitLine(b))+(hasOverride && original ? '<br><span class="cd-status-note">В записи zapis.kz: '+esc(original)+'</span>' : '')+'</p>' +
       '<input type="text" class="svc-dialog-input" list="svcDialogOptions" placeholder="Выберите из списка или впишите свою" value="'+esc(current)+'">' +
       '<datalist id="svcDialogOptions">'+cats.map(c => '<option value="'+esc(c)+'">').join('')+'</datalist>' +
       '<div class="confirm-actions">' +
-        (current ? '<button type="button" class="am-cancel" data-act="clear">Убрать</button>' : '') +
+        (hasOverride ? '<button type="button" class="am-cancel" data-act="clear">'+(original ? 'Как в записи' : 'Убрать')+'</button>' : '') +
         '<button type="button" class="am-cancel" data-act="cancel">Отмена</button>' +
         '<button type="button" class="cd-save-btn" data-act="ok">Сохранить</button></div></div>';
     document.body.appendChild(overlay);
@@ -7213,7 +7215,7 @@
     if(state.tab === 'pnl') renderPnl();
   }
 
-  const APP_VERSION = '06.11 · история v1';   // видно в шапке: по ней понятно, какая версия сайта загружена
+  const APP_VERSION = '06.11 · услуга v1';   // видно в шапке: по ней понятно, какая версия сайта загружена
   function renderSyncNote(){
     const el = document.getElementById('syncNote');
     const m = state.syncStatus;
