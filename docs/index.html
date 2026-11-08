@@ -3503,13 +3503,42 @@
   }
   // Расходник вычитается из стоимости услуги, а остаток делится между мастером
   // (по его проценту) и салоном (остальное) — так же считает Аналитика и таблицы.
-  // Услуга дешевле 3 000 ₸ — мастер получает 100% (цена − расходники), салону 0. Ровно 3 000 — по обычному проценту.
+  // Единственная услуга мастера за день и стоит до 3 000 ₸ включительно — мастер получает 100% (цена − расходники), салону 0. Ровно 3 000 — по обычному проценту.
   // Архив из таблиц (id вида jan-12) не пересчитываем.
   const LOW_PRICE_LIMIT = 3000;
+  // Правило «100% мастеру» действует, только если у мастера за день была одна услуга
+  // (считаются завершённые визиты мастера за этот день, плюс сам визит).
+  const dayIdx = { ref: null, len: -1, byId: new Map(), byDate: new Map() };
+  function dayIndex(){
+    if(dayIdx.ref !== state.bookings || dayIdx.len !== state.bookings.length){
+      dayIdx.ref = state.bookings; dayIdx.len = state.bookings.length;
+      dayIdx.byId = new Map(); dayIdx.byDate = new Map();
+      for(const b of state.bookings){
+        const d = dayStr(b.start);
+        dayIdx.byId.set(b.id, b);
+        if(!dayIdx.byDate.has(d)) dayIdx.byDate.set(d, []);
+        dayIdx.byDate.get(d).push(b);
+      }
+    }
+    return dayIdx;
+  }
+  function masterDayServiceCount(bookingId){
+    const ix = dayIndex();
+    const self = ix.byId.get(bookingId);
+    if(!self) return 1;
+    const vm = visitMaster(self);
+    let n = 0;
+    for(const b of ix.byDate.get(dayStr(self.start)) || []){
+      if(b.status === 'NOT_SERVED' || visitMaster(b) !== vm) continue;
+      if(b.id !== bookingId && visitStatus(b.id) !== 'completed') continue;
+      n += Math.max(1, visitServices(b).length);
+    }
+    return n;
+  }
   function visitSplit(price, rate, consumablesTotal, bookingId){
     const base = Math.max(0, price - consumablesTotal);
     const archived = bookingId != null && /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)-\d+$/.test(String(bookingId));
-    const low = price > 0 && price < LOW_PRICE_LIMIT && !archived;
+    const low = price > 0 && price <= LOW_PRICE_LIMIT && !archived && (bookingId == null || masterDayServiceCount(bookingId) <= 1);
     const master = low ? base : Math.round(base * rate);
     return { master, salon: base - master, low };
   }
@@ -3655,7 +3684,7 @@
             '</div>' : '';
           const splitHtml = vStatus === 'cancelled'
             ? '<span class="cd-status-note">Отменено — не учитывается</span>'
-            : '%мастера <b>'+split.master.toLocaleString('ru-RU')+' ₸</b> · %салона <b>'+split.salon.toLocaleString('ru-RU')+' ₸</b>' + (split.low ? ' <span class="cd-low-note" title="Услуга дешевле 3 000 ₸ — мастер получает 100% (цена − расходники)">100% мастеру</span>' : '') +
+            : '%мастера <b>'+split.master.toLocaleString('ru-RU')+' ₸</b> · %салона <b>'+split.salon.toLocaleString('ru-RU')+' ₸</b>' + (split.low ? ' <span class="cd-low-note" title="Единственная услуга мастера за день и стоит до 3 000 ₸ включительно — мастер получает 100% (цена − расходники)">100% мастеру</span>' : '') +
               (vStatus === 'pending' && dayEditable ? ' <span class="cd-status-note">(предварительно)</span>' : '');
           const changeMasterBtn = dayEditable
             ? '<button type="button" class="mini-action-btn cd-change-master" data-booking="'+v.id+'">Сменить мастера</button>' : '';
@@ -3747,7 +3776,7 @@
           if(splitEl) splitEl.innerHTML = '<span class="cd-status-note">Отменено — не учитывается</span>';
           return;
         }
-        if(splitEl) splitEl.innerHTML = '%мастера <b>'+split.master.toLocaleString('ru-RU')+' ₸</b> · %салона <b>'+split.salon.toLocaleString('ru-RU')+' ₸</b>' + (split.low ? ' <span class="cd-low-note" title="Услуга дешевле 3 000 ₸ — мастер получает 100% (цена − расходники)">100% мастеру</span>' : '') +
+        if(splitEl) splitEl.innerHTML = '%мастера <b>'+split.master.toLocaleString('ru-RU')+' ₸</b> · %салона <b>'+split.salon.toLocaleString('ru-RU')+' ₸</b>' + (split.low ? ' <span class="cd-low-note" title="Единственная услуга мастера за день и стоит до 3 000 ₸ включительно — мастер получает 100% (цена − расходники)">100% мастеру</span>' : '') +
           (status === 'pending' ? ' <span class="cd-status-note">(предварительно)</span>' : '');
         if(status !== 'completed') return;
         subtotal += v;
@@ -7215,7 +7244,7 @@
     if(state.tab === 'pnl') renderPnl();
   }
 
-  const APP_VERSION = '06.11 · услуга v1';   // видно в шапке: по ней понятно, какая версия сайта загружена
+  const APP_VERSION = '08.11 · 100% v3';   // видно в шапке: по ней понятно, какая версия сайта загружена
   function renderSyncNote(){
     const el = document.getElementById('syncNote');
     const m = state.syncStatus;
