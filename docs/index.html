@@ -276,6 +276,38 @@
   .staff-table tr.st-inactive td.st-name b{color:var(--muted);}
   .st-role{font-size:11px; color:var(--muted); background:var(--surface-2); padding:1px 7px; border-radius:999px; margin-left:4px;}
   .st-count{font-size:11px; color:var(--muted); font-variant-numeric:tabular-nums;}
+  .pay-panel{margin-top:16px;}
+  .pay-head{display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:14px 18px 0;}
+  .pay-head h3{margin:0; font-family:'Fraunces',serif; font-size:18px;}
+  .pay-toolbar{align-items:center; flex-wrap:wrap; gap:10px;}
+  .pay-modes{display:flex; gap:6px; flex-wrap:wrap;}
+  .pay-custom{display:flex; gap:10px; align-items:center; font-size:13px; color:var(--muted);}
+  .pay-custom input{font:inherit; padding:5px 8px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--ink);}
+  .pay-table{min-width:1000px;}
+  .pay-table th.st-name, .pay-table td.st-name{text-align:left; white-space:nowrap; min-width:150px;}
+  .pay-table th.st-name, .pay-table td.st-name{position:sticky; left:0; z-index:2; background:var(--surface); box-shadow:1px 0 0 var(--border);}
+  .pay-table thead th.st-name{background:var(--surface-2); z-index:3;}
+  .pay-table tr.total-row td.st-name{background:var(--surface-2);}
+  .pay-table tr.pay-master:hover td.st-name{background:var(--surface-2);}
+  .pay-days-wrap{position:sticky; left:0; width:min(calc(100vw - 64px), 1040px); overflow-x:auto;}
+  .pay-table th, .pay-table td{padding-left:8px; padding-right:8px;}
+  .pay-table tr.pay-master{cursor:pointer;}
+  .pay-table tr.pay-master:hover td{background:var(--surface-2);}
+  .pay-table .pay-caret{display:inline-block; width:14px; color:var(--muted); font-size:11px;}
+  .pay-table .pay-due{font-weight:700;}
+  .pay-table .pay-ok{color:var(--good); font-weight:600;}
+  .pay-table .pay-fine{color:var(--bad);}
+  .pay-table .pay-act{text-align:right; white-space:nowrap;}
+  .pay-detail > td{padding:0 0 0 24px; background:var(--surface-2);}
+  .pay-days{min-width:0; width:100%; font-size:13px;}
+  .pay-days th{font-size:11.5px; color:var(--muted); font-weight:600;}
+  .pay-days td, .pay-days th{padding:7px 10px; border-bottom:1px solid var(--border);}
+  .pay-days td:nth-child(8){min-width:190px;}
+  .pay-days .pay-reasons{display:block; font-size:11.5px; color:var(--muted); white-space:normal; max-width:240px;}
+  .pay-days .pay-st-chg{color:var(--warn); font-weight:600;}
+  .pay-mini{font:inherit; font-size:12px; padding:3px 10px; border-radius:999px; border:1px solid var(--border); background:var(--bg); color:var(--accent); cursor:pointer;}
+  .pay-mini:hover{background:var(--accent-soft);}
+  .pay-mini.undo{color:var(--muted);}
   .staff-legend{display:flex; gap:6px 18px; flex-wrap:wrap; padding:10px 16px 14px; font-size:12px; color:var(--muted);}
   .staff-legend span{display:inline-flex; align-items:center; gap:6px;}
   .staff-legend i{width:12px; height:12px; border-radius:3px; display:inline-block; border:1px solid var(--border);}
@@ -1188,6 +1220,44 @@
         <span><i class="lg-we"></i>выходные</span>
         <span class="staff-legend-note">Нажмите на клетку сотрудника, чтобы поставить или снять смену.</span>
       </div>
+    </div>
+    <div class="panel pay-panel" id="payrollPanel">
+      <div class="pay-head">
+        <h3>Выплата зарплаты мастерам</h3>
+        <span class="result-count" id="paySummary"></span>
+      </div>
+      <div class="filters pay-toolbar">
+        <div class="pay-modes" role="group" aria-label="Период">
+          <button type="button" class="chip" data-pmode="day">День</button>
+          <button type="button" class="chip" data-pmode="week">Неделя</button>
+          <button type="button" class="chip" data-pmode="month">Месяц</button>
+          <button type="button" class="chip" data-pmode="custom">Свои даты</button>
+        </div>
+        <div class="staff-month" id="payStepper">
+          <button type="button" class="cd-day-step" id="payPrev" aria-label="Предыдущий период">‹</button>
+          <b id="payLabel">—</b>
+          <button type="button" class="cd-day-step" id="payNext" aria-label="Следующий период">›</button>
+        </div>
+        <div class="pay-custom" id="payCustom" hidden>
+          <label>с <input type="date" id="payFrom"></label>
+          <label>по <input type="date" id="payTo"></label>
+        </div>
+        <button type="button" class="chip" id="payToday">Сегодня</button>
+        <div class="spacer"></div>
+        <button type="button" class="refresh-btn" id="payMarkAll">Отметить всех выплаченными</button>
+      </div>
+      <div class="staff-lock" id="payLockNote" hidden>Таблица выплат закрыта паролем P&amp;L — введите его в поле «Пароль P&amp;L» выше.</div>
+      <div class="table-scroll" id="payScroll">
+        <table class="pay-table">
+          <thead><tr>
+            <th class="st-name">Мастер</th><th class="num">Дней</th><th class="num">Услуг</th><th class="num">Выручка</th><th class="num">Расходники</th>
+            <th class="num">ЗП за услуги</th><th class="num">% с продаж</th><th class="num">Чаевые</th><th class="num">Вычеты</th>
+            <th class="num">Начислено</th><th class="num">Выплачено</th><th class="num">К выплате</th><th></th>
+          </tr></thead>
+          <tbody id="payBody"></tbody>
+        </table>
+      </div>
+      <div class="staff-legend"><span class="staff-legend-note" id="payNote">В расчёт входят только закрытые дни. Нажмите на имя мастера, чтобы увидеть разбивку по дням, вычетам и чаевым.</span></div>
     </div>
   </div>
 
@@ -3421,6 +3491,7 @@
     prices: {},
     priceSyncAsked: false,   // один раз предлагали заменить суммы в открытых днях на данные zapis.kz
     newOverride: {}, // id записи → true/false: ручная отметка «новый клиент» (поверх данных zapis.kz)
+    masterPaid: {},  // дата → { мастер → { amount, on } } отметки «Выплачено» в таблице выплат (вкладка «Персонал»)
     staffFines: {},  // дата → [{ staffId, amount, note }] штрафы персонала (вычитаются из его ЗП)
     priceAuto: {},   // id записи → сумма, подставленная автоматически из оплаты zapis.kz (если её не правили руками — обновляется)
     consumables: {},
@@ -5354,7 +5425,7 @@
   function buildDayMasterBlocks(date){
     const byMaster = new Map();
     const entry = name => { if(!byMaster.has(name)) byMaster.set(name, { visits: [], count: 0, revenue: 0, cons: 0, share: 0, fine: 0, reasons: [], tip: 0, prodComm: 0 }); return byMaster.get(name); };
-    const visits = state.bookings.filter(b => dayStr(b.start) === date).sort((a, b) => new Date(a.start) - new Date(b.start));
+    const visits = state.bookings.filter(b => dayStr(b.start) === date && !(FROZEN_DATES.has(date) && !isImportedBooking(b))).sort((a, b) => new Date(a.start) - new Date(b.start));
     for(const v of visits){
       if(v.status === 'NOT_SERVED' || visitStatus(v.id) !== 'completed') continue;
       const price = dayClose.prices[v.id] || 0, cons = visitConsumablesTotal(v.id), vm = visitMaster(v);
@@ -6134,7 +6205,190 @@
     document.getElementById('staffSummary').textContent = unlocked
       ? (totalPay ? 'ЗП персонала за месяц: ' + totalPay.toLocaleString('ru-RU') + ' ₸ · идёт в P&L (' + parts.join(', ') + ')' : 'Смен персонала в этом месяце нет.')
       : (totalShifts ? 'Смен персонала: ' + totalShifts : '');
+    renderPayroll();
   }
+
+  // ---------------------------------------------------------------------
+  // Таблица выплат мастерам (вкладка «Персонал»): начислено по закрытым дням за период,
+  // отметки «Выплачено» хранятся по дням (dayClose.masterPaid), поэтому любой период
+  // считает остаток одинаково.
+  // ---------------------------------------------------------------------
+  const payP = { mode: 'month', anchor: null, from: '', to: '' };
+  const payOpen = new Set();
+  const ymd = d => d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+  const parseYmd = str => { const [y, m, d] = str.split('-').map(Number); return new Date(y, m - 1, d); };
+  function payRange(){
+    const anchor = parseYmd(payP.anchor || todayStr());
+    if(payP.mode === 'custom'){
+      const f = payP.from || ymd(anchor), t = payP.to || f;
+      return f <= t ? { from: f, to: t } : { from: t, to: f };
+    }
+    if(payP.mode === 'day') return { from: ymd(anchor), to: ymd(anchor) };
+    if(payP.mode === 'week'){
+      const dow = (anchor.getDay() + 6) % 7, a = new Date(anchor); a.setDate(a.getDate() - dow);
+      const b = new Date(a); b.setDate(b.getDate() + 6);
+      return { from: ymd(a), to: ymd(b) };
+    }
+    return { from: ymd(new Date(anchor.getFullYear(), anchor.getMonth(), 1)), to: ymd(new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0)) };
+  }
+  function payLabel(r){
+    const f = parseYmd(r.from), t = parseYmd(r.to);
+    const gen = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+    const lab = d => d.getDate() + ' ' + gen[d.getMonth()];
+    if(payP.mode === 'month') return MONTHS_FULL[f.getMonth()].charAt(0).toUpperCase() + MONTHS_FULL[f.getMonth()].slice(1) + ' ' + f.getFullYear();
+    if(r.from === r.to) return lab(f) + ' ' + f.getFullYear();
+    return lab(f) + (f.getFullYear() !== t.getFullYear() ? ' ' + f.getFullYear() : '') + ' – ' + lab(t) + ' ' + t.getFullYear();
+  }
+  function payShift(dir){
+    const a = parseYmd(payP.anchor || todayStr());
+    if(payP.mode === 'day') a.setDate(a.getDate() + dir);
+    else if(payP.mode === 'week') a.setDate(a.getDate() + 7 * dir);
+    else { a.setDate(1); a.setMonth(a.getMonth() + dir); }
+    payP.anchor = ymd(a);
+  }
+  // Начисления по закрытым дням периода: Map(мастер → { days: [...], totals })
+  function buildPayroll(from, to){
+    const dates = new Set();
+    for(const b of state.bookings){ const d = dayStr(b.start); if(d >= from && d <= to) dates.add(d); }
+    for(const d in dayClose.masterAdj) if(d >= from && d <= to) dates.add(d);
+    for(const d in dayClose.productSales) if(d >= from && d <= to) dates.add(d);
+    const byMaster = new Map();
+    let unclosed = 0;
+    for(const date of Array.from(dates).sort()){
+      const blocks = buildDayMasterBlocks(date);
+      if(!blocks.size) continue;
+      if(!dayClose.closed[date]){ unclosed++; continue; }
+      blocks.forEach((m, name) => {
+        if(!byMaster.has(name)) byMaster.set(name, { name, days: [], t: { days: 0, count: 0, revenue: 0, cons: 0, share: 0, prodComm: 0, tip: 0, fine: 0, pay: 0, paid: 0 } });
+        const e = byMaster.get(name), paid = (dayClose.masterPaid[date] || {})[name] || null;
+        const adj = (dayClose.masterAdj[date] || []).filter(a => a.master === name);
+        const pay = Math.round(m.pay);
+        e.days.push({ date, count: m.count, revenue: m.revenue, cons: m.cons, share: m.share, prodComm: m.prodComm, tip: m.tip, fine: m.fine, adj, pay, paid });
+        const t = e.t; t.days++; t.count += m.count; t.revenue += m.revenue; t.cons += m.cons; t.share += m.share; t.prodComm += m.prodComm; t.tip += m.tip; t.fine += m.fine; t.pay += pay;
+        t.paid += paid ? Number(paid.amount) || 0 : 0;
+      });
+    }
+    return { byMaster, unclosed };
+  }
+  const payFmt = n => Math.round(n).toLocaleString('ru-RU') + ' ₸';
+  const WD_SHORT = ['вс','пн','вт','ср','чт','пт','сб'];
+  function renderPayroll(){
+    const panel = document.getElementById('payrollPanel');
+    if(!panel) return;
+    const unlocked = !!state.pnlUnlocked;
+    document.getElementById('payLockNote').hidden = unlocked;
+    document.getElementById('payScroll').hidden = !unlocked;
+    panel.querySelector('.pay-toolbar').hidden = !unlocked;
+    panel.querySelector('.staff-legend').hidden = !unlocked;
+    if(!unlocked){ document.getElementById('payBody').innerHTML = ''; document.getElementById('paySummary').textContent = ''; return; }
+    panel.querySelectorAll('[data-pmode]').forEach(b => b.classList.toggle('on', b.dataset.pmode === payP.mode));
+    const custom = payP.mode === 'custom';
+    document.getElementById('payCustom').hidden = !custom;
+    document.getElementById('payStepper').hidden = custom;
+    const r = payRange();
+    if(custom){ document.getElementById('payFrom').value = r.from; document.getElementById('payTo').value = r.to; }
+    document.getElementById('payLabel').textContent = payLabel(r);
+    const { byMaster, unclosed } = buildPayroll(r.from, r.to);
+    const masters = Array.from(byMaster.values()).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+    let html = '', sumPay = 0, sumPaid = 0;
+    const tot = { days: 0, count: 0, revenue: 0, cons: 0, share: 0, prodComm: 0, tip: 0, fine: 0, pay: 0, paid: 0 };
+    for(const e of masters){
+      const t = e.t, due = t.pay - t.paid, open = payOpen.has(e.name);
+      for(const k in tot) tot[k] += t[k];
+      const anyPaid = e.days.some(d => d.paid);
+      html += '<tr class="pay-master" data-master="'+esc(e.name)+'">' +
+        '<td class="st-name"><span class="pay-caret">'+(open ? '▾' : '▸')+'</span><b>'+esc(e.name)+'</b></td>' +
+        '<td class="num">'+t.days+'</td><td class="num">'+t.count+'</td><td class="num">'+payFmt(t.revenue)+'</td><td class="num">'+payFmt(t.cons)+'</td>' +
+        '<td class="num">'+payFmt(t.share)+'</td><td class="num">'+(t.prodComm ? payFmt(t.prodComm) : '—')+'</td>' +
+        '<td class="num">'+(t.tip ? '+'+payFmt(t.tip) : '—')+'</td><td class="num '+(t.fine ? 'pay-fine' : '')+'">'+(t.fine ? '−'+payFmt(t.fine) : '—')+'</td>' +
+        '<td class="num"><b>'+payFmt(t.pay)+'</b></td><td class="num '+(t.paid ? 'pay-ok' : '')+'">'+(t.paid ? payFmt(t.paid) : '—')+'</td>' +
+        '<td class="num pay-due">'+(Math.abs(due) < 0.5 ? '<span class="pay-ok">✓ 0 ₸</span>' : payFmt(due))+'</td>' +
+        '<td class="pay-act">' + (Math.abs(due) >= 0.5 ? '<button type="button" class="pay-mini" data-act="paid-all" data-master="'+esc(e.name)+'">Выплачено</button> ' : '') +
+          (anyPaid ? '<button type="button" class="pay-mini undo" data-act="unpaid-all" data-master="'+esc(e.name)+'" title="Снять отметки «Выплачено» за период">Снять</button>' : '') + '</td></tr>';
+      if(open){
+        let d = '<div class="pay-days-wrap"><table class="pay-days"><thead><tr><th>День</th><th class="num">Услуг</th><th class="num">Выручка</th><th class="num">Расходники</th><th class="num">ЗП за услуги</th><th class="num">% с продаж</th><th class="num">Чаевые</th><th class="num">Вычеты</th><th class="num">Итого за день</th><th>Статус</th></tr></thead><tbody>';
+        for(const x of e.days){
+          const wd = WD_SHORT[parseYmd(x.date).getDay()];
+          const reasons = x.adj.map(a => (a.kind === 'fine' ? 'Вычет' : 'Чаевые') + ' ' + (a.kind === 'fine' ? '−' : '+') + Math.round(a.amount).toLocaleString('ru-RU') + ' ₸' + (a.note ? ' · ' + esc(a.note) : '')).join('<br>');
+          let st;
+          if(!x.paid) st = Math.abs(x.pay) < 0.5 ? '<span class="cd-status-note">нечего выплачивать</span>' : '<button type="button" class="pay-mini" data-act="paid-day" data-master="'+esc(e.name)+'" data-date="'+x.date+'">Выплачено</button>';
+          else if(Math.abs(Number(x.paid.amount) - x.pay) < 0.5) st = '<span class="pay-ok">✓ выплачено '+fmtShortDate(x.paid.on)+'</span> <button type="button" class="pay-mini undo" data-act="unpaid-day" data-master="'+esc(e.name)+'" data-date="'+x.date+'">Снять</button>';
+          else st = '<span class="pay-st-chg" title="Сумма за день изменилась после отметки">выплачено '+payFmt(x.paid.amount)+' ('+fmtShortDate(x.paid.on)+'), сейчас '+payFmt(x.pay)+'</span> <button type="button" class="pay-mini" data-act="paid-day" data-master="'+esc(e.name)+'" data-date="'+x.date+'" title="Принять текущую сумму как выплаченную">Обновить</button> <button type="button" class="pay-mini undo" data-act="unpaid-day" data-master="'+esc(e.name)+'" data-date="'+x.date+'">Снять</button>';
+          d += '<tr><td>'+fmtShortDate(x.date)+' <span class="cd-status-note">'+wd+'</span></td><td class="num">'+x.count+'</td><td class="num">'+payFmt(x.revenue)+'</td><td class="num">'+payFmt(x.cons)+'</td><td class="num">'+payFmt(x.share)+'</td>' +
+            '<td class="num">'+(x.prodComm ? payFmt(x.prodComm) : '—')+'</td><td class="num">'+(x.tip ? '+'+payFmt(x.tip) : '—')+'</td>' +
+            '<td class="num '+(x.fine ? 'pay-fine' : '')+'">'+(x.fine ? '−'+payFmt(x.fine) : '—')+(reasons ? '<span class="pay-reasons">'+reasons+'</span>' : '')+'</td>' +
+            '<td class="num"><b>'+payFmt(x.pay)+'</b></td><td>'+st+'</td></tr>';
+        }
+        d += '</tbody></table></div>';
+        html += '<tr class="pay-detail"><td colspan="13">'+d+'</td></tr>';
+      }
+    }
+    if(!masters.length) html = '<tr><td colspan="13" class="st-empty">За этот период нет закрытых дней с завершёнными услугами.</td></tr>';
+    else {
+      const due = tot.pay - tot.paid;
+      html += '<tr class="total-row"><td class="st-name">Итого</td><td class="num"></td><td class="num">'+tot.count+'</td><td class="num">'+payFmt(tot.revenue)+'</td><td class="num">'+payFmt(tot.cons)+'</td><td class="num">'+payFmt(tot.share)+'</td>' +
+        '<td class="num">'+(tot.prodComm ? payFmt(tot.prodComm) : '—')+'</td><td class="num">'+(tot.tip ? '+'+payFmt(tot.tip) : '—')+'</td><td class="num">'+(tot.fine ? '−'+payFmt(tot.fine) : '—')+'</td>' +
+        '<td class="num">'+payFmt(tot.pay)+'</td><td class="num">'+(tot.paid ? payFmt(tot.paid) : '—')+'</td><td class="num">'+payFmt(due)+'</td><td></td></tr>';
+    }
+    document.getElementById('payBody').innerHTML = html;
+    document.getElementById('payMarkAll').hidden = !masters.some(e => Math.abs(e.t.pay - e.t.paid) >= 0.5);
+    document.getElementById('paySummary').textContent = masters.length
+      ? 'Начислено ' + payFmt(tot.pay) + ' · выплачено ' + payFmt(tot.paid) + ' · к выплате ' + payFmt(tot.pay - tot.paid)
+      : '';
+    document.getElementById('payNote').textContent = (unclosed ? 'Не закрыто дней в периоде: ' + unclosed + ' — они в расчёт не входят, пока день не закрыт. ' : '') +
+      'В расчёт входят только закрытые дни. Нажмите на имя мастера, чтобы увидеть разбивку по дням, вычетам и чаевым.';
+  }
+  function payMark(master, date, paid){
+    const d = dayClose.masterPaid;
+    if(paid){
+      const day = buildDayMasterBlocks(date).get(master);
+      if(!day) return;
+      if(!d[date]) d[date] = {};
+      d[date][master] = { amount: Math.round(day.pay), on: todayStr() };
+    } else if(d[date]){
+      delete d[date][master];
+      if(!Object.keys(d[date]).length) delete d[date];
+    }
+  }
+  function payMarkRange(master, paid){
+    const r = payRange(), e = buildPayroll(r.from, r.to).byMaster;
+    const names = master ? [master] : Array.from(e.keys());
+    for(const n of names){
+      const entry = e.get(n); if(!entry) continue;
+      for(const x of entry.days){
+        if(paid){ if(!x.paid || Math.abs(Number(x.paid.amount) - x.pay) >= 0.5) { if(Math.abs(x.pay) >= 0.5 || x.paid) payMark(n, x.date, true); } }
+        else payMark(n, x.date, false);
+      }
+    }
+    scheduleSave('day_close'); renderPayroll();
+  }
+  (function bindPayroll(){
+    const panel = document.getElementById('payrollPanel');
+    if(!panel) return;
+    panel.addEventListener('click', e => {
+      const mode = e.target.closest('[data-pmode]');
+      if(mode){
+        if(mode.dataset.pmode === 'custom' && payP.mode !== 'custom'){ const r = payRange(); payP.from = r.from; payP.to = r.to; }
+        payP.mode = mode.dataset.pmode; renderPayroll(); return;
+      }
+      if(e.target.closest('#payPrev')){ payShift(-1); renderPayroll(); return; }
+      if(e.target.closest('#payNext')){ payShift(1); renderPayroll(); return; }
+      if(e.target.closest('#payToday')){ payP.anchor = todayStr(); if(payP.mode === 'custom'){ payP.from = payP.to = payP.anchor; } renderPayroll(); return; }
+      if(e.target.closest('#payMarkAll')){ payMarkRange(null, true); return; }
+      const act = e.target.closest('[data-act]');
+      if(act){
+        const m = act.dataset.master, a = act.dataset.act;
+        if(a === 'paid-all') payMarkRange(m, true);
+        else if(a === 'unpaid-all') payMarkRange(m, false);
+        else if(a === 'paid-day' || a === 'unpaid-day'){ payMark(m, act.dataset.date, a === 'paid-day'); scheduleSave('day_close'); renderPayroll(); }
+        return;
+      }
+      const row = e.target.closest('tr.pay-master');
+      if(row){ const n = row.dataset.master; if(payOpen.has(n)) payOpen.delete(n); else payOpen.add(n); renderPayroll(); }
+    });
+    document.getElementById('payFrom').addEventListener('change', e => { payP.from = e.target.value; renderPayroll(); });
+    document.getElementById('payTo').addEventListener('change', e => { payP.to = e.target.value; renderPayroll(); });
+  })();
   function openStaffForm(member){
     staffEditingId = member ? member.id : null;
     const row = document.getElementById('staffAddRow');
@@ -6805,7 +7059,7 @@
       prices: dayClose.prices, consumables: dayClose.consumables,
       procurement: dayClose.procurement, stockIn: dayClose.stockIn, productSales: dayClose.productSales,
       serviceStatus: dayClose.serviceStatus, writeoffs: dayClose.writeoffs,
-      adjustments: dayClose.adjustments, priceAuto: dayClose.priceAuto, priceSyncAsked: dayClose.priceSyncAsked, newOverride: dayClose.newOverride, staffFines: dayClose.staffFines, masterAdj: dayClose.masterAdj, masterPub: dayClose.masterPub, staff: dayClose.staff, closed: dayClose.closed,
+      adjustments: dayClose.adjustments, priceAuto: dayClose.priceAuto, priceSyncAsked: dayClose.priceSyncAsked, newOverride: dayClose.newOverride, staffFines: dayClose.staffFines, masterPaid: dayClose.masterPaid, masterAdj: dayClose.masterAdj, masterPub: dayClose.masterPub, staff: dayClose.staff, closed: dayClose.closed,
       visitZone: dayClose.visitZone, serviceOverride: dayClose.serviceOverride, masterOverride: dayClose.masterOverride, serviceMap: dayClose.serviceMap, serviceCatalog: cloneCatalog(), catalogVersion: dayClose.catalogVersion || CATALOG_PRESET_VERSION,
     };
   }
@@ -6889,6 +7143,7 @@
     dayClose.priceSyncAsked = !!dc.priceSyncAsked;
     dayClose.newOverride = dc.newOverride || {};
     dayClose.staffFines = dc.staffFines || {};
+    dayClose.masterPaid = dc.masterPaid || {};
     dayClose.consumables = dc.consumables || {};
     dayClose.procurement = dc.procurement || {};
     dayClose.stockIn = dc.stockIn || {};
@@ -7244,7 +7499,7 @@
     if(state.tab === 'pnl') renderPnl();
   }
 
-  const APP_VERSION = '08.11 · 100% v3';   // видно в шапке: по ней понятно, какая версия сайта загружена
+  const APP_VERSION = '09.11 · выплаты v1';   // видно в шапке: по ней понятно, какая версия сайта загружена
   function renderSyncNote(){
     const el = document.getElementById('syncNote');
     const m = state.syncStatus;
