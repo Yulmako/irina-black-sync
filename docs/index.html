@@ -1870,7 +1870,7 @@
   const PNL_MONTHS = ['2026-01','2026-02','2026-03','2026-04','2026-05','2026-06','2026-07','2026-08','2026-09','2026-10','2026-11','2026-12'];
   state.pnlFixed = {};
   PNL_MONTHS.forEach(m => { state.pnlFixed[m] = Object.assign({}, PNL_EMPTY_MONTH); });
-  const PNL_PASSWORD = 'IB2026';
+  const PNL_PASSWORD = '858Irina';
 
   const monthsShort = ['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'];
   function fmtDateTime(iso){
@@ -7499,7 +7499,7 @@
     if(state.tab === 'pnl') renderPnl();
   }
 
-  const APP_VERSION = '09.11 · выплаты v1';   // видно в шапке: по ней понятно, какая версия сайта загружена
+  const APP_VERSION = '10.11 · пароль v1';   // видно в шапке: по ней понятно, какая версия сайта загружена
   function renderSyncNote(){
     const el = document.getElementById('syncNote');
     const m = state.syncStatus;
