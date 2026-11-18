@@ -224,6 +224,17 @@
   .zone-sticky{position:sticky; left:14px; display:inline-block;}
   .staff-toolbar .staff-month{display:flex; align-items:center; gap:8px;}
   .staff-month b{font-family:'Fraunces',serif; font-size:17px; min-width:150px; text-align:center;}
+  .set-card{padding:18px; margin-bottom:16px; max-width:640px;}
+  .set-card h3{margin:0 0 6px; font-family:'Fraunces',serif; font-size:18px;}
+  .set-note{margin:0 0 14px; color:var(--muted); font-size:13px; line-height:1.5;}
+  .set-form{display:grid; gap:10px;}
+  .set-form label{display:grid; gap:4px; font-size:12.5px; color:var(--muted);}
+  .set-form input{font:inherit; font-size:14px; padding:8px 10px; border:1px solid var(--border); border-radius:10px; background:var(--bg); color:var(--ink);}
+  .set-form button{justify-self:start; margin-top:4px;}
+  .set-msg{margin-top:10px; font-size:13px; min-height:18px;}
+  .set-msg.ok{color:var(--good);}
+  .set-msg.err{color:var(--bad);}
+  .set-actions{display:flex; gap:10px; flex-wrap:wrap;}
   .staff-lock{display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:10px 16px; background:var(--surface-2); border-bottom:1px solid var(--border); font-size:12.5px; color:var(--muted);}
   .staff-lock input{padding:6px 10px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--ink); font:inherit; font-size:13px; width:150px;}
   .staff-lock .pnl-lock-error{margin:0;}
@@ -1086,6 +1097,7 @@
     <button class="tab" data-tab="close-day">Закрытие дня</button>
     <button class="tab" data-tab="analytics">Аналитика</button>
     <button class="tab" data-tab="pnl">P&amp;L</button>
+    <button class="tab" data-tab="settings">Настройки</button>
   </div>
   </div>
 
@@ -1784,6 +1796,49 @@
       </div>
       <div class="empty" id="flowEmpty" hidden><b>За этот период движения нет</b>Выберите другой период или добавьте данные во вкладке «Закрытие дня».</div>
     </div>
+    </div>
+  </div>
+
+  <div id="view-settings" hidden>
+    <div class="panel" id="settingsLocked">
+      <div class="pnl-lock-box">
+        <div class="pnl-lock-title">Доступ ограничен</div>
+        <p class="pnl-lock-note">Настройки паролей видит только владелец салона. Введите пароль P&amp;L, чтобы продолжить.</p>
+        <div class="pnl-lock-form">
+          <input type="password" id="settingsPasswordInput" placeholder="Пароль P&amp;L" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false">
+          <button type="button" class="cd-save-btn" id="settingsUnlockBtn">Войти</button>
+        </div>
+        <div class="pnl-lock-error" id="settingsLockError" hidden>Неверный пароль</div>
+      </div>
+    </div>
+    <div id="settingsPanel" hidden>
+      <div class="panel set-card">
+        <h3>Пароль входа в CRM</h3>
+        <p class="set-note">Общий пароль, который вводят сотрудники при входе на сайт. После смены на других устройствах нужно будет войти заново с новым паролем.</p>
+        <form class="set-form" id="setSiteForm" autocomplete="off">
+          <label><span>Текущий пароль</span><input type="password" id="setSiteOld" autocomplete="off"></label>
+          <label><span>Новый пароль</span><input type="password" id="setSiteNew" autocomplete="new-password"></label>
+          <label><span>Повторите новый</span><input type="password" id="setSiteNew2" autocomplete="new-password"></label>
+          <button type="submit" class="cd-save-btn">Сменить пароль входа</button>
+        </form>
+        <div class="set-msg" id="setSiteMsg" role="status"></div>
+      </div>
+      <div class="panel set-card">
+        <h3>Пароль P&amp;L</h3>
+        <p class="set-note">Открывает Аналитику, P&amp;L, зарплаты во вкладке «Персонал» и эти настройки. Хранится в базе, не в файле сайта.</p>
+        <form class="set-form" id="setPnlForm" autocomplete="off">
+          <label><span>Текущий пароль P&amp;L</span><input type="password" id="setPnlOld" autocomplete="off"></label>
+          <label><span>Новый пароль</span><input type="password" id="setPnlNew" autocomplete="new-password"></label>
+          <label><span>Повторите новый</span><input type="password" id="setPnlNew2" autocomplete="new-password"></label>
+          <button type="submit" class="cd-save-btn">Сменить пароль P&amp;L</button>
+        </form>
+        <div class="set-msg" id="setPnlMsg" role="status"></div>
+      </div>
+      <div class="panel set-card">
+        <h3>Пароли мастеров</h3>
+        <p class="set-note">Пароль кабинета каждого мастера задаётся и меняется во вкладке «Мастера», в строке мастера.</p>
+        <div class="set-actions"><button type="button" class="refresh-btn" id="setGoMasters">Перейти к мастерам</button><button type="button" class="am-cancel" id="setLock">Заблокировать настройки</button></div>
+      </div>
     </div>
   </div>
 
@@ -6460,9 +6515,77 @@
     renderStaff();
     scheduleSave('day_close');
   });
-  function staffTryUnlock(){
+  // Пароль P&L проверяет сервер (supabase/passwords.sql). Пока этот файл не выполнен в Supabase,
+  // работает запасной пароль из файла сайта (PNL_PASSWORD) — чтобы ничего не сломалось.
+  async function pnlCheck(pw){
+    pw = String(pw || '').trim();
+    if(!pw) return false;
+    try{
+      return !!(await sbRpc('check_pnl_password', { p_pnl: pw }));
+    }catch(e){
+      if(e && e.http === 404) return pw.toLowerCase() === PNL_PASSWORD.toLowerCase();
+      return false;
+    }
+  }
+  // ---------------- Настройки: смена паролей ----------------
+  const SQL_HINT = 'Сначала выполните в Supabase файл passwords.sql (SQL Editor → вставить → Run), потом повторите.';
+  function setMsg(id, text, ok){ const el = document.getElementById(id); el.textContent = text; el.className = 'set-msg ' + (text ? (ok ? 'ok' : 'err') : ''); }
+  function settingsShow(unlocked){
+    document.getElementById('settingsLocked').hidden = unlocked;
+    document.getElementById('settingsPanel').hidden = !unlocked;
+    if(!unlocked) return;
+    for(const f of ['setSiteForm', 'setPnlForm']) document.getElementById(f).reset();
+    setMsg('setSiteMsg', ''); setMsg('setPnlMsg', '');
+  }
+  async function settingsTryUnlock(){
+    const input = document.getElementById('settingsPasswordInput'), err = document.getElementById('settingsLockError');
+    if(await pnlCheck(input.value)){ state.pnlUnlocked = true; err.hidden = true; input.value = ''; settingsShow(true); }
+    else { err.hidden = false; input.value = ''; input.focus(); }
+  }
+  document.getElementById('settingsUnlockBtn').addEventListener('click', settingsTryUnlock);
+  document.getElementById('settingsPasswordInput').addEventListener('keydown', e => { if(e.key === 'Enter') settingsTryUnlock(); });
+  document.getElementById('setLock').addEventListener('click', () => { state.pnlUnlocked = false; settingsShow(false); });
+  document.getElementById('setGoMasters').addEventListener('click', () => { const t = document.querySelector('.tab[data-tab="masters"]'); if(t) t.click(); });
+  function pwProblem(a, b){
+    if(String(a).trim().length < 6) return 'Новый пароль — не короче 6 символов.';
+    if(a !== b) return 'Новые пароли не совпадают.';
+    return '';
+  }
+  document.getElementById('setSiteForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const old = document.getElementById('setSiteOld').value, n1 = document.getElementById('setSiteNew').value, n2 = document.getElementById('setSiteNew2').value;
+    if(old !== currentPassword){ setMsg('setSiteMsg', 'Текущий пароль указан неверно.'); return; }
+    const bad = pwProblem(n1, n2); if(bad){ setMsg('setSiteMsg', bad); return; }
+    if(n1.trim() === currentPassword){ setMsg('setSiteMsg', 'Новый пароль совпадает с текущим.'); return; }
+    const btn = e.target.querySelector('button'); btn.disabled = true;
+    try{
+      try{ await flushSaves(); }catch(_){}
+      await sbRpc('change_shared_password', { p_new: n1.trim() });
+      currentPassword = n1.trim();
+      try{ localStorage.setItem('ibcrm_pw', currentPassword); }catch(_){}
+      e.target.reset();
+      setMsg('setSiteMsg', 'Пароль входа изменён. На других устройствах войдите с новым паролем.', true);
+    }catch(err){
+      setMsg('setSiteMsg', err && err.http === 404 ? SQL_HINT : 'Не удалось сменить пароль' + (err && err.message ? ' («' + err.message + '»)' : '') + '.');
+    }finally{ btn.disabled = false; }
+  });
+  document.getElementById('setPnlForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const old = document.getElementById('setPnlOld').value, n1 = document.getElementById('setPnlNew').value, n2 = document.getElementById('setPnlNew2').value;
+    const bad = pwProblem(n1, n2); if(bad){ setMsg('setPnlMsg', bad); return; }
+    const btn = e.target.querySelector('button'); btn.disabled = true;
+    try{
+      await sbRpc('set_pnl_password', { p_old: old.trim(), p_new: n1.trim() });
+      e.target.reset();
+      setMsg('setPnlMsg', 'Пароль P&L изменён.', true);
+    }catch(err){
+      const m = err && err.message || '';
+      setMsg('setPnlMsg', err && err.http === 404 ? SQL_HINT : /wrong_pnl_password/.test(m) ? 'Текущий пароль P&L указан неверно.' : /too_short/.test(m) ? 'Новый пароль — не короче 6 символов.' : 'Не удалось сменить пароль' + (m ? ' («' + m + '»)' : '') + '.');
+    }finally{ btn.disabled = false; }
+  });
+  async function staffTryUnlock(){
     const input = document.getElementById('staffPassword'), err = document.getElementById('staffLockErr');
-    if(input.value.trim().toLowerCase() === PNL_PASSWORD.toLowerCase()){
+    if(await pnlCheck(input.value)){
       state.pnlUnlocked = true; input.value = ''; err.hidden = true; renderStaff();
     } else { err.hidden = false; input.value = ''; input.focus(); }
   }
@@ -6893,10 +7016,10 @@
     document.getElementById('analyticsUnlockedPanel').hidden = !unlocked;
     if(unlocked){ analyticsCache.key = null; renderAnalytics(); }
   }
-  function analyticsTryUnlock(){
+  async function analyticsTryUnlock(){
     const input = document.getElementById('analyticsPasswordInput');
     const err = document.getElementById('analyticsLockError');
-    if(input.value.trim().toLowerCase() === PNL_PASSWORD.toLowerCase()){
+    if(await pnlCheck(input.value)){
       state.pnlUnlocked = true;
       err.hidden = true;
       input.value = '';
@@ -6913,10 +7036,10 @@
     state.pnlUnlocked = false;
     analyticsShow(false);
   });
-  function pnlTryUnlock(){
+  async function pnlTryUnlock(){
     const input = document.getElementById('pnlPasswordInput');
     const err = document.getElementById('pnlLockError');
-    if(input.value.trim().toLowerCase() === PNL_PASSWORD.toLowerCase()){
+    if(await pnlCheck(input.value)){
       state.pnlUnlocked = true;
       err.hidden = true;
       input.value = '';
@@ -6976,6 +7099,8 @@
       document.getElementById('view-analytics').hidden = state.tab !== 'analytics';
       document.getElementById('view-close-day').hidden = state.tab !== 'close-day';
       document.getElementById('view-pnl').hidden = state.tab !== 'pnl';
+      document.getElementById('view-settings').hidden = state.tab !== 'settings';
+      if(state.tab === 'settings'){ settingsShow(state.pnlUnlocked); document.getElementById('settingsPasswordInput').value = ''; document.getElementById('settingsLockError').hidden = true; }
       // Analytics now reads live prices/consumables/status straight out of
       // Закрытие дня, so re-render on every visit to pick up anything
       // changed there since the cached range was last built.
@@ -7499,7 +7624,7 @@
     if(state.tab === 'pnl') renderPnl();
   }
 
-  const APP_VERSION = '10.11 · пароль v1';   // видно в шапке: по ней понятно, какая версия сайта загружена
+  const APP_VERSION = '10.11 · пароли v2';   // видно в шапке: по ней понятно, какая версия сайта загружена
   function renderSyncNote(){
     const el = document.getElementById('syncNote');
     const m = state.syncStatus;
