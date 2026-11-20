@@ -5804,6 +5804,7 @@
     const defaultZone = master ? master.zone : null;
     if(e.target.value === defaultZone) delete dayClose.visitZone[bookingId];
     else dayClose.visitZone[bookingId] = e.target.value;
+    scheduleSave('day_close');
   });
   document.getElementById('closeDayGroups').addEventListener('click', e => {
     const star = e.target.closest('.cd-new-star');
@@ -5812,6 +5813,7 @@
       if(b){
         const want = !isNewBooking(b);
         if(want === !!b.new_client) delete dayClose.newOverride[b.id]; else dayClose.newOverride[b.id] = want;
+        scheduleSave('day_close');
         renderCloseDay();
       }
       return;
@@ -5975,6 +5977,7 @@
       if(!val){ input.focus(); return; }
       dayClose.serviceOverride[bookingId] = [val];
       analyticsCache.key = null;
+      scheduleSave('day_close');
       close(); renderCloseDay();
     }
     function onKey(e){ if(e.key === 'Escape') close(); else if(e.key === 'Enter') save(); }
@@ -5984,7 +5987,7 @@
       const btn = e.target.closest('[data-act]');
       if(!btn) return;
       if(btn.dataset.act === 'ok') save();
-      else if(btn.dataset.act === 'clear'){ delete dayClose.serviceOverride[bookingId]; analyticsCache.key = null; close(); renderCloseDay(); }
+      else if(btn.dataset.act === 'clear'){ delete dayClose.serviceOverride[bookingId]; analyticsCache.key = null; scheduleSave('day_close'); close(); renderCloseDay(); }
       else close();
     });
     input.focus(); input.select();
@@ -5996,6 +5999,7 @@
     else dayClose.masterOverride[bookingId] = name;
     delete dayClose.visitZone[bookingId]; // зона — по умолчанию у нового мастера
     analyticsCache.key = null;
+    scheduleSave('day_close');
     renderCloseDay(); populateMasters(); renderBookings(); renderAnalytics();
     if(state.tab === 'pnl' && state.pnlUnlocked) renderPnl();
   }
@@ -7196,8 +7200,12 @@
     pnl_fixed: () => state.pnlFixed,
   };
   let suppressSave = false;
+  let kvRev = 0;                 // растёт при каждой правке: так автообновление понимает, что данные менялись
+  let savesInFlight = 0;         // сколько сохранений сейчас летит на сервер
+  const failedKeys = new Set();  // разделы, которые не удалось сохранить (будем повторять)
   function scheduleSave(key){
     if(!currentPassword || suppressSave) return; // nothing to save to before login
+    kvRev++;
     clearTimeout(saveTimers[key]);
     saveTimers[key] = setTimeout(() => { saveTimers[key] = null; saveKV(key); }, 800);
   }
@@ -7208,6 +7216,7 @@
   }
   async function saveKV(key){
     if(!currentPassword) return;
+    savesInFlight++;
     try{
       const res = await fetch(SUPABASE_URL + '/rest/v1/rpc/save_kv', {
         method: 'POST',
@@ -7219,18 +7228,25 @@
         body: JSON.stringify({ password: currentPassword, p_key: key, p_value: KV_GETTERS[key]() }),
       });
       if(!res.ok) throw new Error('save-failed');
+      failedKeys.delete(key);
       setSaveNote('Сохранено');
     }catch(e){
-      setSaveNote('Не удалось сохранить — проверьте связь', true);
+      // не теряем правки: запоминаем раздел, автообновление его не затрёт, и через несколько секунд пробуем снова
+      failedKeys.add(key);
+      setSaveNote('Не удалось сохранить — повторяю…', true, true);
+      clearTimeout(saveTimers[key]);
+      saveTimers[key] = setTimeout(() => { saveTimers[key] = null; saveKV(key); }, 6000);
+    }finally{
+      savesInFlight--;
     }
   }
-  function setSaveNote(text, isError){
+  function setSaveNote(text, isError, sticky){
     const el = document.getElementById('saveNote');
     if(!el) return;
     el.textContent = text;
     el.style.color = isError ? 'var(--bad)' : 'var(--muted)';
     clearTimeout(setSaveNote._t);
-    setSaveNote._t = setTimeout(() => { el.textContent = ''; }, 3000);
+    if(!sticky) setSaveNote._t = setTimeout(() => { el.textContent = ''; }, 3000);   // ошибка висит, пока не сохранится
   }
 
   // ---------------- data loading from Supabase ----------------
@@ -7624,7 +7640,7 @@
     if(state.tab === 'pnl') renderPnl();
   }
 
-  const APP_VERSION = '10.11 · пароли v2';   // видно в шапке: по ней понятно, какая версия сайта загружена
+  const APP_VERSION = '20.11 · сохранение v1';   // видно в шапке: по ней понятно, какая версия сайта загружена
   function renderSyncNote(){
     const el = document.getElementById('syncNote');
     const m = state.syncStatus;
@@ -7648,10 +7664,14 @@
     refreshing = true;
     try{
       await flushSaves();
+      const rev0 = kvRev;
       const data = await loadData(currentPassword);
       state.bookings = data.bookings;
       state.syncStatus = data.syncStatus;
-      applyKv(data.kv);
+      // Если пока шла загрузка вы что-то поправили, или правка ещё не доехала до сервера, ответ базы устарел:
+      // не подменяем им то, что на экране (иначе правка, например звёздочка «новый клиент», пропадёт).
+      const localPending = kvRev !== rev0 || savesInFlight > 0 || failedKeys.size > 0 || Object.keys(saveTimers).some(k => saveTimers[k]);
+      if(!localPending) applyKv(data.kv);
       lastRefreshedAt = nowHM();
       renderEverything();
       renderSyncNote();
@@ -7662,7 +7682,7 @@
       refreshing = false;
     }
   }
-  document.addEventListener('visibilitychange', () => { if(!document.hidden) refresh(); });
+  document.addEventListener('visibilitychange', () => { if(document.hidden) flushSaves().catch(() => {}); else refresh(); });
   setInterval(refresh, 5 * 60 * 1000); // keep the page fresh while it stays open
 
 
