@@ -7214,8 +7214,20 @@
     for(const k of pending){ clearTimeout(saveTimers[k]); saveTimers[k] = null; }
     await Promise.all(pending.map(k => saveKV(k)));
   }
-  async function saveKV(key){
-    if(!currentPassword) return;
+  // Сохранения одного раздела идут строго по очереди: пока предыдущее не завершилось, следующее не отправляется
+  // (иначе на медленной связи старое сохранение может прийти на сервер позже нового и затереть свежие правки).
+  const saveRunning = {}, saveAgain = {};
+  function saveKV(key){
+    if(!currentPassword) return Promise.resolve();
+    if(saveRunning[key]){ saveAgain[key] = true; return saveRunning[key]; }
+    saveRunning[key] = (async () => {
+      try{
+        do{ saveAgain[key] = false; await saveKVOnce(key); }while(saveAgain[key] && currentPassword);
+      }finally{ saveRunning[key] = null; }
+    })();
+    return saveRunning[key];
+  }
+  async function saveKVOnce(key){
     savesInFlight++;
     try{
       const res = await fetch(SUPABASE_URL + '/rest/v1/rpc/save_kv', {
@@ -7640,7 +7652,7 @@
     if(state.tab === 'pnl') renderPnl();
   }
 
-  const APP_VERSION = '20.11 · сохранение v1';   // видно в шапке: по ней понятно, какая версия сайта загружена
+  const APP_VERSION = '22.11 · сохранение v2';   // видно в шапке: по ней понятно, какая версия сайта загружена
   function renderSyncNote(){
     const el = document.getElementById('syncNote');
     const m = state.syncStatus;
