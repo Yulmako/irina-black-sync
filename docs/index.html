@@ -1078,7 +1078,7 @@
   </header>
 
   <div class="stats" id="stats">
-    <div class="stat"><span class="label">Прибыль салона</span><span class="value">—</span></div>
+    <div class="stat"><span class="label">Чистая прибыль</span><span class="value">—</span></div>
     <div class="stat"><span class="label">Новых клиентов за месяц</span><span class="value">—</span></div>
     <div class="stat accent"><span class="label">Предстоящие записи</span><span class="value">—</span></div>
     <div class="stat"><span class="label">Доля онлайн-записи</span><span class="value">—</span></div>
@@ -2058,16 +2058,17 @@
     }
     return Math.round(profit);
   }
+  // Плитка в шапке: чистая прибыль текущего месяца — та же цифра, что в P&L (приход минус все расходы).
   function renderSalonProfitTile(){
     const tile = document.querySelector('#stats .stat');
     if(!tile) return;
     const now = new Date();
     const monthKey = now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
-    const v = salonProfitForMonth(monthKey);
-    tile.querySelector('.value').textContent = v.toLocaleString('ru-RU') + ' ₸';
+    const net = buildPnlMonth(monthKey).net;
+    tile.querySelector('.value').textContent = (net < 0 ? '−' : '') + Math.abs(Math.round(net)).toLocaleString('ru-RU') + ' ₸';
     const label = tile.querySelector('.label');
-    label.textContent = 'Прибыль салона · ' + MONTHS_FULL[now.getMonth()];
-    label.title = 'Сумма «Прибыли салона» из Закрытия дня за месяц: завершённые услуги за вычетом расходников и доли мастера, вычеты мастерам и продажа продукции. Без аренды, зарплат персонала и закупа — их видно в P&L.';
+    label.textContent = 'Чистая прибыль · ' + MONTHS_FULL[now.getMonth()];
+    label.title = 'Как в P&L за месяц: приход (услуги и продажа продукции) минус зарплаты мастеров и персонала, закуп, аренда, коммунальные, реклама, налоги и комиссия банка. Постоянные расходы берутся из вкладки P&L за этот месяц.';
   }
   function renderStats(){
     const now = new Date();
@@ -6264,6 +6265,7 @@
     document.getElementById('staffSummary').textContent = unlocked
       ? (totalPay ? 'ЗП персонала за месяц: ' + totalPay.toLocaleString('ru-RU') + ' ₸ · идёт в P&L (' + parts.join(', ') + ')' : 'Смен персонала в этом месяце нет.')
       : (totalShifts ? 'Смен персонала: ' + totalShifts : '');
+    renderSalonProfitTile();
     renderPayroll();
   }
 
@@ -6985,6 +6987,7 @@
       row('net', { cls: 'pnl-net' }),
     ];
     document.getElementById('pnlBody').innerHTML = rows.join('');
+    renderSalonProfitTile();
     scheduleSave('pnl_fixed');
   }
   function buildPnlReportRows(){
@@ -7652,7 +7655,7 @@
     if(state.tab === 'pnl') renderPnl();
   }
 
-  const APP_VERSION = '22.11 · сохранение v2';   // видно в шапке: по ней понятно, какая версия сайта загружена
+  const APP_VERSION = '23.11 · прибыль v1';   // видно в шапке: по ней понятно, какая версия сайта загружена
   function renderSyncNote(){
     const el = document.getElementById('syncNote');
     const m = state.syncStatus;
