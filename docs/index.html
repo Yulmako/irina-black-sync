@@ -3732,7 +3732,10 @@
     const empty = document.getElementById('closeDayEmpty');
     const totalWrap = document.getElementById('closeDayTotal');
 
-    if(!visits.length){
+    // Вычеты и чаевые мастера, у которого за день нет визитов (например, визит перенесли другому мастеру), тоже показываем —
+    // иначе их не видно и не удалить, а в расчёте и кабинете мастера они остаются.
+    const adjOnly = Array.from(new Set((dayClose.masterAdj[date] || []).map(a => a.master)));
+    if(!visits.length && !adjOnly.length){
       container.innerHTML = ''; empty.hidden = false; totalWrap.hidden = true;
       return;
     }
@@ -3748,11 +3751,13 @@
       if(!byMaster.has(vm)) byMaster.set(vm, []);
       byMaster.get(vm).push(v);
     }
+    for(const m of adjOnly) if(!byMaster.has(m)) byMaster.set(m, []);
 
     let html = '';
     for(const [master, list] of Array.from(byMaster).sort((a, b) => a[0].localeCompare(b[0], 'ru'))){
       html += '<div class="cd-master-group" data-master="'+esc(master)+'">' +
-        '<div class="cd-master-head"><span class="cd-master-name-group"><b>'+esc(master)+'</b><span class="rate-pill">'+Math.round(masterRate(master)*100)+'%</span>'+(newClientKeys(list).size ? '<span class="cd-new-count" title="Новых клиентов у мастера за день">★ новых: '+newClientKeys(list).size+'</span>' : '')+'</span><span class="cd-subtotal" data-role="subtotal">—</span></div>';
+        '<div class="cd-master-head"><span class="cd-master-name-group"><b>'+esc(master)+'</b><span class="rate-pill">'+Math.round(masterRate(master)*100)+'%</span>'+(newClientKeys(list).size ? '<span class="cd-new-count" title="Новых клиентов у мастера за день">★ новых: '+newClientKeys(list).size+'</span>' : '')+'</span><span class="cd-subtotal" data-role="subtotal">—</span></div>' +
+        (list.length ? '' : '<div class="cd-status-note" style="padding:6px 2px">У мастера нет визитов за этот день — осталась только поправка (вычет или чаевые). Удалите её крестиком, если она не нужна.</div>');
       for(const v of list){
         const notServed = v.status === 'NOT_SERVED';
         const vStatus = visitStatus(v.id);
