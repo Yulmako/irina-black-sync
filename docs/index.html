@@ -3441,7 +3441,9 @@
   // Позиции «ЗП персонала …» попадают в закуп дня для учёта, но зарплата в P&L уже считается по сменам —
   // поэтому в P&L, Аналитике и Инвентаризации они не учитываются повторно.
   const PAYROLL_PROC_ITEMS = ['ЗП персонала админ', 'ЗП персонала тех персонал'];
-  const isPayrollProc = p => (p.category || 'Расходники') === 'Салон' && PAYROLL_PROC_ITEMS.indexOf(p.item) >= 0;
+  // Подходит и название с именем сотрудника: «ЗП персонала админ Гульмира», «ЗП персонала тех персонал Айгуль».
+  const isPayrollProc = p => (p.category || 'Расходники') === 'Салон'
+    && (PAYROLL_PROC_ITEMS.indexOf(p.item) >= 0 || /^\s*зп\s+персонала(\s|$)/i.test(String(p.item || '')));
   const PROCUREMENT_CATEGORIES = ['Расходники', 'Продукция', 'Nail зал', 'Салон'];
   const PROCUREMENT_ITEMS = {
     'Расходники': ['Краска Kapus','Оксидант Kapus','Пудра Kapus','Краска Screen','Оксидант Screen','Пудра Screen',
