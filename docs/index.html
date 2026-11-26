@@ -5478,6 +5478,13 @@
     const txt = await res.text();
     return txt ? JSON.parse(txt) : null;
   }
+  // Убирает из кабинетов мастеров строки дня, которых больше нет в расчёте (например, вычет перенесли с одного мастера на другого:
+  // публикация только дописывает строки, поэтому старая строка прежнего мастера иначе осталась бы в его кабинете).
+  // Возвращает true, если получилось; false — если в Supabase ещё не выполнен обновлённый master_portal.sql.
+  async function pruneMasterDay(date, keepNames){
+    try{ await sbRpc('prune_master_days', { p_day: date, p_keep: keepNames }); return true; }
+    catch(e){ return false; }
+  }
   function buildDayMasterBlocks(date){
     const byMaster = new Map();
     const entry = name => { if(!byMaster.has(name)) byMaster.set(name, { visits: [], count: 0, revenue: 0, cons: 0, share: 0, fine: 0, reasons: [], tip: 0, prodComm: 0 }); return byMaster.get(name); };
@@ -5534,11 +5541,16 @@
     renderPubControls(date, true);
     try{
       const items = buildMasterSnapshots(date);
-      if(!items.length){ showReportToast('За этот день нет мастеров с завершёнными услугами — публиковать нечего.', 5000); return; }
+      if(!items.length){
+        const cleared = await pruneMasterDay(date, []);
+        showReportToast('За этот день нет мастеров с завершёнными услугами — публиковать нечего.' + (cleared ? ' Старые записи дня убраны из кабинетов.' : ''), 5000);
+        return;
+      }
       await sbRpc('publish_master_days', { p_items: items });
+      const pruned = await pruneMasterDay(date, items.map(x => x.master));
       dayClose.masterPub[date] = { at: new Date().toISOString(), n: items.length, to: items.map(x => x.master) };
       scheduleSave('day_close');
-      showReportToast('День опубликован в кабинете мастеров: ' + items.map(x => x.master).join(', ') + '.', 6000);
+      showReportToast('День опубликован в кабинете мастеров: ' + items.map(x => x.master).join(', ') + '.' + (pruned ? '' : ' Старые строки других мастеров не убраны: выполните в Supabase обновлённый master_portal.sql.'), pruned ? 6000 : 9000);
     }catch(e){
       showAlertDialog('Не удалось опубликовать день мастерам' + (e && e.message ? ' («' + e.message + '»)' : '') + '. Проверьте, что в Supabase выполнен файл master_portal.sql, и связь.');
     }finally{
@@ -5560,7 +5572,8 @@
     pubAllBusy = true;
     const btn = document.getElementById('pubAllBtn'), note = document.getElementById('pubAllNote');
     if(btn){ btn.disabled = true; btn.textContent = 'Публикую…'; }
-    let ok = 0, empty = 0, failed = false;
+    let ok = 0, empty = 0, failed = false, pruneFailed = false;
+    const emptyDays = [];
     try{
       let days = unpublishedClosedDays();
       if(all){
@@ -5570,13 +5583,15 @@
       }
       for(let i = 0; i < days.length; i += 10){
         const chunk = days.slice(i, i + 10), items = [], doneDays = [];
-        chunk.forEach(d => { const it = buildMasterSnapshots(d); if(it.length){ items.push(...it); doneDays.push([d, it]); } else empty++; });
+        chunk.forEach(d => { const it = buildMasterSnapshots(d); if(it.length){ items.push(...it); doneDays.push([d, it]); } else { empty++; emptyDays.push(d); } });
+        if(all){ for(const d of emptyDays.splice(0)) if(!(await pruneMasterDay(d, []))) pruneFailed = true; }
         if(!items.length) continue;
         await sbRpc('publish_master_days', { p_items: items });
+        if(all){ for(const [d, it] of doneDays) if(!(await pruneMasterDay(d, it.map(x => x.master)))) pruneFailed = true; }
         doneDays.forEach(([d, it]) => { dayClose.masterPub[d] = { at: new Date().toISOString(), n: it.length, to: it.map(x => x.master) }; ok++; });
         scheduleSave('day_close');
       }
-      if(!silent) showReportToast(ok ? 'Мастерам опубликовано дней: ' + ok + '. Теперь они видны в кабинетах.' : 'Публиковать нечего: закрытых дней с услугами мастеров нет.', 6000);
+      if(!silent) showReportToast((ok ? 'Мастерам опубликовано дней: ' + ok + '. Теперь они видны в кабинетах.' : 'Публиковать нечего: закрытых дней с услугами мастеров нет.') + (pruneFailed ? ' Старые строки не убраны: выполните в Supabase обновлённый master_portal.sql.' : ''), pruneFailed ? 9000 : 6000);
     }catch(e){
       failed = true;
       if(!silent) showAlertDialog('Не удалось опубликовать дни мастерам' + (e && e.message ? ' («' + e.message + '»)' : '') + '. Проверьте, что в Supabase выполнен файл master_portal.sql, и связь.');
