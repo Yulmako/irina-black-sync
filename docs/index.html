@@ -773,6 +773,17 @@
   .mp-tile.warn .value{color:var(--warn);}
   .mp-tile.accent .value{color:var(--accent);}
   .mp-who{display:inline-block; margin-left:10px; padding:2px 10px; border-radius:999px; background:var(--accent-soft); color:var(--accent); font:600 12px/1.6 'Inter',system-ui,sans-serif; vertical-align:middle;}
+  .mp-period{display:flex; align-items:center; justify-content:center; gap:10px 18px; flex-wrap:wrap; margin-bottom:14px;}
+  .mp-modes{display:inline-flex; border:1px solid var(--border); border-radius:10px; overflow:hidden; background:var(--surface);}
+  .mp-mode{padding:9px 16px; border:none; background:transparent; color:var(--muted); font:inherit; font-size:14px; font-weight:600; cursor:pointer; min-height:40px;}
+  .mp-mode.on{background:var(--accent); color:var(--accent-ink);}
+  .mp-range{display:flex; align-items:center; gap:10px 14px; flex-wrap:wrap; justify-content:center;}
+  .mp-range label{display:flex; align-items:center; gap:8px; font-size:14px; color:var(--muted);}
+  .mp-range input{font:inherit; font-size:14px; padding:8px 10px; border:1px solid var(--border); border-radius:10px; background:var(--surface); color:var(--ink); min-height:40px;}
+  .mp-entry-head{display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; padding:12px 18px; background:var(--surface-2); border-top:1px solid var(--border); font-size:13.5px;}
+  .mp-entry-head .mp-who{margin-left:0;}
+  .mp-entry-pay{color:var(--muted);} .mp-entry-pay b{color:var(--ink); font-variant-numeric:tabular-nums;}
+  .mp-monthbar{margin-bottom:0;}
   .mp-monthbar{display:flex; align-items:center; justify-content:center; gap:14px; margin-bottom:14px;}
   .mp-monthbar b{font-family:'Fraunces',serif; font-size:18px; min-width:160px; text-align:center;}
   .mp-day{background:var(--surface); border:1px solid var(--border); border-radius:16px; box-shadow:var(--shadow); margin-bottom:14px; overflow:hidden;}
@@ -1049,10 +1060,20 @@
       </div>
     </header>
     <div class="mp-tiles" id="mpTiles"></div>
-    <div class="mp-monthbar">
-      <button type="button" class="cd-day-step" id="mpPrev" aria-label="Предыдущий месяц">‹</button>
-      <b id="mpMonth"></b>
-      <button type="button" class="cd-day-step" id="mpNext" aria-label="Следующий месяц">›</button>
+    <div class="mp-period">
+      <div class="mp-modes" role="group" aria-label="Период">
+        <button type="button" class="mp-mode on" data-mpmode="month">Месяц</button>
+        <button type="button" class="mp-mode" data-mpmode="range">Период</button>
+      </div>
+      <div class="mp-monthbar" id="mpMonthBar">
+        <button type="button" class="cd-day-step" id="mpPrev" aria-label="Предыдущий месяц">‹</button>
+        <b id="mpMonth"></b>
+        <button type="button" class="cd-day-step" id="mpNext" aria-label="Следующий месяц">›</button>
+      </div>
+      <div class="mp-range" id="mpRange" hidden>
+        <label>С <input type="date" id="mpFrom"></label>
+        <label>по <input type="date" id="mpTo"></label>
+      </div>
     </div>
     <div id="mpDays"></div>
     <p class="mp-foot" id="mpFoot"></p>
@@ -7726,7 +7747,7 @@
   // Общий пароль CRM и данные других мастеров в этом режиме не загружаются вообще.
   const MP_KEY = 'ibcrm_mpw';
   const MONTHS_GEN = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
-  const mp = { password: null, name: '', days: [], month: null, timer: null, busy: false };
+  const mp = { password: null, name: '', days: [], month: null, mode: 'month', from: '', to: '', timer: null, busy: false };
   function mpDayLabel(day){
     const [y, m, d] = day.split('-').map(Number);
     return d + ' ' + MONTHS_GEN[m - 1] + ', ' + ['вс','пн','вт','ср','чт','пт','сб'][new Date(y, m - 1, d).getDay()];
@@ -7738,6 +7759,22 @@
     if(d.confirmed_amount === null || d.confirmed_amount === undefined) return 'pending';
     return Number(d.confirmed_amount) === Number(d.pay) ? 'ok' : 'changed';
   }
+  // общее состояние дня по всем мастерам кабинета (если у человека два аккаунта мастера, день один)
+  function mpDayState(entries){
+    const st = entries.map(mpState);
+    if(st.indexOf('fixing') >= 0) return 'fixing';
+    if(st.indexOf('pending') >= 0) return 'pending';
+    if(st.indexOf('changed') >= 0) return 'changed';
+    return 'ok';
+  }
+  function mpSetMode(mode){
+    mp.mode = mode;
+    if(mode === 'range' && (!mp.from || !mp.to) && mp.month){
+      const [y, m] = mp.month.split('-').map(Number), last = new Date(y, m, 0).getDate();
+      mp.from = mp.month + '-01'; mp.to = mp.month + '-' + String(last).padStart(2, '0');
+    }
+    renderMasterPortal();
+  }
   function renderMasterPortal(){
     document.getElementById('mpName').textContent = mp.name;
     const now = new Date();
@@ -7746,50 +7783,71 @@
       const latest = mp.days.map(d => d.day.slice(0, 7)).sort().pop();
       mp.month = (mp.days.some(d => d.day.slice(0, 7) === cur) || !latest) ? cur : latest;
     }
+    const rangeMode = mp.mode === 'range';
+    document.querySelectorAll('.mp-mode').forEach(btn => btn.classList.toggle('on', btn.dataset.mpmode === mp.mode));
+    document.getElementById('mpMonthBar').hidden = rangeMode;
+    document.getElementById('mpRange').hidden = !rangeMode;
     const [Y, M] = mp.month.split('-').map(Number);
     document.getElementById('mpMonth').textContent = MONTHS_FULL[M - 1].charAt(0).toUpperCase() + MONTHS_FULL[M - 1].slice(1) + ' ' + Y;
-    const days = mp.days.filter(d => d.day.slice(0, 7) === mp.month).sort((a, b) => b.day.localeCompare(a.day) || String(a.master).localeCompare(String(b.master), 'ru'));
-    const pub = days.filter(d => d.published);
-    const total = pub.reduce((t, d) => t + Number(d.pay), 0);
-    const okN = pub.filter(d => mpState(d) === 'ok').length, needN = pub.length - okN;
+    let list;
+    if(rangeMode){
+      document.getElementById('mpFrom').value = mp.from; document.getElementById('mpTo').value = mp.to;
+      const lo = mp.from && mp.to && mp.from > mp.to ? mp.to : (mp.from || '0000-00-00'), hi = mp.from && mp.to && mp.from > mp.to ? mp.from : (mp.to || '9999-99-99');
+      list = mp.days.filter(d => d.day >= lo && d.day <= hi);
+    } else list = mp.days.filter(d => d.day.slice(0, 7) === mp.month);
+    const byDay = new Map();
+    list.forEach(d => { if(!byDay.has(d.day)) byDay.set(d.day, []); byDay.get(d.day).push(d); });
+    const days = Array.from(byDay.keys()).sort((a, b) => b.localeCompare(a)).map(day => ({ day, entries: byDay.get(day).sort((a, b) => String(a.master).localeCompare(String(b.master), 'ru')) }));
+    const pub = days.filter(g => g.entries.some(e => e.published));
+    const total = list.filter(d => d.published).reduce((t, d) => t + Number(d.pay), 0);
+    const okN = pub.filter(g => mpDayState(g.entries) === 'ok').length, needN = pub.length - okN;
     document.getElementById('mpTiles').innerHTML =
-      '<div class="mp-tile accent"><span class="label">К выплате за месяц</span><span class="value">' + fmtTenge(total) + '</span></div>' +
+      '<div class="mp-tile accent"><span class="label">К выплате за ' + (rangeMode ? 'период' : 'месяц') + '</span><span class="value">' + fmtTenge(total) + '</span></div>' +
       '<div class="mp-tile"><span class="label">Подтверждено дней</span><span class="value">' + okN + ' из ' + pub.length + '</span></div>' +
       '<div class="mp-tile' + (needN ? ' warn' : '') + '"><span class="label">Ждут подтверждения</span><span class="value">' + needN + '</span></div>';
     document.getElementById('mpDays').innerHTML = days.length ? days.map(mpDayHtml).join('') :
       (mp.days.length
-        ? '<div class="mp-empty"><b>В этом месяце опубликованных дней нет</b><br>Переключите месяц стрелками выше — дни есть в других месяцах.</div>'
+        ? '<div class="mp-empty"><b>' + (rangeMode ? 'За этот период' : 'В этом месяце') + ' опубликованных дней нет</b><br>' + (rangeMode ? 'Измените даты выше — дни есть в других периодах.' : 'Переключите месяц стрелками выше — дни есть в других месяцах.') + '</div>'
         : '<div class="mp-empty"><b>Для вас пока ничего не опубликовано</b><br>Дни появляются здесь после того, как администратор закроет день. Если дни уже закрыты, а здесь пусто — сообщите администратору.</div>');
-    document.getElementById('mpFoot').textContent = 'Данные обновлены в ' + mpHM(new Date().toISOString()) + '. Если что-то не сходится, скажите администратору — день будет исправлен и опубликован заново.';
+    document.getElementById('mpFoot').textContent = 'Данные обновлены в ' + mpHM(new Date().toISOString()) + '. В кабинете видны дни за последние 120 суток. Если что-то не сходится, скажите администратору — день будет исправлен и опубликован заново.';
   }
-  function mpDayHtml(d){
-    const sn = d.snapshot || {}, st = mpState(d);
-    const pill = st === 'ok' ? '<span class="pill good">Подтверждено ' + esc(mpHM(d.confirmed_at)) + '</span>'
-      : st === 'changed' ? '<span class="pill warn">Данные изменились — подтвердите снова</span>'
-      : st === 'fixing' ? '<span class="pill plain">День на исправлении</span>'
-      : '<span class="pill warn">Ждёт вашего подтверждения</span>';
-    const rows = (sn.visits || []).map(v => '<tr><td data-label="Время">' + esc(v.time) + '</td><td data-label="Клиент"><span>' + esc(v.client) + (v.isNew ? '<span class="mp-new">новый</span>' : '') + '</span></td><td data-label="Услуга">' + esc(v.service) +
+  // Одна запись мастера за день: визиты и суммы
+  function mpEntryHtml(d, withHead){
+    const sn = d.snapshot || {};
+    const rows = (sn.visits || []).map(v => '<tr><td data-label="Время">' + esc(v.time) + '</td><td data-label="Клиент"><span>' + esc(v.client) + '</span></td><td data-label="Услуга">' + esc(v.service) +
       '</td><td class="num" data-label="Цена">' + fmtTenge(v.price) + '</td><td class="num" data-label="Расходники">' + (v.cons ? fmtTenge(v.cons) : '—') + '</td><td class="num" data-label="Доля мастера"><b>' + fmtTenge(v.share) + '</b></td></tr>').join('');
     const sums = [];
     if(sn.count) sums.push('<div><span>Услуг</span><b>' + sn.count + '</b></div>', '<div><span>Выручка</span><b>' + fmtTenge(sn.revenue) + '</b></div>', '<div><span>Расходники</span><b>' + fmtTenge(sn.cons) + '</b></div>', '<div><span>Доля мастера (' + sn.rate + '%)</span><b>' + fmtTenge(sn.share) + '</b></div>');
     if(sn.fine) sums.push('<div class="bad"><span>Вычет' + ((sn.fineReasons || []).length ? ': ' + esc(sn.fineReasons.join('; ')) : '') + '</span><b>−' + fmtTenge(sn.fine) + '</b></div>');
     if(sn.tip) sums.push('<div class="good"><span>Чаевые</span><b>+' + fmtTenge(sn.tip) + '</b></div>');
     if(sn.prodComm) sums.push('<div class="good"><span>С продажи продукции</span><b>+' + fmtTenge(sn.prodComm) + '</b></div>');
-    const meta = [];
-    if(sn.salonNew !== null && sn.salonNew !== undefined) meta.push('Новых клиентов в салоне за день: ' + sn.salonNew);
-    meta.push('Персонал на смене: ' + ((sn.staff || []).length ? sn.staff.map(x => esc(x.name) + ' (' + esc(x.role) + ')').join(', ') : 'отметок нет'));
-    const needBtn = st === 'pending' || st === 'changed';
-    return '<article class="mp-day' + (needBtn ? ' needs' : '') + '" data-day="' + d.day + '" data-master="' + esc(d.master) + '">' +
-      '<div class="mp-day-head"><h3>' + esc(mpDayLabel(d.day)) + (mp.multi ? '<span class="mp-who">' + esc(d.master) + '</span>' : '') + '</h3>' + pill + '</div>' +
+    return (withHead ? '<div class="mp-entry-head"><span class="mp-who">' + esc(d.master) + '</span><span class="mp-entry-pay">К выплате: <b>' + (d.published ? fmtTenge(d.pay) : '—') + '</b></span></div>' : '') +
       (rows ? '<div class="mp-visits-wrap"><table class="mp-visits"><thead><tr><th>Время</th><th>Клиент</th><th>Услуга</th><th class="num">Цена</th><th class="num">Расходники</th><th class="num">Доля мастера</th></tr></thead><tbody>' + rows + '</tbody></table></div>' : '') +
-      (sums.length ? '<div class="mp-sum">' + sums.join('') + '</div>' : '') +
-      '<div class="mp-pay"><div class="amount"><small>К выплате на руки</small>' + fmtTenge(d.pay) + '</div>' +
-        (needBtn ? '<button type="button" class="mp-confirm" data-day="' + d.day + '" data-master="' + esc(d.master) + '">Подтвердить данные за день</button>' : '') + '</div>' +
-      '<div class="mp-meta">' + meta.join('<br>') + '</div></article>';
+      (sums.length ? '<div class="mp-sum">' + sums.join('') + '</div>' : '');
+  }
+  // Карточка дня: если в кабинете несколько мастеров, их записи за день собраны в одну карточку, суммы складываются
+  function mpDayHtml(g){
+    const es = g.entries, many = es.length > 1, st = mpDayState(es);
+    const confirmedAt = es.map(e => e.confirmed_at).filter(Boolean).sort().pop();
+    const pill = st === 'ok' ? '<span class="pill good">Подтверждено ' + esc(mpHM(confirmedAt)) + '</span>'
+      : st === 'changed' ? '<span class="pill warn">Данные изменились — подтвердите снова</span>'
+      : st === 'fixing' ? '<span class="pill plain">День на исправлении</span>'
+      : '<span class="pill warn">Ждёт вашего подтверждения</span>';
+    const total = es.filter(e => e.published).reduce((t, e) => t + Number(e.pay), 0);
+    const needBtn = st === 'pending' || st === 'changed';
+    const staff = ((es.find(e => e.snapshot && e.snapshot.staff) || {}).snapshot || {}).staff || [];
+    const admins = staff.filter(x => x.role === 'Администратор');
+    const meta = 'Администратор на смене: ' + (admins.length ? admins.map(x => esc(x.name)).join(', ') : 'отметок нет');
+    return '<article class="mp-day' + (needBtn ? ' needs' : '') + '" data-day="' + g.day + '">' +
+      '<div class="mp-day-head"><h3>' + esc(mpDayLabel(g.day)) + (mp.multi && !many ? '<span class="mp-who">' + esc(es[0].master) + '</span>' : '') + '</h3>' + pill + '</div>' +
+      es.map(e => mpEntryHtml(e, many)).join('') +
+      '<div class="mp-pay"><div class="amount"><small>' + (many ? 'К выплате за день (все мастера)' : 'К выплате на руки') + '</small>' + fmtTenge(total) + '</div>' +
+        (needBtn ? '<button type="button" class="mp-confirm" data-day="' + g.day + '">Подтвердить данные за день</button>' : '') + '</div>' +
+      '<div class="mp-meta">' + meta + '</div></article>';
   }
   function mpShowGate(msg){
     clearInterval(mp.timer); mp.timer = null;
-    mp.password = null; mp.days = []; mp.name = ''; mp.multi = false; mp.month = null;
+    mp.password = null; mp.days = []; mp.name = ''; mp.multi = false; mp.month = null; mp.mode = 'month'; mp.from = ''; mp.to = '';
     try{ localStorage.removeItem(MP_KEY); }catch(e){}
     document.getElementById('masterApp').hidden = true;
     document.getElementById('gate').hidden = false;
@@ -7821,20 +7879,26 @@
   }
   document.getElementById('mpDays').addEventListener('click', async e => {
     const b = e.target.closest('.mp-confirm'); if(!b || mp.busy) return;
+    // у человека может быть несколько мастеров: подтверждаем все записи этого дня, которым нужно подтверждение
+    const todo = mp.days.filter(x => x.day === b.dataset.day && x.published && (mpState(x) === 'pending' || mpState(x) === 'changed'));
+    if(!todo.length) return;
     mp.busy = true; b.disabled = true; b.textContent = 'Подтверждаю…';
     try{
-      const res = await sbRpc('master_confirm_day', { p_password: mp.password, p_day: b.dataset.day, p_master: b.dataset.master || null }, true);
-      if(res && res.ok){
-        const d = mp.days.find(x => x.day === b.dataset.day && x.master === b.dataset.master);
-        if(d){ d.confirmed_amount = res.amount; d.confirmed_at = res.confirmed_at; }
-        renderMasterPortal();
-      } else if(res && res.error === 'invalid'){ mpShowGate('Пароль изменился — войдите заново.'); }
-      else { await masterEnter(mp.password, true); showReportToast('День изменился или закрыт на исправление — данные обновлены.', 5000); }
+      for(const t of todo){
+        const res = await sbRpc('master_confirm_day', { p_password: mp.password, p_day: t.day, p_master: t.master || null }, true);
+        if(res && res.ok){ t.confirmed_amount = res.amount; t.confirmed_at = res.confirmed_at; }
+        else if(res && res.error === 'invalid'){ mpShowGate('Пароль изменился — войдите заново.'); return; }
+        else { await masterEnter(mp.password, true); showReportToast('День изменился или закрыт на исправление — данные обновлены.', 5000); return; }
+      }
+      renderMasterPortal();
     }catch(err){
       b.disabled = false; b.textContent = 'Подтвердить данные за день';
       showReportToast('Не удалось подтвердить: нет связи. Попробуйте ещё раз.', 5000);
     }finally{ mp.busy = false; }
   });
+  document.querySelectorAll('.mp-mode').forEach(btn => btn.addEventListener('click', () => mpSetMode(btn.dataset.mpmode)));
+  document.getElementById('mpFrom').addEventListener('change', e => { mp.from = e.target.value; renderMasterPortal(); });
+  document.getElementById('mpTo').addEventListener('change', e => { mp.to = e.target.value; renderMasterPortal(); });
   document.getElementById('mpPrev').addEventListener('click', () => { const [y, m] = mp.month.split('-').map(Number); const d = new Date(y, m - 2, 1); mp.month = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); renderMasterPortal(); });
   document.getElementById('mpNext').addEventListener('click', () => { const [y, m] = mp.month.split('-').map(Number); const d = new Date(y, m, 1); mp.month = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); renderMasterPortal(); });
   document.getElementById('mpLogout').addEventListener('click', () => mpShowGate(''));
