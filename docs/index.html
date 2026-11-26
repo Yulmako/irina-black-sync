@@ -1239,9 +1239,6 @@
       <div class="add-master-row" id="staffAddRow" hidden>
         <label class="am-field"><span>Имя</span><input type="text" id="staffName" placeholder="Например: Айгуль" maxlength="40"></label>
         <label class="am-field"><span>Должность</span><select id="staffRole"></select></label>
-        <label class="am-field" id="staffRateField"><span>Ставка за смену</span>
-          <div class="am-rate-wrap"><input type="number" id="staffRate" placeholder="Сумма" min="0" step="500"><span>₸</span></div>
-        </label>
         <button type="button" class="cd-save-btn" id="staffSave">Добавить</button>
         <button type="button" class="am-cancel" id="staffCancel">Отмена</button>
         <p class="add-master-hint" id="staffAddHint">Должность определяет строку в P&amp;L, куда пойдёт зарплата по сменам. Мастера в график попадают сами — по дням, где у них есть записи.</p>
@@ -3441,9 +3438,12 @@
   // Позиции «ЗП персонала …» попадают в закуп дня для учёта, но зарплата в P&L уже считается по сменам —
   // поэтому в P&L, Аналитике и Инвентаризации они не учитываются повторно.
   const PAYROLL_PROC_ITEMS = ['ЗП персонала админ', 'ЗП персонала тех персонал'];
-  // Подходит и название с именем сотрудника: «ЗП персонала админ Гульмира», «ЗП персонала тех персонал Айгуль».
-  const isPayrollProc = p => (p.category || 'Расходники') === 'Салон'
-    && (PAYROLL_PROC_ITEMS.indexOf(p.item) >= 0 || /^\s*зп\s+персонала(\s|$)/i.test(String(p.item || '')));
+  // Зарплата персонала вносится в Закуп: «ЗП персонала админ Гульмира», «ЗП персонала тех персонал», «техперсонал» и т.п.
+  // В любой категории. Такая позиция — выплата зарплаты: идёт в строку ЗП P&L, а не в закуп/расходники/инвентаризацию.
+  const isPayrollProc = p => {
+    const t = String(p.item || '').toLowerCase().trim();
+    return (/^зп\s+персонала(\s|$)/.test(t) || /^тех\s?персонал/.test(t)) && !!payrollProcKey(p);
+  };
   // Какая строка P&L: по словам в названии «ЗП персонала админ …», «… тех персонал …», «… бухгалтер», «… СММ».
   function payrollProcKey(p){
     const t = String(p.item || '').toLowerCase();
@@ -6272,7 +6272,6 @@
     document.getElementById('staffMonthLabel').textContent = MONTHS_FULL[M - 1].charAt(0).toUpperCase() + MONTHS_FULL[M - 1].slice(1) + ' ' + Y;
     document.getElementById('staffToday').hidden = staffMonth === thisMonth;
     document.getElementById('staffLockNote').hidden = unlocked;
-    document.getElementById('staffRateField').hidden = !unlocked;
     const roleSel = document.getElementById('staffRole');
     if(!roleSel.options.length) roleSel.innerHTML = STAFF_ROLES.map(r => '<option value="'+esc(r.role)+'">'+esc(r.role)+'</option>').join('');
 
@@ -6282,7 +6281,7 @@
     const onShift = new Array(days + 1).fill(0);
 
     // шапка: числа + дни недели
-    const sumHead = '<th rowspan="2" class="num st-sum">Смен</th>' + (unlocked ? '<th rowspan="2" class="num st-sum">Ставка</th><th rowspan="2" class="num st-sum">ЗП</th>' : '');
+    const sumHead = '<th rowspan="2" class="num st-sum">Смен</th>' + (unlocked ? '<th rowspan="2" class="num st-sum" title="Выплаты «ЗП персонала …» из Закупа за месяц">Выплачено</th>' : '');
     let h1 = '<tr><th rowspan="2" class="st-name">Сотрудник</th>' + sumHead, h2 = '<tr>';
     for(let d = 1; d <= days; d++){
       const cls = 'st-day' + (isWeekend(d) ? ' we' : '') + (dateOf(d) === today ? ' today' : '');
@@ -6292,7 +6291,7 @@
     h1 += '</tr>';
     document.getElementById('staffHead').innerHTML = h1 + h2 + '</tr>';
 
-    const tailCols = 1 + (unlocked ? 2 : 0);
+    const tailCols = 1 + (unlocked ? 1 : 0);
     let html = '';
     // ---- мастера (из записей) ----
     const worked = masterWorkDays(staffMonth);
@@ -6321,7 +6320,7 @@
         }
       }
       html += '<tr><td class="st-name"><b>'+esc(name)+'</b>'+(m && m.zone ? ' <span class="st-role">'+esc(m.zone)+'</span>' : '')+'</td>' +
-        '<td class="num st-sum">'+dm.size+(confirmedCount || changedCount ? ' <span class="st-count" title="Подтвердил день в боте'+(changedCount ? ', из них изменились после подтверждения: '+changedCount : '')+'">✓'+confirmedCount+(changedCount ? ' !'+changedCount : '')+'</span>' : '')+'</td>' + (unlocked ? '<td class="num st-sum st-muted" colspan="2">% от услуг</td>' : '') + cells + '</tr>';
+        '<td class="num st-sum">'+dm.size+(confirmedCount || changedCount ? ' <span class="st-count" title="Подтвердил день в боте'+(changedCount ? ', из них изменились после подтверждения: '+changedCount : '')+'">✓'+confirmedCount+(changedCount ? ' !'+changedCount : '')+'</span>' : '')+'</td>' + (unlocked ? '<td class="num st-sum st-muted">% от услуг</td>' : '') + cells + '</tr>';
     }
     // ---- персонал (вносит сам) ----
     const members = dayClose.staff.members
@@ -6332,9 +6331,8 @@
     let totalPay = 0, totalShifts = 0;
     const procItems = staffProcPayItems(staffMonth);
     for(const m of members){
-      const sh = counts[m.id] || 0, rate = Number(m.rate) || 0, fineSum = staffMonthFine(staffMonth, m.id), saleSum = staffMonthSaleComm(staffMonth, m);
-      const accrued = Math.round(sh * rate) - fineSum + saleSum;
-      const procPay = staffMemberProcPay(m, accrued, procItems), pay = accrued + procPay;
+      const sh = counts[m.id] || 0, fineSum = staffMonthFine(staffMonth, m.id), saleSum = staffMonthSaleComm(staffMonth, m);
+      const pay = staffMemberProcPay(m, 0, procItems);
       totalPay += pay; totalShifts += sh;
       let cells = '';
       for(let d = 1; d <= days; d++){
@@ -6343,10 +6341,10 @@
         cells += '<td class="st-cell'+(on ? ' on' : '')+(isWeekend(d) ? ' we' : '')+'"><button type="button" class="st-toggle" data-id="'+m.id+'" data-day="'+d+'" aria-pressed="'+on+'" aria-label="'+esc(m.name)+', '+d+'">'+(on ? '✓' : '')+'</button></td>';
       }
       html += '<tr class="'+(m.active === false ? 'st-inactive' : '')+'"><td class="st-name"><b>'+esc(m.name)+'</b> <span class="st-role">'+esc(m.role)+'</span>'+(m.active === false ? ' <span class="st-role">не работает</span>' : '')+' <button type="button" class="st-edit" data-id="'+m.id+'" title="Изменить сотрудника" aria-label="Изменить: '+esc(m.name)+'">✎</button></td>' +
-        '<td class="num st-sum">'+sh+'</td>' + (unlocked ? '<td class="num st-sum">'+Math.round(rate).toLocaleString('ru-RU')+' ₸</td><td class="num st-sum"><b>'+pay.toLocaleString('ru-RU')+' ₸</b>'+(procPay ? '<div class="st-sale" title="Ставка не задана: сумма берётся из выплат «ЗП персонала …» в Закупе">из закупа</div>' : '')+(saleSum ? '<div class="st-sale" title="Процент с продажи продукции добавлен к зарплате">% с продаж +'+Math.round(saleSum).toLocaleString('ru-RU')+' ₸</div>' : '')+(fineSum ? '<div class="st-fine" title="Штрафы за месяц вычтены из зарплаты">штраф −'+Math.round(fineSum).toLocaleString('ru-RU')+' ₸</div>' : '')+'</td>' : '') + cells + '</tr>';
+        '<td class="num st-sum">'+sh+'</td>' + (unlocked ? '<td class="num st-sum"><b>'+pay.toLocaleString('ru-RU')+' ₸</b>'+(saleSum ? '<div class="st-sale" title="Процент с продажи продукции: выплачивается вместе с зарплатой через Закуп">% с продаж '+Math.round(saleSum).toLocaleString('ru-RU')+' ₸</div>' : '')+(fineSum ? '<div class="st-fine" title="Штрафы за месяц: учтите при выплате через Закуп">штраф '+Math.round(fineSum).toLocaleString('ru-RU')+' ₸</div>' : '')+'</td>' : '') + cells + '</tr>';
     }
     // ---- «на смене» ----
-    let foot = '<tr class="total-row"><td class="st-name">Персонал · итого / на смене</td><td class="num st-sum">'+totalShifts+'</td>' + (unlocked ? '<td class="num st-sum"></td><td class="num st-sum"><b>'+totalPay.toLocaleString('ru-RU')+' ₸</b></td>' : '');
+    let foot = '<tr class="total-row"><td class="st-name">Персонал · итого / на смене</td><td class="num st-sum">'+totalShifts+'</td>' + (unlocked ? '<td class="num st-sum"><b>'+procItems.reduce((a, x) => a + x.sum, 0).toLocaleString('ru-RU')+' ₸</b></td>' : '');
     for(let d = 1; d <= days; d++) foot += '<td class="st-cell'+(isWeekend(d) ? ' we' : '')+'"><span class="st-count">'+(onShift[d] || '')+'</span></td>';
     foot += '</tr>';
     document.getElementById('staffBody').innerHTML = html + foot;
@@ -6357,7 +6355,7 @@
     const parts = pr.map(r => r.role + ' ' + Math.round(pnlM[r.key]).toLocaleString('ru-RU') + ' ₸');
     const sumP = pr.reduce((a, r) => a + (Number(pnlM[r.key]) || 0), 0);
     document.getElementById('staffSummary').textContent = unlocked
-      ? (parts.length ? 'ЗП персонала за месяц: ' + Math.round(sumP).toLocaleString('ru-RU') + ' ₸ · идёт в P&L (' + parts.join(', ') + ')' : 'Смен персонала в этом месяце нет.')
+      ? (parts.length ? 'Выплачено персоналу за месяц: ' + Math.round(sumP).toLocaleString('ru-RU') + ' ₸ · идёт в P&L (' + parts.join(', ') + ')' : 'Выплат персоналу через Закуп в этом месяце нет.')
       : (totalShifts ? 'Смен персонала: ' + totalShifts : '');
     renderSalonProfitTile();
     renderPayroll();
@@ -6596,7 +6594,6 @@
     row.hidden = false;
     document.getElementById('staffName').value = member ? member.name : '';
     document.getElementById('staffRole').value = member ? member.role : STAFF_ROLES[0].role;
-    document.getElementById('staffRate').value = member ? (Number(member.rate) || '') : '';
     document.getElementById('staffSave').textContent = member ? 'Сохранить' : 'Добавить';
     document.getElementById('staffAddToggle').textContent = member ? 'Добавить сотрудника' : 'Добавить сотрудника';
     // удалить / убрать — только при правке
@@ -6623,13 +6620,11 @@
     const name = nameEl.value.trim();
     if(!name){ nameEl.focus(); return; }
     const role = document.getElementById('staffRole').value;
-    const rateEl = document.getElementById('staffRate');
-    const rate = Math.max(0, Math.round(Number(rateEl.value) || 0));
     if(staffEditingId){
       const m = dayClose.staff.members.find(x => x.id === staffEditingId);
-      if(m){ m.name = name; m.role = role; if(state.pnlUnlocked) m.rate = rate; }
+      if(m){ m.name = name; m.role = role; }
     } else {
-      dayClose.staff.members.push({ id: 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name, role, rate: state.pnlUnlocked ? rate : 0, active: true });
+      dayClose.staff.members.push({ id: 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name, role, rate: 0, active: true });
     }
     closeStaffForm();
     renderStaff();
@@ -6937,30 +6932,17 @@
   }
   function buildPnlMonth(monthStr){
     const computed = buildPnlComputed(monthStr);
-    // Зарплата персонала по сменам из вкладки «Персонал» заменяет ручной ввод в соответствующих строках.
-    const staffLines = staffPayLines(monthStr);
-    const fixed = Object.assign({}, state.pnlFixed[monthStr] || PNL_EMPTY_MONTH, staffLines.values);
-    for(const k in staffLines.loose) fixed[k] = (Number(fixed[k]) || 0) - staffLines.loose[k];
-    // Выплаты через Закуп («ЗП персонала админ Гульмира»): если у сотрудника есть начисление по сменам и ставке —
-    // выплата уже учтена в нём, иначе (ставка не задана) в P&L идёт сумма выплаты. Выплата без имени сотрудника
-    // идёт в строку, только если по этой должности нет начислений по сменам.
-    const fromProc = {}, procExtra = {};
-    const members = Object.keys(staffLines.perMember).map(id => staffLines.perMember[id])
-      .sort((a, b) => b.name.length - a.name.length);
-    for(const it of computed.payItems){
-      const low = it.item.toLowerCase();
-      const who = members.find(m => m.key === it.key && low.indexOf(String(m.name).toLowerCase()) >= 0);
-      if(who ? who.pay > 0 : (staffLines.values[it.key] || 0) > 0) continue;
-      procExtra[it.key] = (procExtra[it.key] || 0) + it.sum;
-    }
-    for(const k in procExtra){ if(procExtra[k] > 0){ fixed[k] = (staffLines.keys[k] ? (Number(fixed[k]) || 0) : 0) + procExtra[k]; fromProc[k] = true; } }
+    const fixed = Object.assign({}, state.pnlFixed[monthStr] || PNL_EMPTY_MONTH);
+    // Зарплата персонала = выплаты «ЗП персонала …» из Закупа за месяц; строка без таких выплат остаётся ручной.
+    const fromProc = {};
+    for(const it of computed.payItems){ fixed[it.key] = (fromProc[it.key] ? fixed[it.key] : 0) + it.sum; fromProc[it.key] = true; }
     const opex = computed.masterPay + fixed.adminSalary + fixed.techSalary + fixed.accountantSalary + fixed.smmSalary
       + computed.procSalon + computed.procProduct + computed.procConsumables
       + fixed.rent + fixed.utilities + fixed.internet + fixed.security
       + fixed.adsGeneral + fixed.ads2gis + fixed.adsInstagram;
     const gross = computed.prihod - opex;
     const net = gross - fixed.taxes - fixed.bankCommission;
-    return Object.assign({}, computed, fixed, { opex, net, fromStaff: Object.assign({}, staffLines.keys, fromProc) });
+    return Object.assign({}, computed, fixed, { opex, net, fromStaff: fromProc });
   }
   function pnlFmt(n){ return Math.round(n || 0).toLocaleString('ru-RU'); }
   const PNL_EDITABLE = ['adminSalary','techSalary','accountantSalary','smmSalary','rent','utilities','internet','security','adsGeneral','ads2gis','adsInstagram','taxes','bankCommission'];
@@ -7116,7 +7098,7 @@
 
     function valueCell(key, m){
       if(m.data.fromStaff && m.data.fromStaff[key]){
-        return '<td class="num pnl-auto" title="'+(m.data.payItems && m.data.payItems.some(x => x.key === key) ? 'Смены × ставка из вкладки «Персонал» плюс выплаты «ЗП персонала …» из Закупа' : 'Считается из вкладки «Персонал»: смены × ставка')+'">'+pnlFmt(m.data[key])+' <small>⏱</small></td>';
+        return '<td class="num pnl-auto" title="'+(m.data.payItems && m.data.payItems.some(x => x.key === key) ? 'Сумма выплат «ЗП персонала …» из Закупа за месяц' : 'Из Закупа')+'">'+pnlFmt(m.data[key])+' <small>⏱</small></td>';
       }
       if(PNL_EDITABLE.includes(key)){
         return '<td class="num"><input type="text" inputmode="numeric" class="pnl-input" data-month="'+m.key+'" data-field="'+key+'" value="'+pnlFmt(m.data[key])+'"></td>';
