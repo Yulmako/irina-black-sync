@@ -302,7 +302,12 @@
   .pay-table{min-width:1000px;}
   #payScroll{max-height:75vh; overflow:auto; overscroll-behavior:contain;}
   #payScroll thead th{z-index:4;}
-  .pay-members{padding:8px 10px 2px; font-size:12.5px; color:var(--muted);} .pay-members b{color:var(--ink); font-weight:600;}
+  .pay-day-row td{background:var(--bg); font-size:13px; padding-top:7px; padding-bottom:7px;}
+  .pay-table .pay-day-row td.st-name{background:var(--bg); padding-left:30px;}
+  .pay-table .pay-day-row.has-reason td{border-bottom:none;}
+  .pay-table .pay-reason-row td{font-size:12px; color:var(--muted); text-align:left; padding:0 10px 7px 30px; border-top:none; white-space:normal;}
+  .pay-day-row .pay-reasons{display:block; font-size:11.5px; color:var(--muted); white-space:normal; text-align:right; max-width:200px; margin-left:auto;}
+  .pay-members-row td{font-size:12.5px; color:var(--muted); text-align:left; padding-left:30px;} .pay-members-row b{color:var(--ink); font-weight:600;}
   .pay-table th.st-name, .pay-table td.st-name{text-align:left; white-space:nowrap; min-width:150px;}
   .pay-table th.st-name, .pay-table td.st-name{position:sticky; left:0; z-index:2; background:var(--surface); box-shadow:1px 0 0 var(--border);}
   .pay-table thead th.st-name{background:var(--surface-2); z-index:3;}
@@ -6420,21 +6425,30 @@
         '<td class="pay-act">' + (Math.abs(due) >= 0.5 ? '<button type="button" class="pay-mini" data-act="paid-all" data-members="'+esc(JSON.stringify(e.members))+'">Выплачено</button> ' : '') +
           (anyPaid ? '<button type="button" class="pay-mini undo" data-act="unpaid-all" data-members="'+esc(JSON.stringify(e.members))+'" title="Снять отметки «Выплачено» за период">Снять</button>' : '') + '</td></tr>';
       if(open){
-        let d = '<div class="pay-days-wrap"><table class="pay-days"><thead><tr><th>День</th><th class="num">Услуг</th><th class="num">Выручка</th><th class="num">Расходники</th><th class="num">ЗП за услуги</th><th class="num">% с продаж</th><th class="num">Чаевые</th><th class="num">Вычеты</th><th class="num">Итого за день</th><th>Статус</th></tr></thead><tbody>';
+        // Строки по дням — в тех же колонках, что и итог по мастеру, поэтому цифры стоят строго друг под другом.
+        const mem = esc(JSON.stringify(e.members));
         for(const x of e.days){
           const wd = WD_SHORT[parseYmd(x.date).getDay()];
-          const reasons = x.adj.map(a => (e.multi ? esc(a.master) + ': ' : '') + (a.kind === 'fine' ? 'Вычет' : 'Чаевые') + ' ' + (a.kind === 'fine' ? '−' : '+') + Math.round(a.amount).toLocaleString('ru-RU') + ' ₸' + (a.note ? ' · ' + esc(a.note) : '')).join('<br>');
-          let st;
-          if(!x.paid) st = Math.abs(x.pay) < 0.5 ? '<span class="cd-status-note">нечего выплачивать</span>' : '<button type="button" class="pay-mini" data-act="paid-day" data-members="'+esc(JSON.stringify(e.members))+'" data-date="'+x.date+'">Выплачено</button>';
-          else if(Math.abs(Number(x.paid.amount) - x.pay) < 0.5) st = '<span class="pay-ok">✓ выплачено '+fmtShortDate(x.paid.on)+'</span> <button type="button" class="pay-mini undo" data-act="unpaid-day" data-members="'+esc(JSON.stringify(e.members))+'" data-date="'+x.date+'">Снять</button>';
-          else st = '<span class="pay-st-chg" title="Сумма за день изменилась после отметки">выплачено '+payFmt(x.paid.amount)+' ('+fmtShortDate(x.paid.on)+'), сейчас '+payFmt(x.pay)+'</span> <button type="button" class="pay-mini" data-act="paid-day" data-members="'+esc(JSON.stringify(e.members))+'" data-date="'+x.date+'" title="Принять текущую сумму как выплаченную">Обновить</button> <button type="button" class="pay-mini undo" data-act="unpaid-day" data-members="'+esc(JSON.stringify(e.members))+'" data-date="'+x.date+'">Снять</button>';
-          d += '<tr><td>'+fmtShortDate(x.date)+' <span class="cd-status-note">'+wd+'</span></td><td class="num">'+x.count+'</td><td class="num">'+payFmt(x.revenue)+'</td><td class="num">'+payFmt(x.cons)+'</td><td class="num">'+payFmt(x.share)+'</td>' +
-            '<td class="num">'+(x.prodComm ? payFmt(x.prodComm) : '—')+'</td><td class="num">'+(x.tip ? '+'+payFmt(x.tip) : '—')+'</td>' +
-            '<td class="num '+(x.fine ? 'pay-fine' : '')+'">'+(x.fine ? '−'+payFmt(x.fine) : '—')+(reasons ? '<span class="pay-reasons">'+reasons+'</span>' : '')+'</td>' +
-            '<td class="num"><b>'+payFmt(x.pay)+'</b></td><td>'+st+'</td></tr>';
+          const reasons = x.adj.map(a => (e.multi ? esc(a.master) + ': ' : '') + (a.kind === 'fine' ? 'Вычет' : 'Чаевые') + ' ' + (a.kind === 'fine' ? '−' : '+') + Math.round(a.amount).toLocaleString('ru-RU') + ' ₸' + (a.note ? ' · ' + esc(a.note) : '')).join('; ');
+          const paidAmt = x.paid ? Number(x.paid.amount) || 0 : 0, dueDay = x.pay - paidAmt;
+          const same = x.paid && Math.abs(paidAmt - x.pay) < 0.5;
+          let act;
+          if(!x.paid) act = Math.abs(x.pay) < 0.5 ? '<span class="cd-status-note">нечего выплачивать</span>' : '<button type="button" class="pay-mini" data-act="paid-day" data-members="'+mem+'" data-date="'+x.date+'">Выплачено</button>';
+          else if(same) act = '<button type="button" class="pay-mini undo" data-act="unpaid-day" data-members="'+mem+'" data-date="'+x.date+'">Снять</button>';
+          else act = '<button type="button" class="pay-mini" data-act="paid-day" data-members="'+mem+'" data-date="'+x.date+'" title="Принять текущую сумму как выплаченную">Обновить</button> <button type="button" class="pay-mini undo" data-act="unpaid-day" data-members="'+mem+'" data-date="'+x.date+'">Снять</button>';
+          html += '<tr class="pay-day-row'+(reasons ? ' has-reason' : '')+'">' +
+            '<td class="st-name pay-day-name">'+fmtShortDate(x.date)+' <span class="cd-status-note">'+wd+'</span></td>' +
+            '<td class="num"></td><td class="num">'+x.count+'</td><td class="num">'+payFmt(x.revenue)+'</td><td class="num">'+payFmt(x.cons)+'</td>' +
+            '<td class="num">'+payFmt(x.share)+'</td><td class="num">'+(x.prodComm ? payFmt(x.prodComm) : '—')+'</td>' +
+            '<td class="num">'+(x.tip ? '+'+payFmt(x.tip) : '—')+'</td>' +
+            '<td class="num '+(x.fine ? 'pay-fine' : '')+'">'+(x.fine ? '−'+payFmt(x.fine) : '—')+'</td>' +
+            '<td class="num"><b>'+payFmt(x.pay)+'</b></td>' +
+            '<td class="num '+(x.paid ? 'pay-ok' : '')+'">'+(x.paid ? payFmt(paidAmt)+'<span class="pay-reasons">'+fmtShortDate(x.paid.on)+'</span>' : '—')+'</td>' +
+            '<td class="num pay-due">'+(Math.abs(dueDay) < 0.5 ? '<span class="pay-ok">✓ 0 ₸</span>' : '<span'+(x.paid ? ' class="pay-st-chg" title="Сумма за день изменилась после отметки"' : '')+'>'+payFmt(dueDay)+'</span>')+'</td>' +
+            '<td class="pay-act">'+act+'</td></tr>';
+          if(reasons) html += '<tr class="pay-day-row pay-reason-row"><td colspan="13">'+reasons+'</td></tr>';
         }
-        d += '</tbody></table>' + (e.multi ? '<div class="pay-members">В том числе: ' + e.parts.map(q => '<b>'+esc(q.name)+'</b> '+payFmt(q.t.pay)+(q.t.paid ? ' (выплачено '+payFmt(q.t.paid)+')' : '')).join(' · ') + '</div>' : '') + '</div>';
-        html += '<tr class="pay-detail"><td colspan="13">'+d+'</td></tr>';
+        if(e.multi) html += '<tr class="pay-day-row pay-members-row"><td colspan="13">В том числе: ' + e.parts.map(q => '<b>'+esc(q.name)+'</b> '+payFmt(q.t.pay)+(q.t.paid ? ' (выплачено '+payFmt(q.t.paid)+')' : '')).join(' · ') + '</td></tr>';
       }
     }
     if(!masters.length) html = '<tr><td colspan="13" class="st-empty">За этот период нет закрытых дней с завершёнными услугами.</td></tr>';
