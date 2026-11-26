@@ -6213,6 +6213,27 @@
     }
     return { values, keys, loose, perMember };
   }
+  // Выплаты «ЗП персонала …» из Закупа за месяц и доля конкретного сотрудника (если ставка не задана и начисления нет).
+  function staffProcPayItems(monthStr){
+    const out = [];
+    for(const date in dayClose.procurement){
+      if(date.slice(0,7) !== monthStr) continue;
+      for(const p of dayClose.procurement[date]){
+        if(!isPayrollProc(p)) continue;
+        const key = payrollProcKey(p);
+        if(key) out.push({ key, item: String(p.item || ''), sum: p.qty * p.unitCost });
+      }
+    }
+    return out;
+  }
+  function staffMemberProcPay(m, accrued, items){
+    if(accrued > 0) return 0;
+    const k = staffRoleKey(m.role), nm = String(m.name || '').toLowerCase();
+    if(!k || !nm) return 0;
+    let sum = 0;
+    for(const it of items) if(it.key === k && it.item.toLowerCase().indexOf(nm) >= 0) sum += it.sum;
+    return sum;
+  }
   // мастера: имя -> Set(дней месяца с записями)
   function masterWorkDays(monthStr){
     const map = new Map();
@@ -6309,8 +6330,11 @@
     html += '<tr class="cat-row"><td colspan="'+(days + 1 + tailCols)+'"><span class="zone-sticky">Персонал · график вносите вы</span></td></tr>';
     if(!members.length) html += '<tr><td colspan="'+(days + 1 + tailCols)+'" class="st-empty">Сотрудников пока нет. Нажмите «Добавить сотрудника».</td></tr>';
     let totalPay = 0, totalShifts = 0;
+    const procItems = staffProcPayItems(staffMonth);
     for(const m of members){
-      const sh = counts[m.id] || 0, rate = Number(m.rate) || 0, fineSum = staffMonthFine(staffMonth, m.id), saleSum = staffMonthSaleComm(staffMonth, m), pay = Math.round(sh * rate) - fineSum + saleSum;
+      const sh = counts[m.id] || 0, rate = Number(m.rate) || 0, fineSum = staffMonthFine(staffMonth, m.id), saleSum = staffMonthSaleComm(staffMonth, m);
+      const accrued = Math.round(sh * rate) - fineSum + saleSum;
+      const procPay = staffMemberProcPay(m, accrued, procItems), pay = accrued + procPay;
       totalPay += pay; totalShifts += sh;
       let cells = '';
       for(let d = 1; d <= days; d++){
@@ -6319,7 +6343,7 @@
         cells += '<td class="st-cell'+(on ? ' on' : '')+(isWeekend(d) ? ' we' : '')+'"><button type="button" class="st-toggle" data-id="'+m.id+'" data-day="'+d+'" aria-pressed="'+on+'" aria-label="'+esc(m.name)+', '+d+'">'+(on ? '✓' : '')+'</button></td>';
       }
       html += '<tr class="'+(m.active === false ? 'st-inactive' : '')+'"><td class="st-name"><b>'+esc(m.name)+'</b> <span class="st-role">'+esc(m.role)+'</span>'+(m.active === false ? ' <span class="st-role">не работает</span>' : '')+' <button type="button" class="st-edit" data-id="'+m.id+'" title="Изменить сотрудника" aria-label="Изменить: '+esc(m.name)+'">✎</button></td>' +
-        '<td class="num st-sum">'+sh+'</td>' + (unlocked ? '<td class="num st-sum">'+Math.round(rate).toLocaleString('ru-RU')+' ₸</td><td class="num st-sum"><b>'+pay.toLocaleString('ru-RU')+' ₸</b>'+(saleSum ? '<div class="st-sale" title="Процент с продажи продукции добавлен к зарплате">% с продаж +'+Math.round(saleSum).toLocaleString('ru-RU')+' ₸</div>' : '')+(fineSum ? '<div class="st-fine" title="Штрафы за месяц вычтены из зарплаты">штраф −'+Math.round(fineSum).toLocaleString('ru-RU')+' ₸</div>' : '')+'</td>' : '') + cells + '</tr>';
+        '<td class="num st-sum">'+sh+'</td>' + (unlocked ? '<td class="num st-sum">'+Math.round(rate).toLocaleString('ru-RU')+' ₸</td><td class="num st-sum"><b>'+pay.toLocaleString('ru-RU')+' ₸</b>'+(procPay ? '<div class="st-sale" title="Ставка не задана: сумма берётся из выплат «ЗП персонала …» в Закупе">из закупа</div>' : '')+(saleSum ? '<div class="st-sale" title="Процент с продажи продукции добавлен к зарплате">% с продаж +'+Math.round(saleSum).toLocaleString('ru-RU')+' ₸</div>' : '')+(fineSum ? '<div class="st-fine" title="Штрафы за месяц вычтены из зарплаты">штраф −'+Math.round(fineSum).toLocaleString('ru-RU')+' ₸</div>' : '')+'</td>' : '') + cells + '</tr>';
     }
     // ---- «на смене» ----
     let foot = '<tr class="total-row"><td class="st-name">Персонал · итого / на смене</td><td class="num st-sum">'+totalShifts+'</td>' + (unlocked ? '<td class="num st-sum"></td><td class="num st-sum"><b>'+totalPay.toLocaleString('ru-RU')+' ₸</b></td>' : '');
@@ -6328,10 +6352,12 @@
     document.getElementById('staffBody').innerHTML = html + foot;
 
     // сводка по P&L
-    const lines = staffPayLines(staffMonth);
-    const parts = STAFF_ROLES.filter(r => lines.keys[r.key]).map(r => r.role + ' ' + Math.round(lines.values[r.key]).toLocaleString('ru-RU') + ' ₸');
+    const pnlM = unlocked ? buildPnlMonth(staffMonth) : null;
+    const pr = unlocked ? STAFF_ROLES.filter(r => pnlM.fromStaff && pnlM.fromStaff[r.key]) : [];
+    const parts = pr.map(r => r.role + ' ' + Math.round(pnlM[r.key]).toLocaleString('ru-RU') + ' ₸');
+    const sumP = pr.reduce((a, r) => a + (Number(pnlM[r.key]) || 0), 0);
     document.getElementById('staffSummary').textContent = unlocked
-      ? (totalPay ? 'ЗП персонала за месяц: ' + totalPay.toLocaleString('ru-RU') + ' ₸ · идёт в P&L (' + parts.join(', ') + ')' : 'Смен персонала в этом месяце нет.')
+      ? (parts.length ? 'ЗП персонала за месяц: ' + Math.round(sumP).toLocaleString('ru-RU') + ' ₸ · идёт в P&L (' + parts.join(', ') + ')' : 'Смен персонала в этом месяце нет.')
       : (totalShifts ? 'Смен персонала: ' + totalShifts : '');
     renderSalonProfitTile();
     renderPayroll();
