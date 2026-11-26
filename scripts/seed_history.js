@@ -141,8 +141,14 @@ async function replaceOctober(existing) {
     if (part.length < 1000) break;
   }
   const backup = { done: true, at: new Date().toISOString(), procurement: {}, prices: {}, consumables: {}, serviceStatus: {} };
+  // «ЗП персонала …» — зарплатные позиции, внесённые вручную в Закуп; в таблице их нет, поэтому сохраняем.
+  const isPay = p => (p.category || 'Расходники') === 'Салон' && /^\s*зп\s+персонала(\s|$)/i.test(String(p.item || ''));
   for (const date of Object.keys(dc.procurement || {})) {
-    if (date.startsWith('2026-10')) { backup.procurement[date] = dc.procurement[date]; delete dc.procurement[date]; }
+    if (!date.startsWith('2026-10')) continue;
+    backup.procurement[date] = dc.procurement[date];
+    const keep = (dc.procurement[date] || []).filter(isPay);
+    if (keep.length) dc.procurement[date] = ((KV.day_close.procurement || {})[date] || []).concat(keep);
+    else delete dc.procurement[date];
   }
   for (const field of ['prices', 'consumables', 'serviceStatus']) {
     for (const id of ids) {
