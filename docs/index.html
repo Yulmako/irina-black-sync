@@ -6200,16 +6200,18 @@
   }
   function staffPayLines(monthStr){
     const counts = staffMonthShiftCounts(monthStr);
-    const values = {}, keys = {}, loose = {};
+    const values = {}, keys = {}, loose = {}, perMember = {};
     for(const m of dayClose.staff.members){
       const n = counts[m.id] || 0, k = staffRoleKey(m.role);
       const fine = staffMonthFine(monthStr, m.id) - staffMonthSaleComm(monthStr, m);   // штрафы минус процент с продаж
       if(!k) continue;
       if(!n){ if(fine) loose[k] = (loose[k] || 0) + fine; continue; }   // смен нет — поправку применим к ручной строке P&L
-      values[k] = (values[k] || 0) + Math.round(n * (Number(m.rate) || 0)) - fine;
+      const pay = Math.round(n * (Number(m.rate) || 0)) - fine;
+      values[k] = (values[k] || 0) + pay;
+      perMember[m.id] = { key: k, pay, name: m.name };
       keys[k] = true;
     }
-    return { values, keys, loose };
+    return { values, keys, loose, perMember };
   }
   // мастера: имя -> Set(дней месяца с записями)
   function masterWorkDays(monthStr){
@@ -6851,7 +6853,7 @@
     const { from, to } = pnlMonthRange(monthStr);
     let revenue = 0, consumablesRevenue = 0, masterPay = 0, salesRevenue = 0;
     let procSalon = 0, procProduct = 0, procConsumables = 0;
-    const payProc = {};      // выплаты зарплаты персоналу через Закуп: строка P&L -> сумма
+    const payItems = [];     // выплаты зарплаты персоналу через Закуп: { key, item, sum }
     for(const b of state.bookings){
       const date = dayStr(b.start);
       if(date < from || date > to) continue;
@@ -6883,7 +6885,7 @@
       for(const p of dayClose.procurement[date]){
         if(isPayrollProc(p)){
           const pk = payrollProcKey(p);
-          if(pk) payProc[pk] = (payProc[pk] || 0) + p.qty * p.unitCost;
+          if(pk) payItems.push({ key: pk, item: String(p.item || ''), sum: p.qty * p.unitCost });
           continue;
         }
         const sum = p.qty * p.unitCost;
@@ -6904,7 +6906,7 @@
       fromUslug: revenue - consumablesRevenue,
       productSales, fromConsumables: consumablesRevenue,
       prihod: revenue + salesRevenue,
-      masterPay, procSalon, procProduct, procConsumables, payProc,
+      masterPay, procSalon, procProduct, procConsumables, payItems,
     };
   }
   function buildPnlMonth(monthStr){
@@ -6913,9 +6915,19 @@
     const staffLines = staffPayLines(monthStr);
     const fixed = Object.assign({}, state.pnlFixed[monthStr] || PNL_EMPTY_MONTH, staffLines.values);
     for(const k in staffLines.loose) fixed[k] = (Number(fixed[k]) || 0) - staffLines.loose[k];
-    // Зарплата, фактически выплаченная через Закуп («ЗП персонала …»), заменяет расчёт по сменам для этой должности.
-    const fromProc = {};
-    for(const k in computed.payProc){ if(computed.payProc[k] > 0){ fixed[k] = computed.payProc[k]; fromProc[k] = true; } }
+    // Выплаты через Закуп («ЗП персонала админ Гульмира»): если у сотрудника есть начисление по сменам и ставке —
+    // выплата уже учтена в нём, иначе (ставка не задана) в P&L идёт сумма выплаты. Выплата без имени сотрудника
+    // идёт в строку, только если по этой должности нет начислений по сменам.
+    const fromProc = {}, procExtra = {};
+    const members = Object.keys(staffLines.perMember).map(id => staffLines.perMember[id])
+      .sort((a, b) => b.name.length - a.name.length);
+    for(const it of computed.payItems){
+      const low = it.item.toLowerCase();
+      const who = members.find(m => m.key === it.key && low.indexOf(String(m.name).toLowerCase()) >= 0);
+      if(who ? who.pay > 0 : (staffLines.values[it.key] || 0) > 0) continue;
+      procExtra[it.key] = (procExtra[it.key] || 0) + it.sum;
+    }
+    for(const k in procExtra){ if(procExtra[k] > 0){ fixed[k] = (staffLines.keys[k] ? (Number(fixed[k]) || 0) : 0) + procExtra[k]; fromProc[k] = true; } }
     const opex = computed.masterPay + fixed.adminSalary + fixed.techSalary + fixed.accountantSalary + fixed.smmSalary
       + computed.procSalon + computed.procProduct + computed.procConsumables
       + fixed.rent + fixed.utilities + fixed.internet + fixed.security
@@ -7078,7 +7090,7 @@
 
     function valueCell(key, m){
       if(m.data.fromStaff && m.data.fromStaff[key]){
-        return '<td class="num pnl-auto" title="'+(m.data.payProc && m.data.payProc[key] > 0 ? 'Сумма выплат «ЗП персонала …» из Закупа за месяц' : 'Считается из вкладки «Персонал»: смены × ставка')+'">'+pnlFmt(m.data[key])+' <small>⏱</small></td>';
+        return '<td class="num pnl-auto" title="'+(m.data.payItems && m.data.payItems.some(x => x.key === key) ? 'Смены × ставка из вкладки «Персонал» плюс выплаты «ЗП персонала …» из Закупа' : 'Считается из вкладки «Персонал»: смены × ставка')+'">'+pnlFmt(m.data[key])+' <small>⏱</small></td>';
       }
       if(PNL_EDITABLE.includes(key)){
         return '<td class="num"><input type="text" inputmode="numeric" class="pnl-input" data-month="'+m.key+'" data-field="'+key+'" value="'+pnlFmt(m.data[key])+'"></td>';
