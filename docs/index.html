@@ -295,6 +295,9 @@
   .pay-custom{display:flex; gap:10px; align-items:center; font-size:13px; color:var(--muted);}
   .pay-custom input{font:inherit; padding:5px 8px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--ink);}
   .pay-table{min-width:1000px;}
+  #payScroll{max-height:75vh; overflow:auto; overscroll-behavior:contain;}
+  #payScroll thead th{z-index:4;}
+  .pay-members{padding:8px 10px 2px; font-size:12.5px; color:var(--muted);} .pay-members b{color:var(--ink); font-weight:600;}
   .pay-table th.st-name, .pay-table td.st-name{text-align:left; white-space:nowrap; min-width:150px;}
   .pay-table th.st-name, .pay-table td.st-name{position:sticky; left:0; z-index:2; background:var(--surface); box-shadow:1px 0 0 var(--border);}
   .pay-table thead th.st-name{background:var(--surface-2); z-index:3;}
@@ -2355,6 +2358,7 @@
       state.botStatus = new Map((rows || []).map(r => [botKey(r.master), { last_login: r.last_login, password: r.password || null }]));
     }catch(e){ state.botStatus = null; }
     if(state.tab === 'masters' && !state.botEditing) renderMasters();
+    try{ if(state.pnlUnlocked) renderPayroll(); }catch(e){}
   }
   async function saveBotPassword(name, pw){
     try{
@@ -6317,6 +6321,7 @@
   // ---------------------------------------------------------------------
   const payP = { mode: 'month', anchor: null, from: '', to: '' };
   const payOpen = new Set();
+  let payBotAsked = false;
   const ymd = d => d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
   const parseYmd = str => { const [y, m, d] = str.split('-').map(Number); return new Date(y, m - 1, d); };
   function payRange(){
@@ -6390,38 +6395,40 @@
     const r = payRange();
     if(custom){ document.getElementById('payFrom').value = r.from; document.getElementById('payTo').value = r.to; }
     document.getElementById('payLabel').textContent = payLabel(r);
+    if(state.botStatus === undefined && !payBotAsked){ payBotAsked = true; loadBotStatus(); }
     const { byMaster, unclosed } = buildPayroll(r.from, r.to);
     const masters = Array.from(byMaster.values()).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+    const units = payUnits(masters);
     let html = '', sumPay = 0, sumPaid = 0;
     const tot = { days: 0, count: 0, revenue: 0, cons: 0, share: 0, prodComm: 0, tip: 0, fine: 0, pay: 0, paid: 0 };
-    for(const e of masters){
-      const t = e.t, due = t.pay - t.paid, open = payOpen.has(e.name);
+    for(const e of units){
+      const t = e.t, due = t.pay - t.paid, open = payOpen.has(e.key);
       for(const k in tot) tot[k] += t[k];
       const anyPaid = e.days.some(d => d.paid);
-      html += '<tr class="pay-master" data-master="'+esc(e.name)+'">' +
-        '<td class="st-name"><span class="pay-caret">'+(open ? '▾' : '▸')+'</span><b>'+esc(e.name)+'</b></td>' +
+      html += '<tr class="pay-master" data-master="'+esc(e.key)+'">' +
+        '<td class="st-name"><span class="pay-caret">'+(open ? '▾' : '▸')+'</span><b>'+esc(e.label)+'</b>'+(e.multi ? ' <span class="cd-status-note" title="У этих мастеров один пароль кабинета — выплаты считаются вместе">общий кабинет</span>' : '')+'</td>' +
         '<td class="num">'+t.days+'</td><td class="num">'+t.count+'</td><td class="num">'+payFmt(t.revenue)+'</td><td class="num">'+payFmt(t.cons)+'</td>' +
         '<td class="num">'+payFmt(t.share)+'</td><td class="num">'+(t.prodComm ? payFmt(t.prodComm) : '—')+'</td>' +
         '<td class="num">'+(t.tip ? '+'+payFmt(t.tip) : '—')+'</td><td class="num '+(t.fine ? 'pay-fine' : '')+'">'+(t.fine ? '−'+payFmt(t.fine) : '—')+'</td>' +
         '<td class="num"><b>'+payFmt(t.pay)+'</b></td><td class="num '+(t.paid ? 'pay-ok' : '')+'">'+(t.paid ? payFmt(t.paid) : '—')+'</td>' +
         '<td class="num pay-due">'+(Math.abs(due) < 0.5 ? '<span class="pay-ok">✓ 0 ₸</span>' : payFmt(due))+'</td>' +
-        '<td class="pay-act">' + (Math.abs(due) >= 0.5 ? '<button type="button" class="pay-mini" data-act="paid-all" data-master="'+esc(e.name)+'">Выплачено</button> ' : '') +
-          (anyPaid ? '<button type="button" class="pay-mini undo" data-act="unpaid-all" data-master="'+esc(e.name)+'" title="Снять отметки «Выплачено» за период">Снять</button>' : '') + '</td></tr>';
+        '<td class="pay-act">' + (Math.abs(due) >= 0.5 ? '<button type="button" class="pay-mini" data-act="paid-all" data-members="'+esc(JSON.stringify(e.members))+'">Выплачено</button> ' : '') +
+          (anyPaid ? '<button type="button" class="pay-mini undo" data-act="unpaid-all" data-members="'+esc(JSON.stringify(e.members))+'" title="Снять отметки «Выплачено» за период">Снять</button>' : '') + '</td></tr>';
       if(open){
         let d = '<div class="pay-days-wrap"><table class="pay-days"><thead><tr><th>День</th><th class="num">Услуг</th><th class="num">Выручка</th><th class="num">Расходники</th><th class="num">ЗП за услуги</th><th class="num">% с продаж</th><th class="num">Чаевые</th><th class="num">Вычеты</th><th class="num">Итого за день</th><th>Статус</th></tr></thead><tbody>';
         for(const x of e.days){
           const wd = WD_SHORT[parseYmd(x.date).getDay()];
-          const reasons = x.adj.map(a => (a.kind === 'fine' ? 'Вычет' : 'Чаевые') + ' ' + (a.kind === 'fine' ? '−' : '+') + Math.round(a.amount).toLocaleString('ru-RU') + ' ₸' + (a.note ? ' · ' + esc(a.note) : '')).join('<br>');
+          const reasons = x.adj.map(a => (e.multi ? esc(a.master) + ': ' : '') + (a.kind === 'fine' ? 'Вычет' : 'Чаевые') + ' ' + (a.kind === 'fine' ? '−' : '+') + Math.round(a.amount).toLocaleString('ru-RU') + ' ₸' + (a.note ? ' · ' + esc(a.note) : '')).join('<br>');
           let st;
-          if(!x.paid) st = Math.abs(x.pay) < 0.5 ? '<span class="cd-status-note">нечего выплачивать</span>' : '<button type="button" class="pay-mini" data-act="paid-day" data-master="'+esc(e.name)+'" data-date="'+x.date+'">Выплачено</button>';
-          else if(Math.abs(Number(x.paid.amount) - x.pay) < 0.5) st = '<span class="pay-ok">✓ выплачено '+fmtShortDate(x.paid.on)+'</span> <button type="button" class="pay-mini undo" data-act="unpaid-day" data-master="'+esc(e.name)+'" data-date="'+x.date+'">Снять</button>';
-          else st = '<span class="pay-st-chg" title="Сумма за день изменилась после отметки">выплачено '+payFmt(x.paid.amount)+' ('+fmtShortDate(x.paid.on)+'), сейчас '+payFmt(x.pay)+'</span> <button type="button" class="pay-mini" data-act="paid-day" data-master="'+esc(e.name)+'" data-date="'+x.date+'" title="Принять текущую сумму как выплаченную">Обновить</button> <button type="button" class="pay-mini undo" data-act="unpaid-day" data-master="'+esc(e.name)+'" data-date="'+x.date+'">Снять</button>';
+          if(!x.paid) st = Math.abs(x.pay) < 0.5 ? '<span class="cd-status-note">нечего выплачивать</span>' : '<button type="button" class="pay-mini" data-act="paid-day" data-members="'+esc(JSON.stringify(e.members))+'" data-date="'+x.date+'">Выплачено</button>';
+          else if(Math.abs(Number(x.paid.amount) - x.pay) < 0.5) st = '<span class="pay-ok">✓ выплачено '+fmtShortDate(x.paid.on)+'</span> <button type="button" class="pay-mini undo" data-act="unpaid-day" data-members="'+esc(JSON.stringify(e.members))+'" data-date="'+x.date+'">Снять</button>';
+          else st = '<span class="pay-st-chg" title="Сумма за день изменилась после отметки">выплачено '+payFmt(x.paid.amount)+' ('+fmtShortDate(x.paid.on)+'), сейчас '+payFmt(x.pay)+'</span> <button type="button" class="pay-mini" data-act="paid-day" data-members="'+esc(JSON.stringify(e.members))+'" data-date="'+x.date+'" title="Принять текущую сумму как выплаченную">Обновить</button> <button type="button" class="pay-mini undo" data-act="unpaid-day" data-members="'+esc(JSON.stringify(e.members))+'" data-date="'+x.date+'">Снять</button>';
           d += '<tr><td>'+fmtShortDate(x.date)+' <span class="cd-status-note">'+wd+'</span></td><td class="num">'+x.count+'</td><td class="num">'+payFmt(x.revenue)+'</td><td class="num">'+payFmt(x.cons)+'</td><td class="num">'+payFmt(x.share)+'</td>' +
             '<td class="num">'+(x.prodComm ? payFmt(x.prodComm) : '—')+'</td><td class="num">'+(x.tip ? '+'+payFmt(x.tip) : '—')+'</td>' +
             '<td class="num '+(x.fine ? 'pay-fine' : '')+'">'+(x.fine ? '−'+payFmt(x.fine) : '—')+(reasons ? '<span class="pay-reasons">'+reasons+'</span>' : '')+'</td>' +
             '<td class="num"><b>'+payFmt(x.pay)+'</b></td><td>'+st+'</td></tr>';
         }
-        d += '</tbody></table></div>';
+        d += '</tbody></table>' + (e.multi ? '<div class="pay-members">В том числе: ' + e.parts.map(q => '<b>'+esc(q.name)+'</b> '+payFmt(q.t.pay)+(q.t.paid ? ' (выплачено '+payFmt(q.t.paid)+')' : '')).join(' · ') + '</div>' : '') + '</div>';
         html += '<tr class="pay-detail"><td colspan="13">'+d+'</td></tr>';
       }
     }
@@ -6452,9 +6459,41 @@
       if(!Object.keys(d[date]).length) delete d[date];
     }
   }
-  function payMarkRange(master, paid){
+  // Мастера с одним паролем кабинета (один человек, разный %) собираются в одну строку выплат с общими суммами.
+  // Пароли берём из списка доступов (state.botStatus); если их не видно, каждый мастер — отдельная строка.
+  function payUnits(masters){
+    const st = state.botStatus, groups = new Map(), units = [];
+    const pwOf = n => (st instanceof Map && (st.get(botKey(n)) || {}).password) || null;
+    for(const e of masters){
+      const pw = pwOf(e.name);
+      if(pw){ if(!groups.has(pw)) groups.set(pw, []); groups.get(pw).push(e); }
+      else units.push(payUnitSingle(e));
+    }
+    groups.forEach(list => units.push(list.length > 1 ? payUnitMerged(list) : payUnitSingle(list[0])));
+    return units.sort((a, b) => a.label.localeCompare(b.label, 'ru'));
+  }
+  function payUnitSingle(e){ return { key: e.name, label: e.name, members: [e.name], multi: false, days: e.days, t: e.t, parts: [e] }; }
+  function payUnitMerged(list){
+    list = list.slice().sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+    const byDate = new Map(), t = { days: 0, count: 0, revenue: 0, cons: 0, share: 0, prodComm: 0, tip: 0, fine: 0, pay: 0, paid: 0 };
+    for(const e of list){
+      for(const k in t) if(k !== 'days') t[k] += e.t[k];
+      for(const x of e.days){
+        if(!byDate.has(x.date)) byDate.set(x.date, { date: x.date, count: 0, revenue: 0, cons: 0, share: 0, prodComm: 0, tip: 0, fine: 0, adj: [], pay: 0, paid: null });
+        const m = byDate.get(x.date);
+        m.count += x.count; m.revenue += x.revenue; m.cons += x.cons; m.share += x.share; m.prodComm += x.prodComm; m.tip += x.tip; m.fine += x.fine; m.pay += x.pay;
+        m.adj = m.adj.concat(x.adj);
+        if(x.paid){ const prev = m.paid || { amount: 0, on: '' }; m.paid = { amount: prev.amount + (Number(x.paid.amount) || 0), on: prev.on > x.paid.on ? prev.on : x.paid.on }; }
+      }
+    }
+    const days = Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+    t.days = days.length;
+    const names = list.map(e => e.name);
+    return { key: 'grp:' + names.join('|'), label: names.join(' + '), members: names, multi: true, days, t, parts: list };
+  }
+  function payMarkRange(masterList, paid){
     const r = payRange(), e = buildPayroll(r.from, r.to).byMaster;
-    const names = master ? [master] : Array.from(e.keys());
+    const names = masterList && masterList.length ? masterList : Array.from(e.keys());
     for(const n of names){
       const entry = e.get(n); if(!entry) continue;
       for(const x of entry.days){
@@ -6479,10 +6518,12 @@
       if(e.target.closest('#payMarkAll')){ payMarkRange(null, true); return; }
       const act = e.target.closest('[data-act]');
       if(act){
-        const m = act.dataset.master, a = act.dataset.act;
-        if(a === 'paid-all') payMarkRange(m, true);
-        else if(a === 'unpaid-all') payMarkRange(m, false);
-        else if(a === 'paid-day' || a === 'unpaid-day'){ payMark(m, act.dataset.date, a === 'paid-day'); scheduleSave('day_close'); renderPayroll(); }
+        let members = [];
+        try{ members = JSON.parse(act.dataset.members || '[]'); }catch(err){}
+        const a = act.dataset.act;
+        if(a === 'paid-all') payMarkRange(members, true);
+        else if(a === 'unpaid-all') payMarkRange(members, false);
+        else if(a === 'paid-day' || a === 'unpaid-day'){ members.forEach(m => payMark(m, act.dataset.date, a === 'paid-day')); scheduleSave('day_close'); renderPayroll(); }
         return;
       }
       const row = e.target.closest('tr.pay-master');
