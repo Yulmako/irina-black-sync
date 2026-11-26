@@ -164,6 +164,11 @@
   .filters .result-count{font-size:12.5px; color:var(--muted); white-space:nowrap;}
 
   .table-scroll{overflow-x:auto;}
+  /* Шапка таблицы остаётся на виду: длинные таблицы прокручиваются внутри своего блока */
+  @media (min-width:761px){
+    .table-scroll{max-height:75vh; overflow:auto; overscroll-behavior:contain;}
+  }
+  .table-scroll thead th{z-index:3;}
   table{width:100%; border-collapse:collapse; font-size:13.5px; min-width:720px;}
   thead th{position:sticky; top:0; background:var(--surface-2); text-align:left; padding:10px 14px; font-size:11.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); font-weight:600; border-bottom:1px solid var(--border); white-space:nowrap;}
   tbody td{padding:11px 14px; border-bottom:1px solid var(--border); vertical-align:top;}
