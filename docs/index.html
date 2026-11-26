@@ -3444,6 +3444,15 @@
   // Подходит и название с именем сотрудника: «ЗП персонала админ Гульмира», «ЗП персонала тех персонал Айгуль».
   const isPayrollProc = p => (p.category || 'Расходники') === 'Салон'
     && (PAYROLL_PROC_ITEMS.indexOf(p.item) >= 0 || /^\s*зп\s+персонала(\s|$)/i.test(String(p.item || '')));
+  // Какая строка P&L: по словам в названии «ЗП персонала админ …», «… тех персонал …», «… бухгалтер», «… СММ».
+  function payrollProcKey(p){
+    const t = String(p.item || '').toLowerCase();
+    if(t.indexOf('админ') >= 0) return 'adminSalary';
+    if(t.indexOf('тех') >= 0) return 'techSalary';
+    if(t.indexOf('бухгалт') >= 0) return 'accountantSalary';
+    if(/смм|smm/.test(t)) return 'smmSalary';
+    return null;
+  }
   const PROCUREMENT_CATEGORIES = ['Расходники', 'Продукция', 'Nail зал', 'Салон'];
   const PROCUREMENT_ITEMS = {
     'Расходники': ['Краска Kapus','Оксидант Kapus','Пудра Kapus','Краска Screen','Оксидант Screen','Пудра Screen',
@@ -6842,6 +6851,7 @@
     const { from, to } = pnlMonthRange(monthStr);
     let revenue = 0, consumablesRevenue = 0, masterPay = 0, salesRevenue = 0;
     let procSalon = 0, procProduct = 0, procConsumables = 0;
+    const payProc = {};      // выплаты зарплаты персоналу через Закуп: строка P&L -> сумма
     for(const b of state.bookings){
       const date = dayStr(b.start);
       if(date < from || date > to) continue;
@@ -6871,7 +6881,11 @@
     for(const date in dayClose.procurement){
       if(date < from || date > to) continue;
       for(const p of dayClose.procurement[date]){
-        if(isPayrollProc(p)) continue;
+        if(isPayrollProc(p)){
+          const pk = payrollProcKey(p);
+          if(pk) payProc[pk] = (payProc[pk] || 0) + p.qty * p.unitCost;
+          continue;
+        }
         const sum = p.qty * p.unitCost;
         const cat = p.category || 'Расходники';
         if(cat === 'Салон') procSalon += sum;
@@ -6890,7 +6904,7 @@
       fromUslug: revenue - consumablesRevenue,
       productSales, fromConsumables: consumablesRevenue,
       prihod: revenue + salesRevenue,
-      masterPay, procSalon, procProduct, procConsumables,
+      masterPay, procSalon, procProduct, procConsumables, payProc,
     };
   }
   function buildPnlMonth(monthStr){
@@ -6899,13 +6913,16 @@
     const staffLines = staffPayLines(monthStr);
     const fixed = Object.assign({}, state.pnlFixed[monthStr] || PNL_EMPTY_MONTH, staffLines.values);
     for(const k in staffLines.loose) fixed[k] = (Number(fixed[k]) || 0) - staffLines.loose[k];
+    // Зарплата, фактически выплаченная через Закуп («ЗП персонала …»), заменяет расчёт по сменам для этой должности.
+    const fromProc = {};
+    for(const k in computed.payProc){ if(computed.payProc[k] > 0){ fixed[k] = computed.payProc[k]; fromProc[k] = true; } }
     const opex = computed.masterPay + fixed.adminSalary + fixed.techSalary + fixed.accountantSalary + fixed.smmSalary
       + computed.procSalon + computed.procProduct + computed.procConsumables
       + fixed.rent + fixed.utilities + fixed.internet + fixed.security
       + fixed.adsGeneral + fixed.ads2gis + fixed.adsInstagram;
     const gross = computed.prihod - opex;
     const net = gross - fixed.taxes - fixed.bankCommission;
-    return Object.assign({}, computed, fixed, { opex, net, fromStaff: staffLines.keys });
+    return Object.assign({}, computed, fixed, { opex, net, fromStaff: Object.assign({}, staffLines.keys, fromProc) });
   }
   function pnlFmt(n){ return Math.round(n || 0).toLocaleString('ru-RU'); }
   const PNL_EDITABLE = ['adminSalary','techSalary','accountantSalary','smmSalary','rent','utilities','internet','security','adsGeneral','ads2gis','adsInstagram','taxes','bankCommission'];
@@ -7061,7 +7078,7 @@
 
     function valueCell(key, m){
       if(m.data.fromStaff && m.data.fromStaff[key]){
-        return '<td class="num pnl-auto" title="Считается из вкладки «Персонал»: смены × ставка">'+pnlFmt(m.data[key])+' <small>⏱</small></td>';
+        return '<td class="num pnl-auto" title="'+(m.data.payProc && m.data.payProc[key] > 0 ? 'Сумма выплат «ЗП персонала …» из Закупа за месяц' : 'Считается из вкладки «Персонал»: смены × ставка')+'">'+pnlFmt(m.data[key])+' <small>⏱</small></td>';
       }
       if(PNL_EDITABLE.includes(key)){
         return '<td class="num"><input type="text" inputmode="numeric" class="pnl-input" data-month="'+m.key+'" data-field="'+key+'" value="'+pnlFmt(m.data[key])+'"></td>';
