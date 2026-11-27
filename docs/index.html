@@ -685,6 +685,7 @@
   .cd-adj-chip button:hover{opacity:1; background:rgba(0,0,0,.08);}
   .cd-adj-form-title.fine{color:var(--bad);} .cd-adj-form-title.tip{color:var(--good);}
   .cd-adj-form .cd-adj-note{width:260px; max-width:100%;}
+  .cd-adj-salon{display:inline-flex; align-items:center; gap:6px; font-size:12.5px; color:var(--muted); white-space:nowrap; cursor:pointer;}
   .cd-adj-pay{font-size:12.5px; color:var(--muted); white-space:nowrap;}
   .cd-adj-pay b{color:var(--ink); font-weight:700; font-variant-numeric:tabular-nums;}
   .cd-split{font-size:12px; color:var(--muted); white-space:nowrap;}
@@ -2077,7 +2078,7 @@
     }
     for(const date in dayClose.masterAdj){
       if(date.slice(0,7) !== monthKey) continue;
-      for(const a of dayClose.masterAdj[date]) if(a.kind === 'fine') profit += Number(a.amount) || 0;
+      for(const a of dayClose.masterAdj[date]) if(a.kind === 'fine' && adjToSalon(a)) profit += Number(a.amount) || 0;
     }
     for(const date in dayClose.productSales){
       if(date.slice(0,7) !== monthKey) continue;
@@ -2805,7 +2806,7 @@
     // вычеты мастерам (в том числе за «замороженные» дни) уменьшают ЗП мастера и идут в прибыль салона
     for(const date in dayClose.masterAdj){
       if(date < fromStr || date > toStr) continue;
-      for(const a of dayClose.masterAdj[date]) if(a.kind === 'fine') salaryAdj.push({ entry_date: date, master: a.master, amount: -(Number(a.amount) || 0) });
+      for(const a of dayClose.masterAdj[date]) if(a.kind === 'fine' && adjToSalon(a)) salaryAdj.push({ entry_date: date, master: a.master, amount: -(Number(a.amount) || 0) });
     }
     return { revenue, consumables, serviceCounts, salaryAdj };
   }
@@ -3721,10 +3722,15 @@
   function masterAdjList(date, master){
     return (dayClose.masterAdj[date] || []).map((a, idx) => Object.assign({ idx }, a)).filter(a => a.master === master);
   }
+  // Вычет по умолчанию идёт в прибыль салона; со снятой галочкой «Идёт в прибыль салона» (например, кофе — это прибыль кофейни)
+  // он только уменьшает выплату мастеру и не меняет ни прибыль салона, ни ЗП мастеров в P&L.
+  const adjToSalon = a => a.kind !== 'fine' || a.toSalon !== false;
   function masterAdjTotals(date, master){
-    let fine = 0, tip = 0;
-    for(const a of masterAdjList(date, master)){ if(a.kind === 'fine') fine += a.amount; else tip += a.amount; }
-    return { fine, tip };
+    let fine = 0, tip = 0, fineExt = 0;
+    for(const a of masterAdjList(date, master)){
+      if(a.kind === 'fine'){ fine += a.amount; if(!adjToSalon(a)) fineExt += a.amount; } else tip += a.amount;
+    }
+    return { fine, tip, fineExt };
   }
 
   function renderCloseDayServices(){
@@ -3902,7 +3908,7 @@
     let chips = list.map(a => {
       const k = ADJ_KINDS[a.kind] || ADJ_KINDS.fine;
       return '<span class="cd-adj-chip '+a.kind+'">'+k.label+' '+(k.sign < 0 ? '−' : '+')+Math.round(a.amount).toLocaleString('ru-RU')+' ₸' +
-        (a.note ? ' · '+esc(a.note) : '') +
+        (a.note ? ' · '+esc(a.note) : '') + (adjToSalon(a) ? '' : ' · не в прибыль салона') +
         (editable ? '<button type="button" class="cd-adj-remove" data-idx="'+a.idx+'" title="Удалить" aria-label="Удалить">×</button>' : '') + '</span>';
     }).join('');
     // Процент от продажи продукции, назначенный этому мастеру (удаляется вместе с записью о продаже ниже).
@@ -3918,13 +3924,14 @@
               '<b class="cd-adj-form-title '+kind+'">'+ADJ_KINDS[kind].label+'</b>' +
               '<input type="number" class="cd-adj-amount" placeholder="Сумма, ₸" min="0" step="500">' +
               '<input type="text" class="cd-adj-note"'+(kind === 'fine' ? ' list="adjReasonOptions"' : '')+' placeholder="'+(kind === 'fine' ? 'За что вычет (например, опоздание)' : 'Комментарий (необязательно)')+'" maxlength="80">' +
+              (kind === 'fine' ? '<label class="cd-adj-salon" title="Если снять галочку, сумма вычтется из выплаты мастеру, но не пойдёт в прибыль салона (например, кофе — прибыль кофейни)"><input type="checkbox" class="cd-adj-tosalon" checked> Идёт в прибыль салона</label>' : '') +
               '<button type="button" class="mini-action-btn cd-adj-save">Добавить</button>' +
               '<button type="button" class="mini-action-btn cd-adj-cancel" data-kind="'+kind+'" data-master="'+esc(master)+'">Отмена</button>' +
             '</div>'
-          : '<button type="button" class="cd-add-consumable-btn cd-adj-add" data-kind="'+kind+'" data-master="'+esc(master)+'" title="'+(kind === 'fine' ? 'Вычесть из выплаты мастеру (сумма уйдёт в прибыль салона)' : 'Добавить к выплате только мастеру (в выручку не входит)')+'">'+(kind === 'fine' ? '− Вычет' : '+ Чаевые')+'</button>';
+          : '<button type="button" class="cd-add-consumable-btn cd-adj-add" data-kind="'+kind+'" data-master="'+esc(master)+'" title="'+(kind === 'fine' ? 'Вычесть из выплаты мастеру (по умолчанию сумма уйдёт в прибыль салона; в форме можно снять галочку)' : 'Добавить к выплате только мастеру (в выручку не входит)')+'">'+(kind === 'fine' ? '− Вычет' : '+ Чаевые')+'</button>';
       }
     }
-    return '<datalist id="adjReasonOptions"><option value="Опоздание"><option value="Порча материала"><option value="Жалоба клиента"><option value="Недостача"><option value="Нарушение регламента"><option value="Чай"><option value="Zapis.kz"></datalist>' +
+    return '<datalist id="adjReasonOptions"><option value="Кофе"><option value="Опоздание"><option value="Порча материала"><option value="Жалоба клиента"><option value="Недостача"><option value="Нарушение регламента"><option value="Чай"><option value="Zapis.kz"></datalist>' +
       '<div class="cd-adj">' +
       '<div class="cd-adj-chips">'+chips+forms+'</div>' +
       '<div class="cd-adj-pay">К выплате мастеру: <b data-role="masterpay">—</b></div>' +
@@ -3967,7 +3974,7 @@
       const adj = masterAdjTotals(adjDate, master);
       const groupSaleComm = saleCommissionFor(adjDate, master);
       groupMasterPay += adj.tip - adj.fine + groupSaleComm;
-      grandMaster += adj.tip - adj.fine; grandSalon += adj.fine; grandFine += adj.fine; grandTip += adj.tip;
+      grandMaster += adj.tip - adj.fine + adj.fineExt; grandSalon += adj.fine - adj.fineExt; grandFine += adj.fine; grandTip += adj.tip;
       const payEl = group.querySelector('[data-role="masterpay"]');
       if(payEl) payEl.textContent = Math.round(groupMasterPay).toLocaleString('ru-RU') + ' ₸';
       group.querySelector('[data-role="subtotal"]').textContent = Math.round(subtotal).toLocaleString('ru-RU') + ' ₸';
@@ -4196,6 +4203,14 @@
   });
   document.getElementById('addProcurementSave').addEventListener('click', addProcurement);
   document.getElementById('newProcCost').addEventListener('keydown', e => { if(e.key === 'Enter') addProcurement(); });
+  // Вычет за кофе или чай — не прибыль салона: галочка снимается сама, пока её не трогали вручную.
+  document.addEventListener('input', e => {
+    const note = e.target.closest && e.target.closest('.cd-adj-note');
+    if(!note) return;
+    const form = note.closest('.cd-adj-form'), cb = form && form.querySelector('.cd-adj-tosalon');
+    if(cb && !cb.dataset.touched) cb.checked = !/кофе|чай/i.test(note.value);
+  });
+  document.addEventListener('change', e => { if(e.target.classList && e.target.classList.contains('cd-adj-tosalon')) e.target.dataset.touched = '1'; });
   document.getElementById('newProcItem').addEventListener('input', e => {
     const known = getConsumablePrice(e.target.value);
     const costEl = document.getElementById('newProcCost');
@@ -5505,7 +5520,7 @@
     }
     for(const a of (dayClose.masterAdj[date] || [])){
       const m = entry(a.master);
-      if(a.kind === 'fine'){ m.fine += a.amount; m.masterPay -= a.amount; m.salonNet += a.amount; m.reasons.push((a.note || 'без пояснения') + ' (' + Math.round(a.amount).toLocaleString('ru-RU') + ' ₸)'); }
+      if(a.kind === 'fine'){ m.fine += a.amount; m.masterPay -= a.amount; if(adjToSalon(a)) m.salonNet += a.amount; m.reasons.push((a.note || 'без пояснения') + ' (' + Math.round(a.amount).toLocaleString('ru-RU') + ' ₸' + (adjToSalon(a) ? '' : ', не в прибыль салона') + ')'); }
       else { m.tip += a.amount; m.masterPay += a.amount; }
     }
     const rows = [['Мастер','Ставка, %','Услуг завершено','Выручка, ₸','Расходники, ₸','Вычеты, ₸','За что вычет','Чаевые, ₸','% с продажи продукции, ₸','ЗП мастера, ₸','ЧП салона, ₸']];
@@ -5903,7 +5918,10 @@
       const date = document.getElementById('closeDayDate').value;
       if(amount > 0 && date){
         if(!dayClose.masterAdj[date]) dayClose.masterAdj[date] = [];
-        dayClose.masterAdj[date].push({ master: form.dataset.master, kind: form.dataset.kind, amount, note });
+        const entry = { master: form.dataset.master, kind: form.dataset.kind, amount, note };
+        const tsEl = form.querySelector('.cd-adj-tosalon');
+        if(tsEl && !tsEl.checked) entry.toSalon = false;
+        dayClose.masterAdj[date].push(entry);
         dayClose.openForms.delete('adj|'+form.dataset.kind+'|'+form.dataset.master);
         renderCloseDay();
       } else form.querySelector('.cd-adj-amount').focus();
@@ -6469,7 +6487,7 @@
         const mem = esc(JSON.stringify(e.members));
         for(const x of e.days){
           const wd = WD_SHORT[parseYmd(x.date).getDay()];
-          const reasons = x.adj.map(a => (e.multi ? esc(a.master) + ': ' : '') + (a.kind === 'fine' ? 'Вычет' : 'Чаевые') + ' ' + (a.kind === 'fine' ? '−' : '+') + Math.round(a.amount).toLocaleString('ru-RU') + ' ₸' + (a.note ? ' · ' + esc(a.note) : '')).join('; ');
+          const reasons = x.adj.map(a => (e.multi ? esc(a.master) + ': ' : '') + (a.kind === 'fine' ? 'Вычет' : 'Чаевые') + ' ' + (a.kind === 'fine' ? '−' : '+') + Math.round(a.amount).toLocaleString('ru-RU') + ' ₸' + (a.note ? ' · ' + esc(a.note) : '') + (adjToSalon(a) ? '' : ' · не в прибыль салона')).join('; ');
           const paidAmt = x.paid ? Number(x.paid.amount) || 0 : 0, dueDay = x.pay - paidAmt;
           const same = x.paid && Math.abs(paidAmt - x.pay) < 0.5;
           let act;
@@ -6902,7 +6920,7 @@
     // вычеты мастерам уменьшают ЗП мастеров (так же, как в Закрытии дня и Аналитике)
     for(const date in dayClose.masterAdj){
       if(date < from || date > to) continue;
-      for(const a of dayClose.masterAdj[date]) if(a.kind === 'fine') masterPay -= Number(a.amount) || 0;
+      for(const a of dayClose.masterAdj[date]) if(a.kind === 'fine' && adjToSalon(a)) masterPay -= Number(a.amount) || 0;
     }
     for(const date in dayClose.procurement){
       if(date < from || date > to) continue;
