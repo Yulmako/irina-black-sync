@@ -3899,12 +3899,15 @@
   }
   function renderMasterAdjHtml(date, master, editable){
     const list = masterAdjList(date, master);
-    const chips = list.map(a => {
+    let chips = list.map(a => {
       const k = ADJ_KINDS[a.kind] || ADJ_KINDS.fine;
       return '<span class="cd-adj-chip '+a.kind+'">'+k.label+' '+(k.sign < 0 ? '−' : '+')+Math.round(a.amount).toLocaleString('ru-RU')+' ₸' +
         (a.note ? ' · '+esc(a.note) : '') +
         (editable ? '<button type="button" class="cd-adj-remove" data-idx="'+a.idx+'" title="Удалить" aria-label="Удалить">×</button>' : '') + '</span>';
     }).join('');
+    // Процент от продажи продукции, назначенный этому мастеру (удаляется вместе с записью о продаже ниже).
+    const saleComm = saleCommissionFor(date, master);
+    if(saleComm > 0) chips = '<span class="cd-adj-chip tip" title="Процент от продажи продукции — входит в «К выплате мастеру». Изменить можно в записи о продаже ниже">% с продажи продукции +'+Math.round(saleComm).toLocaleString('ru-RU')+' ₸</span>' + chips;
     let forms = '';
     if(editable){
       for(const kind of ['fine', 'tip']){
